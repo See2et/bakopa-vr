@@ -1,16 +1,13 @@
 #![deny(unsafe_code)]
 
-/// Placeholder shared crate API.
-pub fn crate_ready() -> bool {
-    true
-}
+//! Shared data structures and helpers for the BakopaVR peer ping-pong prototype.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod config;
+pub mod keypair;
+pub mod multiaddr;
+pub mod pingpong;
 
-    #[test]
-    fn crate_is_ready() {
-        assert!(crate_ready());
-    }
-}
+pub use config::SessionConfig;
+pub use keypair::Keypair;
+pub use multiaddr::{format_multiaddr, PeerAddress};
+pub use pingpong::{encode_ping, encode_pong, decode_ping, decode_pong, PingMessage, PongMessage, RttReport};

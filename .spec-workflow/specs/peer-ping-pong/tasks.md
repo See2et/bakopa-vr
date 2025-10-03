@@ -1,15 +1,6 @@
 # Tasks Document
 
-- [x] 1. Cargo workspace再構築とcrateスキャフォールド
-  - Files: Cargo.toml, rust/crates/shared/Cargo.toml, rust/crates/sidecar/Cargo.toml, rust/crates/peer-cli/Cargo.toml, rust/xtask/Cargo.toml, rust/crates/sidecar/src/lib.rs, rust/crates/peer-cli/src/main.rs (雛形)
-  - 既存 `src/main.rs` を workspace 構成に合わせて `rust/crates/sidecar` へ移設し、共通の Rust edition / lint 設定を整える
-  - `shared`, `sidecar`, `peer-cli`, `xtask` の crate を空の形で用意し、`cargo build` が通る最小コードを配置する
-  - 目的: cargo workspace を Requirements R1 に沿って整備するための土台づくり
-  - _Leverage: Cargo.lock, structure.md, tech.md_
-  - _Requirements: R1_
-  - _Prompt: Implement the task for spec peer-ping-pong, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Rust Infrastructure Engineer | Task: Restructure the repository into a cargo workspace with shared, sidecar, peer-cli, and xtask crates per requirement R1, migrating existing src/main.rs into the new layout and establishing baseline Cargo manifests | Restrictions: Preserve buildability at each step, follow paths defined in structure.md and tech.md, avoid introducing unused crates | Success: cargo build from repo root succeeds, new crates compile with placeholder code, legacy src/main.rs is removed from the root_
-
-- [ ] 2. shared crateのプロトコル定義実装
+- [x] 2. shared crateのプロトコル定義実装
   - Files: rust/crates/shared/src/lib.rs, rust/crates/shared/src/pingpong.rs, rust/crates/shared/src/config.rs
   - `PingMessage`, `PongMessage`, `RttReport`, `SessionConfig` を定義し、serde / rmp-serde でシリアライズできるようにする
   - 鍵生成・Multiaddr 表示ユーティリティ (`keypair.rs`, `multiaddr.rs`) を用意する
