@@ -9,7 +9,7 @@
   - _Requirements: R2, R3_
   - _Prompt: Implement the task for spec peer-ping-pong, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Rust Systems Developer specializing in serialization | Task: Implement shared crate data structures and helpers (ping/pong messages, RTT report, session config, keypair & multiaddr utilities) satisfying requirements R2 and R3 | Restrictions: Use serde and rmp-serde, derive Clone/Serialize/Deserialize consistently, keep helper APIs pure and easily testable | Success: shared crate builds independently, serialization round-trip tests pass, helper fns expose safe abstractions_
 
-- [ ] 3. sidecar crateのPeerSession作成
+- [x] 3. sidecar crateのPeerSession作成
   - Files: rust/crates/sidecar/src/lib.rs, rust/crates/sidecar/src/session.rs, rust/crates/sidecar/src/error.rs
   - iroh を用いたノード初期化・Noise ハンドシェイク・ストリーム送受信を `PeerSession` として実装する
   - バックオフ付き再試行、ping timeout、ハンドシェイク失敗時のエラー型を定義する

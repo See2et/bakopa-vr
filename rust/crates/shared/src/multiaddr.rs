@@ -24,6 +24,56 @@ impl PeerAddress {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Extract the peer identifier segment from the multi-address.
+    pub fn peer_id(&self) -> Option<&str> {
+        self.0.split("/p2p/").nth(1)
+    }
+
+    /// Convert the multi-address into a socket address.
+    pub fn to_socket_addr(&self) -> Option<SocketAddr> {
+        let segments: Vec<&str> = self.0.split('/').filter(|s| !s.is_empty()).collect();
+        let mut ip: Option<IpAddr> = None;
+        let mut port: Option<u16> = None;
+
+        let mut idx = 0;
+        while idx < segments.len() {
+            match segments[idx] {
+                "ip4" => {
+                    if idx + 1 < segments.len() {
+                        if let Ok(parsed) = segments[idx + 1].parse::<std::net::Ipv4Addr>() {
+                            ip = Some(IpAddr::V4(parsed));
+                        }
+                        idx += 2;
+                        continue;
+                    }
+                }
+                "ip6" => {
+                    if idx + 1 < segments.len() {
+                        if let Ok(parsed) = segments[idx + 1].parse::<std::net::Ipv6Addr>() {
+                            ip = Some(IpAddr::V6(parsed));
+                        }
+                        idx += 2;
+                        continue;
+                    }
+                }
+                "udp" => {
+                    if idx + 1 < segments.len() {
+                        port = segments[idx + 1].parse().ok();
+                        idx += 2;
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+            idx += 1;
+        }
+
+        match (ip, port) {
+            (Some(ip), Some(port)) => Some(SocketAddr::new(ip, port)),
+            _ => None,
+        }
+    }
 }
 
 impl From<PeerAddress> for String {
@@ -73,5 +123,7 @@ mod tests {
         let addr: SocketAddr = "0.0.0.0:7000".parse().unwrap();
         let peer_addr = PeerAddress::from_parts(addr, &KEYPAIR);
         assert!(peer_addr.as_str().contains(&KEYPAIR.peer_id()));
+        assert_eq!(peer_addr.peer_id().unwrap(), KEYPAIR.peer_id());
+        assert_eq!(peer_addr.to_socket_addr().unwrap(), addr);
     }
 }
