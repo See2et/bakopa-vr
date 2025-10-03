@@ -3,5 +3,23 @@
 version = 4
 
 [[package]]
-name = "bakopa-vr"
+name = "peer-cli"
+version = "0.1.0"
+dependencies = [
+ "sidecar",
+]
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+
+[[package]]
+name = "sidecar"
+version = "0.1.0"
+dependencies = [
+ "shared",
+]
+
+[[package]]
+name = "xtask"
 version = "0.1.0"

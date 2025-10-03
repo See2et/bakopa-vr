@@ -1,0 +1,21 @@
+{
+  "id": "approval_1759521864957_p52f5mgpj",
+  "title": "structure.md 初版",
+  "filePath": ".spec-workflow/steering/structure.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-03T20:04:24.957Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. cargo workspaceを活用した構造にできない？\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"cargo workspaceを活用した構造にできない？\",\n      \"timestamp\": \"2025-10-03T20:06:01.846Z\",\n      \"id\": \"comment_1759521961846_i2on07g17\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. cargo workspaceを活用した構造にできない？\\n\\n\",\n  \"timestamp\": \"2025-10-03T20:06:05.631Z\"\n}",
+  "respondedAt": "2025-10-03T20:06:05.470Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "cargo workspaceを活用した構造にできない？",
+      "timestamp": "2025-10-03T20:06:01.846Z",
+      "id": "comment_1759521961846_i2on07g17"
+    }
+  ]
+}

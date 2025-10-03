@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/peer-ping-pong/tasks.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-03T20:22:10.605Z",
+      "trigger": "initial",
+      "approvalId": "approval_1759522930595_2hzuzuk9c",
+      "approvalTitle": "peer-ping-pong tasks"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-10-03T20:22:25.176Z",
+      "trigger": "approved",
+      "approvalId": "approval_1759522930595_2hzuzuk9c",
+      "approvalTitle": "peer-ping-pong tasks"
+    }
+  ]
+}

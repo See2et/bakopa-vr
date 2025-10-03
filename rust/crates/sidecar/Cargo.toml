@@ -1,0 +1,14 @@
+[package]
+name = "sidecar"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "sidecar"
+path = "src/lib.rs"
+
+[dependencies]
+shared = { path = "../shared" }
+
+[dev-dependencies]
+

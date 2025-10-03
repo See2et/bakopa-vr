@@ -1,0 +1,16 @@
+{
+  "id": "snapshot_1759522575981_nectv3jnk",
+  "approvalId": "approval_1759522559797_dn24vouca",
+  "approvalTitle": "peer-ping-pong requirements rev3",
+  "version": 4,
+  "timestamp": "2025-10-03T20:16:15.981Z",
+  "trigger": "approved",
+  "status": "pending",
+  "content": "# Requirements Document\n\n## Introduction\nRust 製サイドカーの基盤を検証する第一歩として、cargo workspace 上に試験用の CLI バイナリを整備し、2 つのピアが直接 IP/ポートを指定して P2P セッションを張り、`ping` / `pong` メッセージを往復できるようにする。Bloom や Unity などの上位レイヤーを介さず、サイドカー単体で通信の信頼性と往復遅延を確認することが目的である。\n\n## Alignment with Product Vision\n- ピア優先の信頼性: シグナリングを使わず、手動で指定したエンドポイント間で iroh 接続を成立させることで、P2P 基盤の最小コアを検証する。\n- 可観測性: CLI から RTT や失敗理由を即時に確認でき、将来 Bloom ダッシュボードへ拡張するための計測指標を固める。\n- 設置容易性: cargo workspace の `cargo run -p peer-ping-cli -- listen` などシンプルなコマンドで試験を実施できる状態を整備する。\n\n## Requirements\n\n### Requirement 1: cargo workspace の整備\n\n**User Story:** 開発者として、単一の cargo workspace からサイドカー関連クレートとテスト用 CLI をビルドしたい。そうすれば依存関係とビルド手順を統一できる。\n\n#### Acceptance Criteria\n\n1. WHEN ルート `Cargo.toml` を更新すると THEN members に `rust/crates/sidecar`, `rust/crates/shared`, `rust/crates/peer-cli` が登録される。\n2. IF `cargo build` を実行した場合 THEN 3 クレートがビルドに成功し、ワークスペース全体で警告が発生しない。\n3. WHEN `cargo xtask setup-peer-cli`（仮）を実行した場合 THEN CLI バイナリ用の設定ファイルや証明書雛形が生成される。\n\n### Requirement 2: 直接接続による P2P ハンドシェイク\n\n**User Story:** テスターとして、ローカルネットワーク上で 2 つの CLI を起動し、片方が待受しもう片方が直接アドレスを指定して接続したい。そうすればシンプルに P2P セッションの成功可否を確認できる。\n\n#### Acceptance Criteria\n\n1. WHEN リスナー側が `cargo run -p peer-cli -- listen --addr 0.0.0.0:9000` を実行すると THEN CLI SHALL iroh ノードを起動し待受を開始する。\n2. WHEN 待受が開始された場合 THEN CLI SHALL 自身の Multiaddr（含む公開鍵）を標準出力に表示する。\n3. IF ダイヤル側が `cargo run -p peer-cli -- dial --peer <multiaddr>` を実行すると THEN 5 秒以内に Noise ハンドシェイクが完了する。\n4. WHEN ハンドシェイクに失敗した場合 THEN CLI SHALL exit code ≠ 0 で終了し、ログに理由（タイムアウト/鍵不一致など）を出力する。\n\n### Requirement 3: `ping/pong` メッセージ往復と計測\n\n**User Story:** テスターとして、接続成立後に `ping` を送信して `pong` を受信し、往復時間を確認したい。そうすればネットワーク品質を判断できる。\n\n#### Acceptance Criteria\n\n1. WHEN 接続が確立すると THEN ダイヤル側 CLI SHALL 自動で `ping` を送信し、受信側 SHALL `pong` を返す。\n2. IF `ping` を受信したリスナー側 THEN SHALL 100 ms 以内に `pong` を生成し iroh ストリームで送信する。\n3. WHEN `pong` を受信したダイヤル側 THEN SHALL RTT を計測し、標準出力に JSON 形式で `{ \"rtt_ms\": <value>, \"attempt\": <n> }` を表示する。\n\n## Non-Functional Requirements\n\n### Code Architecture and Modularity\n- **Single Responsibility Principle**: `shared` crate にプロトコル型、`sidecar` に iroh ラッパー、`peer-cli` に CLI ロジックを保持する。\n- **Modular Design**: CLI は sidecar crate の公開 API を利用し、直接 iroh に依存しない。\n- **Dependency Management**: ワークスペース外のクレート依存は `shared` で集中管理し、再利用性を高める。\n- **Clear Interfaces**: `shared::pingpong::Session` など明示的な境界を定義する。\n\n### Performance\n- RTT 計測は 150 ms 以下を目標とし、3 回連続で成功するまで自動リトライする。\n- CLI は 1 秒に 1 回以上の `ping` を送出しない（不要な負荷を避ける）。\n\n### Security\n- Ed25519 鍵ペアを CLI 起動時に生成（もしくは設定ファイルから読み込み）し、Noise プロトコルで暗号化する。\n- 表示される Multiaddr には TLS/Noise handshake 情報が含まれることを必須とする。\n\n### Reliability\n- CLI は接続失敗時に 500 ms → 1 s → 2 s の指数バックオフで最大 3 回再試行する。\n- ハンドシェイク成功後にストリームが切断された場合、即時リトライではなくユーザーへメッセージを表示して終了する。\n\n### Usability\n- CLI は `listen` / `dial` サブコマンドと `--addr` / `--peer` オプションを提供し、ヘルプ出力で使用例を案内する。\n- 成功時・失敗時ともに exit code とログが整合し、スクリプトから容易に判定できる。\n- リスナーは起動時に自身の Multiaddr が表示され、ダイヤル側はその値をコピー＆ペーストすればよい。\n",
+  "fileStats": {
+    "size": 5279,
+    "lines": 68,
+    "lastModified": "2025-10-03T20:15:54.794Z"
+  },
+  "comments": []
+}

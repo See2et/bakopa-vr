@@ -1,0 +1,21 @@
+{
+  "id": "approval_1759522424446_3zkdh6qbi",
+  "title": "peer-ping-pong requirements rev2",
+  "filePath": ".spec-workflow/specs/peer-ping-pong/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-03T20:13:44.446Z",
+  "category": "spec",
+  "categoryName": "peer-ping-pong",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. cargo runしたら自分のaddrが見える機能があると便利そう\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"cargo runしたら自分のaddrが見える機能があると便利そう\",\n      \"timestamp\": \"2025-10-03T20:15:23.319Z\",\n      \"id\": \"comment_1759522523319_xml1fhtgt\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. cargo runしたら自分のaddrが見える機能があると便利そう\\n\\n\",\n  \"timestamp\": \"2025-10-03T20:15:26.231Z\"\n}",
+  "respondedAt": "2025-10-03T20:15:26.120Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "cargo runしたら自分のaddrが見える機能があると便利そう",
+      "timestamp": "2025-10-03T20:15:23.319Z",
+      "id": "comment_1759522523319_xml1fhtgt"
+    }
+  ]
+}

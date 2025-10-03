@@ -1,0 +1,21 @@
+{
+  "id": "approval_1759519293851_aw54e13zn",
+  "title": "product.md 日本語版",
+  "filePath": ".spec-workflow/steering/product.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-03T19:21:33.852Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. 全然意図している内容と違います。\nBakopaVRは、分散型Social-VR「SuteraVR」のMinimal Value Productを試験的に実装する試みです。\n構成はUnity+Rust(iroh)によるP2Pを軸としたモデルです。\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"全然意図している内容と違います。\\nBakopaVRは、分散型Social-VR「SuteraVR」のMinimal Value Productを試験的に実装する試みです。\\n構成はUnity+Rust(iroh)によるP2Pを軸としたモデルです。\",\n      \"timestamp\": \"2025-10-03T19:24:07.548Z\",\n      \"id\": \"comment_1759519447548_yol3grg3h\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. 全然意図している内容と違います。\\nBakopaVRは、分散型Social-VR「SuteraVR」のMinimal Value Productを試験的に実装する試みです。\\n構成はUnity+Rust(iroh)によるP2Pを軸としたモデルです。\\n\\n\",\n  \"timestamp\": \"2025-10-03T19:31:27.450Z\"\n}",
+  "respondedAt": "2025-10-03T19:31:25.445Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "全然意図している内容と違います。\nBakopaVRは、分散型Social-VR「SuteraVR」のMinimal Value Productを試験的に実装する試みです。\n構成はUnity+Rust(iroh)によるP2Pを軸としたモデルです。",
+      "timestamp": "2025-10-03T19:24:07.548Z",
+      "id": "comment_1759519447548_yol3grg3h"
+    }
+  ]
+}

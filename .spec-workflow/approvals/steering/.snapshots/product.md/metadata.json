@@ -1,0 +1,38 @@
+{
+  "filePath": ".spec-workflow/steering/product.md",
+  "currentVersion": 4,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-02T14:36:18.467Z",
+      "trigger": "initial",
+      "approvalId": "approval_1759415778461_fn1uozjj9",
+      "approvalTitle": "product.md draft"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-10-03T19:17:30.378Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1759415778461_fn1uozjj9",
+      "approvalTitle": "product.md draft"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-10-03T19:31:25.441Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1759519293851_aw54e13zn",
+      "approvalTitle": "product.md 日本語版"
+    },
+    {
+      "version": 4,
+      "filename": "snapshot-004.json",
+      "timestamp": "2025-10-03T19:35:41.152Z",
+      "trigger": "approved",
+      "approvalId": "approval_1759519924127_zywm1ewt8",
+      "approvalTitle": "product.md 修正版"
+    }
+  ]
+}
