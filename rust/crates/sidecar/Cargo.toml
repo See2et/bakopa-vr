@@ -1,0 +1,18 @@
+[package]
+name = "sidecar"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "sidecar"
+path = "src/lib.rs"
+
+[dependencies]
+shared = { path = "../shared" }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+thiserror = "1.0"
+tokio = { version = "1.39", default-features = false, features = ["net", "rt", "sync", "time"] }
+rmp-serde = "1.1"
+
+[dev-dependencies]
+tokio = { version = "1.39", default-features = false, features = ["macros", "net", "rt", "sync", "time"] }

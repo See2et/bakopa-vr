@@ -1,0 +1,20 @@
+[package]
+name = "shared"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "shared"
+path = "src/lib.rs"
+
+[dependencies]
+bs58 = "0.5"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+ed25519-dalek = { version = "1", default-features = false, features = ["std", "rand", "rand_core", "u64_backend"] }
+rand = { version = "0.7", default-features = false, features = ["std"] }
+rmp-serde = "1.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+once_cell = "1.19"

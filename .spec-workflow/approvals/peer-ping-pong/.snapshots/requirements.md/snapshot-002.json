@@ -1,0 +1,16 @@
+{
+  "id": "snapshot_1759522379224_fzxchqbo0",
+  "approvalId": "approval_1759522277438_7vnl42jkr",
+  "approvalTitle": "peer-ping-pong requirements",
+  "version": 2,
+  "timestamp": "2025-10-03T20:12:59.224Z",
+  "trigger": "revision_requested",
+  "status": "pending",
+  "content": "# Requirements Document\n\n## Introduction\n分散型 Social-VR の初期検証として、2 クライアントが Bloom のシグナリングを介して相互に発見し、Rust サイドカー (iroh) 間で P2P 接続を確立した後、最小限の `ping` / `pong` メッセージを往復させる機能を実装する。これにより、SuteraVR の分散基盤が実運用で必要となる信頼性・遅延特性を確認するための足掛かりを得る。\n\n## Alignment with Product Vision\n- ピア優先の信頼性: 中央サーバーに依存しない P2P 接続を実装し、Bloom は最小限のシグナリングに留める。\n- 可観測性: RTT や接続イベントを Bloom ダッシュボードへ送出し、MVP の成功指標であるセッション成功率・遅延測定に活用する。\n- 設置容易性: Unity クライアントを 2 ノード起動するだけで接続試験ができるシンプルなオペレーションを提供する。\n\n## Requirements\n\n### Requirement 1: Bloom シグナリングによるピア発見\n\n**User Story:** SuteraVR のテスターとして、Bloom 経由でセッション ID を共有するだけで相手ピアを見つけたい。そうすれば手動で IP を交換せずに P2P 疎通テストを開始できる。\n\n#### Acceptance Criteria\n\n1. WHEN テスター A が Bloom にセッションを登録すると THEN Bloom SHALL 発行した招待コードに対し STAN チャンネルを割り当てる。\n2. IF テスター B が同じ招待コードを入力した場合 THEN Bloom SHALL 双方のサイドカーに相互候補 (Multiaddr + 公開鍵) を送信する。\n3. WHEN Bloom が双方へ候補送出後 5 秒以内に接続不能だった場合 THEN サイドカー SHALL 再通知を要求しリトライする。\n\n### Requirement 2: P2P ハンドシェイクと `ping/pong` メッセージ往復\n\n**User Story:** テスターとして、P2P 接続が成功したか即座に確認したい。そうすれば両者が P2P ネットワーク上で通信できることを把握できる。\n\n#### Acceptance Criteria\n\n1. WHEN 双方のサイドカーが iroh でセッションキー交換を完了した場合 THEN A 側 SHALL 1 秒以内に `ping` メッセージを送信する。\n2. IF `ping` を受信した B 側 THEN SHALL 100 ms 以内に `pong` を返す。\n3. WHEN `pong` を受信した A 側 THEN SHALL RTT を計測し Unity UI コンソールと Bloom ログに記録する。\n\n### Requirement 3: 可観測性とエラーハンドリング\n\n**User Story:** ネットワークエンジニアとして、接続とメッセージ交換の失敗要因を追跡したい。そうすれば再現性のある改善サイクルを回せる。\n\n#### Acceptance Criteria\n\n1. WHEN サイドカーが P2P 接続確立に失敗した場合 THEN SHALL Bloom にエラーコード・再試行回数をメトリクス送信する。\n2. IF `ping` への `pong` 応答が 3 秒以内に返らない場合 THEN Unity SHALL ユーザーへトースト通知と再試行ボタンを表示する。\n3. WHEN RTT が 200 ms を超えた場合 THEN サイドカー SHALL 警告ログを STAN 経由で Bloom に publish する。\n\n## Non-Functional Requirements\n\n### Code Architecture and Modularity\n- **Single Responsibility Principle**: P2P 接続管理は Rust サイドカー (sidecar crate)、シグナリングは Bloom (bloom crate)、UI 表示は Unity MonoBehaviour として分離する。\n- **Modular Design**: MessagePack プロトコル定義を `rust/crates/shared` に集約し、サイドカーと Bloom のみが依存する。\n- **Dependency Management**: Unity から Bloom API を直接呼び出さず、IPC → サイドカー → Bloom の流れを維持する。\n- **Clear Interfaces**: `PingPongSession` (shared) の API により、接続確立・メッセージ送信・計測の関数境界を明確化する。\n\n### Performance\n- 2 ピア間の RTT の中央値は 150 ms 以下とし、最大 3 試行で成功すること。\n- Ping/Pong メッセージのペイロードは 256 byte 以下で抑制する。\n\n### Security\n- P2P セッションキー交換は Ed25519 + Noise パターンで暗号化する。\n- Bloom から送出される候補情報には署名とタイムスタンプを付与し、5 分で失効させる。\n\n### Reliability\n- 再試行ロジックは最大 3 回、バックオフは 500 ms ずつ増加。\n- サイドカーは Bloom がダウンした場合でも既存接続を維持し、メトリクスはローカルにバッファする。\n\n### Usability\n- Unity UI に接続ステータス (Connecting / Connected / Failed) を表示し、テスターが状態を把握できるようにする。\n- Ping/Pong 成功時はトーストと RTT 表示を 5 秒間提示する。\n",
+  "fileStats": {
+    "size": 4814,
+    "lines": 66,
+    "lastModified": "2025-10-03T20:11:06.563Z"
+  },
+  "comments": []
+}

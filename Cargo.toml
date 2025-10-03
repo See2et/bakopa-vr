@@ -1,6 +1,16 @@
-[package]
-name = "bakopa-vr"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "rust/crates/shared",
+    "rust/crates/sidecar",
+    "rust/crates/peer-cli",
+    "rust/xtask"
+]
+resolver = "2"
 
-[dependencies]
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+authors = ["BakopaVR Team"]
+
+[workspace.dependencies]
+

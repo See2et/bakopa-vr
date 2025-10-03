@@ -1,0 +1,38 @@
+{
+  "filePath": ".spec-workflow/specs/peer-ping-pong/requirements.md",
+  "currentVersion": 4,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-03T20:11:17.463Z",
+      "trigger": "initial",
+      "approvalId": "approval_1759522277438_7vnl42jkr",
+      "approvalTitle": "peer-ping-pong requirements"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-10-03T20:12:59.224Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1759522277438_7vnl42jkr",
+      "approvalTitle": "peer-ping-pong requirements"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-10-03T20:15:26.115Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1759522424446_3zkdh6qbi",
+      "approvalTitle": "peer-ping-pong requirements rev2"
+    },
+    {
+      "version": 4,
+      "filename": "snapshot-004.json",
+      "timestamp": "2025-10-03T20:16:15.981Z",
+      "trigger": "approved",
+      "approvalId": "approval_1759522559797_dn24vouca",
+      "approvalTitle": "peer-ping-pong requirements rev3"
+    }
+  ]
+}

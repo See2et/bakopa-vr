@@ -1,0 +1,21 @@
+{
+  "id": "approval_1759520266017_0o7ioab2y",
+  "title": "tech.md 初版",
+  "filePath": ".spec-workflow/steering/tech.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-03T19:37:46.017Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. ▌ UnityとirohはRust製のサイドカーでやり取りする形でいきましょう。\n▌ また、Bloomという独自概念にも言及して下さい。\n▌ Bloomは、シグナリングサーバーやUGCの管理を担当するサーバーのことです。\n▌ BloomによるFederation+P2Pによるルーム同期、この二層構造で分散型Social-VRを実現します。\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"▌ UnityとirohはRust製のサイドカーでやり取りする形でいきましょう。\\n▌ また、Bloomという独自概念にも言及して下さい。\\n▌ Bloomは、シグナリングサーバーやUGCの管理を担当するサーバーのことです。\\n▌ BloomによるFederation+P2Pによるルーム同期、この二層構造で分散型Social-VRを実現します。\",\n      \"timestamp\": \"2025-10-03T19:45:42.589Z\",\n      \"id\": \"comment_1759520742589_1ed70g5h0\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. ▌ UnityとirohはRust製のサイドカーでやり取りする形でいきましょう。\\n▌ また、Bloomという独自概念にも言及して下さい。\\n▌ Bloomは、シグナリングサーバーやUGCの管理を担当するサーバーのことです。\\n▌ BloomによるFederation+P2Pによるルーム同期、この二層構造で分散型Social-VRを実現します。\\n\\n\",\n  \"timestamp\": \"2025-10-03T19:45:46.101Z\"\n}",
+  "respondedAt": "2025-10-03T19:45:46.339Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "▌ UnityとirohはRust製のサイドカーでやり取りする形でいきましょう。\n▌ また、Bloomという独自概念にも言及して下さい。\n▌ Bloomは、シグナリングサーバーやUGCの管理を担当するサーバーのことです。\n▌ BloomによるFederation+P2Pによるルーム同期、この二層構造で分散型Social-VRを実現します。",
+      "timestamp": "2025-10-03T19:45:42.589Z",
+      "id": "comment_1759520742589_1ed70g5h0"
+    }
+  ]
+}

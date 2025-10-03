@@ -1,0 +1,75 @@
+{
+  "id": "approval_1759520794738_umceexcw6",
+  "title": "tech.md Bloom対応版",
+  "filePath": ".spec-workflow/steering/tech.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-03T19:46:34.738Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (6 comments):\n\nGeneral Comments:\n1. BloomはP2PのSTANサーバーも持ちます\n2. 最初はBloomは1つだけで試験的に運用します\n\nSpecific Text Comments:\n1. \"itch.io\": 使いません！\n2. \"- **bevy_audio_bridge (計画)**: サイドカー内での音声エンコード/ミキシン...\": 削除。利用しないはずのbevy engineの話が混ざっていませんか？\n3. \"glTF/AssetBundle\": とりえあずUnity AssetBundleだけでいいよ\n4. \"Windows PC VR (OpenXR)\": まずはPCVRを最優先します。Desktopモードも欲しい\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"BloomはP2PのSTANサーバーも持ちます\",\n      \"timestamp\": \"2025-10-03T19:50:41.681Z\",\n      \"id\": \"comment_1759521041681_z6dw44zkh\"\n    },\n    {\n      \"type\": \"general\",\n      \"comment\": \"最初はBloomは1つだけで試験的に運用します\",\n      \"timestamp\": \"2025-10-03T19:51:08.842Z\",\n      \"id\": \"comment_1759521068842_oe9jftvld\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"使いません！\",\n      \"timestamp\": \"2025-10-03T19:51:45.973Z\",\n      \"selectedText\": \"itch.io\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1759521105973_5ulrjna1z\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"削除。利用しないはずのbevy engineの話が混ざっていませんか？\",\n      \"timestamp\": \"2025-10-03T19:53:42.203Z\",\n      \"selectedText\": \"- **bevy_audio_bridge (計画)**: サイドカー内での音声エンコード/ミキシングを担当。\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1759521222203_ejev2chm1\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"とりえあずUnity AssetBundleだけでいいよ\",\n      \"timestamp\": \"2025-10-03T19:54:36.277Z\",\n      \"selectedText\": \"glTF/AssetBundle\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1759521276277_jcwy98lpq\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"まずはPCVRを最優先します。Desktopモードも欲しい\",\n      \"timestamp\": \"2025-10-03T19:56:55.177Z\",\n      \"selectedText\": \"Windows PC VR (OpenXR)\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1759521415177_13a274kwf\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (6 comments):\\n\\nGeneral Comments:\\n1. BloomはP2PのSTANサーバーも持ちます\\n2. 最初はBloomは1つだけで試験的に運用します\\n\\nSpecific Text Comments:\\n1. \\\"itch.io\\\": 使いません！\\n2. \\\"- **bevy_audio_bridge (計画)**: サイドカー内での音声エンコード/ミキシン...\\\": 削除。利用しないはずのbevy engineの話が混ざっていませんか？\\n3. \\\"glTF/AssetBundle\\\": とりえあずUnity AssetBundleだけでいいよ\\n4. \\\"Windows PC VR (OpenXR)\\\": まずはPCVRを最優先します。Desktopモードも欲しい\\n\",\n  \"timestamp\": \"2025-10-03T19:56:59.057Z\"\n}",
+  "respondedAt": "2025-10-03T19:56:57.259Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "BloomはP2PのSTANサーバーも持ちます",
+      "timestamp": "2025-10-03T19:50:41.681Z",
+      "id": "comment_1759521041681_z6dw44zkh"
+    },
+    {
+      "type": "general",
+      "comment": "最初はBloomは1つだけで試験的に運用します",
+      "timestamp": "2025-10-03T19:51:08.842Z",
+      "id": "comment_1759521068842_oe9jftvld"
+    },
+    {
+      "type": "selection",
+      "comment": "使いません！",
+      "timestamp": "2025-10-03T19:51:45.973Z",
+      "selectedText": "itch.io",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1759521105973_5ulrjna1z"
+    },
+    {
+      "type": "selection",
+      "comment": "削除。利用しないはずのbevy engineの話が混ざっていませんか？",
+      "timestamp": "2025-10-03T19:53:42.203Z",
+      "selectedText": "- **bevy_audio_bridge (計画)**: サイドカー内での音声エンコード/ミキシングを担当。",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1759521222203_ejev2chm1"
+    },
+    {
+      "type": "selection",
+      "comment": "とりえあずUnity AssetBundleだけでいいよ",
+      "timestamp": "2025-10-03T19:54:36.277Z",
+      "selectedText": "glTF/AssetBundle",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1759521276277_jcwy98lpq"
+    },
+    {
+      "type": "selection",
+      "comment": "まずはPCVRを最優先します。Desktopモードも欲しい",
+      "timestamp": "2025-10-03T19:56:55.177Z",
+      "selectedText": "Windows PC VR (OpenXR)",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1759521415177_13a274kwf"
+    }
+  ]
+}
