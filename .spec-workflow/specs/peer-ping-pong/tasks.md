@@ -18,7 +18,7 @@
   - _Requirements: R2, R3_
   - _Prompt: Implement the task for spec peer-ping-pong, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Rust Networking Engineer | Task: Build the sidecar PeerSession abstraction over iroh to handle listen/dial, Noise handshake, ping/pong send-recv, and retry logic per requirements R2 and R3 | Restrictions: Keep APIs async using tokio, surface errors via a dedicated enum, do not embed CLI-specific logging | Success: sidecar crate compiles with iroh integration, unit or integration tests cover handshake success/failure, retry and timeout logic validated_
 
-- [ ] 4. peer-cli コマンド実装
+- [-] 4. peer-cli コマンド実装
   - Files: rust/crates/peer-cli/src/main.rs, rust/crates/peer-cli/src/commands/listen.rs, rust/crates/peer-cli/src/commands/dial.rs, rust/crates/peer-cli/src/output.rs
   - Clap で `listen`/`dial` サブコマンドを定義し、`sidecar::PeerSession` を呼び出す
   - listen 起動時に生成 Multiaddr を表示し、dial 成功時に RTT などを JSON 出力する
