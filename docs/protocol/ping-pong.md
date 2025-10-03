@@ -17,19 +17,21 @@ cargo build --workspace
 
 ```
 cargo run --bin peer-cli -- listen \
-  --addr 0.0.0.0:5000 \
+  --addr 127.0.0.1:5000 \
   --max-retries 3 \
   --retry-backoff-ms 500
 ```
 
+`--addr` には到達可能なアドレスを指定してください。同一マシン内テストなら `127.0.0.1:5000`、他マシンから接続するならそのマシンのローカル IP を利用します。
+
 実行すると広告用の Multiaddr と peer-id が表示されます。例:
 
 ```
-listening on /ip4/192.168.1.20/udp/5000/quic-v1/p2p/CHO3...
-peer id: CHO3...
+listening on /ip4/127.0.0.1/udp/5000/quic-v1/p2p/Hu3yYqsmtYf9RTcjtC2z5ucbdivu7kZUR4kbv5b47k3D
+peer id: Hu3yYqsmtYf9RTcjtC2z5ucbdivu7kZUR4kbv5b47k3D
 ```
 
-このプロセスは起動したままにしておきます。受信した `ping` に自動で `pong` を返し、イベントを標準出力に表示します。
+このプロセスは起動したままにしておきます。sidecar layer が `UdpSocket` で待受し、受信した `ping` に自動で `pong` を返し、イベントを標準出力に表示します。
 
 ## リスナーへの接続
 
@@ -37,21 +39,21 @@ peer id: CHO3...
 
 ```
 cargo run --bin peer-cli -- dial \
-  --peer /ip4/192.168.1.20/udp/5000/quic-v1/p2p/CHO3... \
+  --peer /ip4/127.0.0.1/udp/5000/quic-v1/p2p/Hu3yYqsmtYf9RTcjtC2z5ucbdivu7kZUR4kbv5b47k3D \
   --addr 0.0.0.0:0 \
   --receive-timeout-ms 2000
 ```
 
-ダイヤラーは `ping` を送信し `pong` を待機、RTT を JSON 形式で出力します。
+ダイヤラーは `UdpSocket` をローカルバインドし `ping` を送信、`pong` を待機し、RTT を JSON 形式で出力します。
 
 ```
-ping sent sequence=1 sent_at=2025-10-03T20:45:00Z
-pong sequence=1 sent_at=2025-10-03T20:45:00.300Z received_ping_at=2025-10-03T20:45:00Z
+ping sent sequence=1 sent_at=2025-10-03 21:24:16.293547188 UTC
+pong sequence=1 sent_at=2025-10-03 21:24:16.293785876 UTC received_ping_at=2025-10-03 21:24:16.293547188 UTC
 {
   "sequence": 1,
-  "rtt_ms": 300.5,
+  "rtt_ms": 0.238,
   "attempts": 1,
-  "peer": "CHO3..."
+  "peer": "Hu3yYqsmtYf9RTcjtC2z5ucbdivu7kZUR4kbv5b47k3D"
 }
 ```
 

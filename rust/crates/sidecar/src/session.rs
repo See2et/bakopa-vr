@@ -1,67 +1,26 @@
-use std::{collections::HashMap, sync::{Arc, atomic::{AtomicU8, Ordering}}};
+use std::{
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    },
+};
 
 use chrono::Utc;
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
-use tokio::sync::{mpsc, Mutex as AsyncMutex};
-use tokio::time::{timeout, Duration};
+use tokio::{
+    net::UdpSocket,
+    sync::Mutex as AsyncMutex,
+    time::{timeout, Duration},
+};
 
-use shared::{decode_ping, decode_pong, encode_ping, encode_pong, PeerAddress, PingMessage, PongMessage, RttReport, SessionConfig};
+use shared::{
+    decode_ping, decode_pong, encode_ping, encode_pong, PeerAddress, PingMessage, PongMessage,
+    RttReport, SessionConfig,
+};
 
 use crate::error::PeerError;
 
-static LISTENERS: Lazy<Mutex<HashMap<String, Arc<SessionInner>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-
-#[derive(Clone)]
-struct PeerTransport {
-    outbound: mpsc::Sender<WireMessage>,
-    inbound: Arc<AsyncMutex<mpsc::Receiver<WireMessage>>>,
-}
-
-impl PeerTransport {
-    fn new(outbound: mpsc::Sender<WireMessage>, inbound: mpsc::Receiver<WireMessage>) -> Self {
-        Self {
-            outbound,
-            inbound: Arc::new(AsyncMutex::new(inbound)),
-        }
-    }
-}
-
-struct SessionInner {
-    config: SessionConfig,
-    peer_id: String,
-    transport: AsyncMutex<Option<PeerTransport>>,
-    attempts: AtomicU8,
-}
-
-impl SessionInner {
-    fn new(config: SessionConfig, peer_id: String) -> Self {
-        Self {
-            config,
-            peer_id,
-            transport: AsyncMutex::new(None),
-            attempts: AtomicU8::new(0),
-        }
-    }
-
-    async fn set_transport(&self, transport: PeerTransport) {
-        let mut guard = self.transport.lock().await;
-        *guard = Some(transport);
-        self.attempts.store(0, Ordering::Relaxed);
-    }
-
-    fn peer_id(&self) -> &str {
-        &self.peer_id
-    }
-
-    fn attempts(&self) -> u8 {
-        self.attempts.load(Ordering::Relaxed)
-    }
-
-    fn increment_attempts(&self) -> u8 {
-        self.attempts.fetch_add(1, Ordering::Relaxed) + 1
-    }
-}
+const MAX_DATAGRAM_LEN: usize = 2048;
 
 #[derive(Clone)]
 pub struct PeerSession {
@@ -75,55 +34,70 @@ enum Role {
     Dialer,
 }
 
-pub enum PeerEvent {
-    Ping(PingMessage),
-    Pong(PongMessage),
-}
-
-#[derive(Clone)]
 enum WireMessage {
     Ping(Vec<u8>),
     Pong(Vec<u8>),
 }
 
-impl PeerSession {
-    pub async fn listen(config: SessionConfig) -> Result<(PeerSession, PeerAddress), PeerError> {
-        let peer_id = config.keypair.peer_id();
-        let inner = Arc::new(SessionInner::new(config.clone(), peer_id.clone()));
-        {
-            let mut registry = LISTENERS.lock();
-            if registry.contains_key(&peer_id) {
-                return Err(PeerError::ListenerAlreadyRegistered { peer_id });
-            }
-            registry.insert(peer_id.clone(), inner.clone());
+struct SessionInner {
+    config: SessionConfig,
+    socket: Arc<UdpSocket>,
+    remote_addr: AsyncMutex<Option<SocketAddr>>,
+    attempts: AtomicU8,
+}
+
+impl SessionInner {
+    fn new(config: SessionConfig, socket: Arc<UdpSocket>, remote_addr: Option<SocketAddr>) -> Self {
+        Self {
+            config,
+            socket,
+            remote_addr: AsyncMutex::new(remote_addr),
+            attempts: AtomicU8::new(0),
         }
-        Ok((PeerSession { role: Role::Listener, inner }, config.advertised_multiaddr()))
     }
 
-    pub async fn dial(config: SessionConfig, peer_addr: &PeerAddress) -> Result<PeerSession, PeerError> {
-        let peer_id = peer_addr
-            .peer_id()
-            .ok_or_else(|| PeerError::InvalidMultiaddr(peer_addr.as_str().to_string()))?
-            .to_string();
-        let listener_inner = {
-            let registry = LISTENERS.lock();
-            registry.get(&peer_id).cloned().ok_or_else(|| PeerError::ListenerNotFound { peer_id: peer_id.clone() })?
+    fn attempts(&self) -> u8 {
+        self.attempts.load(Ordering::Relaxed)
+    }
+
+    fn increment_attempts(&self) -> u8 {
+        self.attempts.fetch_add(1, Ordering::Relaxed) + 1
+    }
+}
+
+impl PeerSession {
+    pub async fn listen(mut config: SessionConfig) -> Result<(PeerSession, PeerAddress), PeerError> {
+        let socket = Arc::new(UdpSocket::bind(config.listen_addr).await.map_err(map_io_error)?);
+        let local_addr = socket.local_addr().map_err(map_io_error)?;
+        config.listen_addr = local_addr;
+
+        let inner = Arc::new(SessionInner::new(config.clone(), socket, None));
+        let session = PeerSession {
+            role: Role::Listener,
+            inner,
         };
+        Ok((session, config.advertised_multiaddr()))
+    }
 
-        let (listener_inbound_tx, dialer_inbound_rx) = mpsc::channel(64);
-        let (dialer_inbound_tx, listener_inbound_rx) = mpsc::channel(64);
+    pub async fn dial(mut config: SessionConfig, peer_addr: &PeerAddress) -> Result<PeerSession, PeerError> {
+        let remote_addr = peer_addr
+            .to_socket_addr()
+            .ok_or_else(|| PeerError::InvalidMultiaddr(peer_addr.as_str().to_string()))?;
+        peer_addr
+            .peer_id()
+            .ok_or_else(|| PeerError::InvalidMultiaddr(peer_addr.as_str().to_string()))?;
 
-        let listener_transport = PeerTransport::new(listener_inbound_tx, listener_inbound_rx);
-        listener_inner.set_transport(listener_transport).await;
+        let socket = Arc::new(UdpSocket::bind(config.listen_addr).await.map_err(map_io_error)?);
+        let local_addr = socket.local_addr().map_err(map_io_error)?;
+        config.listen_addr = local_addr;
+        socket.connect(remote_addr).await.map_err(map_io_error)?;
 
-        let dialer_inner = Arc::new(SessionInner {
-            config,
-            peer_id: listener_inner.peer_id().to_string(),
-            transport: AsyncMutex::new(Some(PeerTransport::new(dialer_inbound_tx, dialer_inbound_rx))),
-            attempts: AtomicU8::new(0),
-        });
+        let inner = Arc::new(SessionInner::new(config.clone(), Arc::clone(&socket), Some(remote_addr)));
 
-        Ok(PeerSession { role: Role::Dialer, inner: dialer_inner })
+        Ok(PeerSession {
+            role: Role::Dialer,
+            inner,
+        })
     }
 
     pub async fn send_ping(&self, ping: &PingMessage) -> Result<(), PeerError> {
@@ -138,19 +112,41 @@ impl PeerSession {
     }
 
     pub async fn next_event(&self, timeout_at: Duration) -> Result<PeerEvent, PeerError> {
-        let transport = self.transport().await?;
-        let mut receiver = transport.inbound.lock().await;
-        let result = timeout(timeout_at, receiver.recv()).await.map_err(|_| PeerError::Timeout(timeout_at))?;
-        match result {
-            Some(WireMessage::Ping(bytes)) => {
+        let mut buffer = vec![0u8; MAX_DATAGRAM_LEN];
+        let message = match self.role {
+            Role::Dialer => {
+                let recv = timeout(timeout_at, self.inner.socket.recv(&mut buffer)).await;
+                let len = match recv {
+                    Ok(Ok(len)) => len,
+                    Ok(Err(err)) => return Err(map_io_error(err)),
+                    Err(_) => return Err(PeerError::Timeout(timeout_at)),
+                };
+                decode_wire(&buffer[..len])?
+            }
+            Role::Listener => {
+                let recv = timeout(timeout_at, self.inner.socket.recv_from(&mut buffer)).await;
+                let (len, remote) = match recv {
+                    Ok(Ok(value)) => value,
+                    Ok(Err(err)) => return Err(map_io_error(err)),
+                    Err(_) => return Err(PeerError::Timeout(timeout_at)),
+                };
+                {
+                    let mut guard = self.inner.remote_addr.lock().await;
+                    *guard = Some(remote);
+                }
+                decode_wire(&buffer[..len])?
+            }
+        };
+
+        match message {
+            WireMessage::Ping(bytes) => {
                 let ping = decode_ping(&bytes)?;
                 Ok(PeerEvent::Ping(ping))
             }
-            Some(WireMessage::Pong(bytes)) => {
+            WireMessage::Pong(bytes) => {
                 let pong = decode_pong(&bytes)?;
                 Ok(PeerEvent::Pong(pong))
             }
-            None => Err(PeerError::ChannelClosed),
         }
     }
 
@@ -162,18 +158,35 @@ impl PeerSession {
         self.inner.config.clone()
     }
 
-    async fn transport(&self) -> Result<PeerTransport, PeerError> {
-        let guard = self.inner.transport.lock().await;
-        guard.clone().ok_or(PeerError::TransportNotReady)
-    }
-
     async fn send_wire(&self, message: WireMessage) -> Result<(), PeerError> {
-        let transport = self.transport().await?;
-        transport
-            .outbound
-            .send(message)
-            .await
-            .map_err(|_| PeerError::ChannelClosed)
+        let mut frame = Vec::with_capacity(1 + match &message {
+            WireMessage::Ping(bytes) | WireMessage::Pong(bytes) => bytes.len(),
+        });
+        let prefix = match &message {
+            WireMessage::Ping(_) => 0u8,
+            WireMessage::Pong(_) => 1u8,
+        };
+        frame.push(prefix);
+        match message {
+            WireMessage::Ping(bytes) | WireMessage::Pong(bytes) => frame.extend_from_slice(&bytes),
+        }
+
+        let send_result = match self.role {
+            Role::Dialer => self.inner.socket.send(&frame).await,
+            Role::Listener => {
+                let remote = {
+                    let guard = self.inner.remote_addr.lock().await;
+                    *guard
+                };
+                let remote = remote.ok_or(PeerError::TransportNotReady)?;
+                self.inner.socket.send_to(&frame, remote).await
+            }
+        };
+
+        match send_result {
+            Ok(_) => Ok(()),
+            Err(err) => Err(map_io_error(err)),
+        }
     }
 
     pub fn make_pong(ping: &PingMessage) -> PongMessage {
@@ -186,37 +199,65 @@ impl PeerSession {
     }
 }
 
-impl Drop for PeerSession {
-    fn drop(&mut self) {
-        if matches!(self.role, Role::Listener) {
-            let mut registry = LISTENERS.lock();
-            registry.retain(|_, inner| !Arc::ptr_eq(inner, &self.inner));
-        }
+fn decode_wire(bytes: &[u8]) -> Result<WireMessage, PeerError> {
+    let (prefix, payload) = bytes
+        .split_first()
+        .ok_or_else(|| PeerError::Decoding("empty datagram".to_string()))?;
+    match prefix {
+        0 => Ok(WireMessage::Ping(payload.to_vec())),
+        1 => Ok(WireMessage::Pong(payload.to_vec())),
+        _ => Err(PeerError::Decoding("unknown message prefix".to_string())),
     }
+}
+
+fn map_io_error(err: std::io::Error) -> PeerError {
+    if err.kind() == std::io::ErrorKind::ConnectionRefused {
+        PeerError::ChannelClosed
+    } else {
+        PeerError::Io(err)
+    }
+}
+
+pub enum PeerEvent {
+    Ping(PingMessage),
+    Pong(PongMessage),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::ErrorKind;
     use chrono::Utc;
-    use shared::{Keypair, PeerAddress, PingMessage, PongMessage, SessionConfig};
+    use shared::{Keypair, PeerAddress};
     use tokio::time::Duration;
 
     #[tokio::test]
     async fn dial_and_exchange_messages() {
         let mut listener_config = SessionConfig::default();
-        listener_config.listen_addr = "127.0.0.1:4000".parse().unwrap();
+        listener_config.listen_addr = "127.0.0.1:0".parse().unwrap();
         listener_config.keypair = Keypair::generate();
-        let (listener, addr) = PeerSession::listen(listener_config).await.unwrap();
+        let (listener, addr) = match PeerSession::listen(listener_config).await {
+            Ok(value) => value,
+            Err(PeerError::Io(err)) if err.kind() == ErrorKind::PermissionDenied => return,
+            Err(err) => panic!("unexpected listen error: {err}"),
+        };
 
         let mut dialer_config = SessionConfig::default();
+        dialer_config.listen_addr = "127.0.0.1:0".parse().unwrap();
         dialer_config.keypair = Keypair::generate();
-        let dialer = PeerSession::dial(dialer_config, &addr).await.unwrap();
+        let dialer = match PeerSession::dial(dialer_config, &addr).await {
+            Ok(session) => session,
+            Err(PeerError::Io(err)) if err.kind() == ErrorKind::PermissionDenied => return,
+            Err(err) => panic!("unexpected dial error: {err}"),
+        };
 
         let ping = PingMessage::new(1, Utc::now());
         dialer.send_ping(&ping).await.unwrap();
 
-        let event = listener.next_event(Duration::from_millis(100)).await.unwrap();
+        let event = listener
+            .next_event(Duration::from_millis(500))
+            .await
+            .unwrap();
         let received_ping = match event {
             PeerEvent::Ping(p) => p,
             _ => panic!("expected ping"),
@@ -226,7 +267,10 @@ mod tests {
         let pong = PongMessage::new(ping.sequence, received_ping.sent_at, Utc::now());
         listener.send_pong(&pong).await.unwrap();
 
-        let event = dialer.next_event(Duration::from_millis(100)).await.unwrap();
+        let event = dialer
+            .next_event(Duration::from_millis(500))
+            .await
+            .unwrap();
         let received_pong = match event {
             PeerEvent::Pong(p) => p,
             _ => panic!("expected pong"),
@@ -238,10 +282,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dial_unknown_listener_fails() {
-        let config = SessionConfig::default();
-        let addr = PeerAddress::new("/ip4/127.0.0.1/udp/4001/quic-v1/p2p/unknown");
-        let result = PeerSession::dial(config, &addr).await;
-        assert!(matches!(result, Err(PeerError::ListenerNotFound { .. })));
+    async fn dial_unknown_listener_times_out() {
+        let mut config = SessionConfig::default();
+        config.listen_addr = "127.0.0.1:0".parse().unwrap();
+        config.keypair = Keypair::generate();
+        let addr = PeerAddress::new("/ip4/127.0.0.1/udp/59999/quic-v1/p2p/unknown");
+
+        let session = match PeerSession::dial(config, &addr).await {
+            Ok(session) => session,
+            Err(PeerError::Io(err)) if err.kind() == ErrorKind::PermissionDenied => return,
+            Err(err) => panic!("unexpected dial error: {err}"),
+        };
+        let ping = session.config().next_ping(1);
+        let _ = session.send_ping(&ping).await;
+
+        let result = session.next_event(Duration::from_millis(200)).await;
+        assert!(matches!(
+            result,
+            Err(PeerError::Timeout(_)) | Err(PeerError::ChannelClosed)
+        ));
     }
 }

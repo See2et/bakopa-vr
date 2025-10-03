@@ -4,10 +4,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum PeerError {
-    #[error("listener already registered for peer id {peer_id}")]
-    ListenerAlreadyRegistered { peer_id: String },
-    #[error("listener not found for peer id {peer_id}")]
-    ListenerNotFound { peer_id: String },
     #[error("invalid multiaddr: {0}")]
     InvalidMultiaddr(String),
     #[error("transport is not ready")]
@@ -20,6 +16,8 @@ pub enum PeerError {
     Encoding(String),
     #[error("decoding error: {0}")]
     Decoding(String),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl From<rmp_serde::encode::Error> for PeerError {
