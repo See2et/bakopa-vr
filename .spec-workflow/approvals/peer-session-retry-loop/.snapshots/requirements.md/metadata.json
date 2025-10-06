@@ -1,0 +1,30 @@
+{
+  "filePath": ".spec-workflow/specs/peer-session-retry-loop/requirements.md",
+  "currentVersion": 3,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-04T07:38:17.002Z",
+      "trigger": "initial",
+      "approvalId": "approval_1759563496978_bdsgs4pn4",
+      "approvalTitle": "Requirements for peer-session-retry-loop"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-10-04T08:07:40.758Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1759563496978_bdsgs4pn4",
+      "approvalTitle": "Requirements for peer-session-retry-loop"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-10-04T08:09:48.107Z",
+      "trigger": "approved",
+      "approvalId": "approval_1759565336377_rjx5bftxt",
+      "approvalTitle": "Requirements for peer-session-retry-loop (rev 2)"
+    }
+  ]
+}

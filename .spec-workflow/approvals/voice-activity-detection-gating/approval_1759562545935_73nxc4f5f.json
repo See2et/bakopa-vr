@@ -1,0 +1,12 @@
+{
+  "id": "approval_1759562545935_73nxc4f5f",
+  "title": "Requirements approval (rev 2)",
+  "filePath": ".spec-workflow/specs/voice-activity-detection-gating/requirements.md",
+  "type": "document",
+  "status": "rejected",
+  "createdAt": "2025-10-04T07:22:25.935Z",
+  "category": "spec",
+  "categoryName": "voice-activity-detection-gating",
+  "response": "内容がGitHub Issue#5のものと違う",
+  "respondedAt": "2025-10-04T07:35:36.949Z"
+}

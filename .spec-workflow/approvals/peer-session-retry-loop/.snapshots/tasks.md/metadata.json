@@ -1,0 +1,14 @@
+{
+  "filePath": ".spec-workflow/specs/peer-session-retry-loop/tasks.md",
+  "currentVersion": 1,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-04T08:14:57.730Z",
+      "trigger": "initial",
+      "approvalId": "approval_1759565697721_ybgbw81ap",
+      "approvalTitle": "Tasks for peer-session-retry-loop"
+    }
+  ]
+}
