@@ -8,7 +8,7 @@
   - _Requirements: 1.1,1.2,1.3,2.3_
   - _Prompt: Implement the task for spec peer-session-retry-loop, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Rust Networking Engineer | Task: Introduce a retry-aware `PeerSession::dial` loop using Tokio primitives, honoring existing configuration fields, and updating attempt tracking so RTT reports count the successful attempt | Restrictions: Avoid adding new external dependencies, keep helper functions private to session.rs, maintain backwards-compatible public APIs | _Leverage: rust/crates/sidecar/src/session.rs, rust/crates/sidecar/src/error.rs | _Requirements: 1.1,1.2,1.3,2.3 | Success: Dial retries respect max/backoff settings, failures return aggregated context, RTT attempts reflect the final successful try_
 
-- [ ] 2. `PeerEvent::DialRetry` と CLI 出力の拡張
+- [x] 2. `PeerEvent::DialRetry` と CLI 出力の拡張
   - File: rust/crates/sidecar/src/session.rs
   - `PeerEvent` に再試行イベントを追加し、`dial` ループから発行する。CLI 側 (`rust/crates/peer-cli/src/commands/dial.rs`) のイベントループを更新し、再試行状況を構造化ログと人間向けメッセージで表示する。
   - Purpose: 再試行の可観測性を高め、オペレーターへ進捗を伝達する。
@@ -16,7 +16,7 @@
   - _Requirements: 2.1,2.2,2.3_
   - _Prompt: Implement the task for spec peer-session-retry-loop, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Rust CLI Engineer | Task: Add a `PeerEvent::DialRetry` variant emitted by the dial loop and surface those events in the peer-cli dial command with both structured tracing and concise user-facing messages | Restrictions: Do not break existing Ping/Pong event handling, keep logging consistent with current tracing configuration, avoid blocking the async event loop | _Leverage: rust/crates/sidecar/src/session.rs, rust/crates/peer-cli/src/commands/dial.rs | _Requirements: 2.1,2.2,2.3 | Success: CLI shows retry progress per attempt and structured logs include attempt/backoff metadata_
 
-- [ ] 3. リトライ経路を検証する自動テストの追加
+- [x] 3. リトライ経路を検証する自動テストの追加
   - File: rust/crates/sidecar/tests/session_tests.rs
   - 遅延リスナーを用いた「再試行後成功」と、応答しないアドレスを使う「再試行尽きて失敗」の統合テストを実装する。必要に応じてテスト専用ヘルパーを追加する。
   - Purpose: 回帰を防ぎ、複数試行の振る舞いを自動検証する。

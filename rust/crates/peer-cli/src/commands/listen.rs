@@ -65,6 +65,9 @@ async fn run_event_loop(session: PeerSession, receive_timeout: Duration) {
             Ok(PeerEvent::Pong(pong)) => {
                 output::print_pong(&pong);
             }
+            Ok(PeerEvent::DialRetry(_)) => {
+                // Listener connections should not emit dial retry events, so ignore safely.
+            }
             Err(sidecar::PeerError::Timeout(_)) => {
                 // No inbound traffic, idle briefly to avoid busy loop.
                 sleep(Duration::from_millis(50)).await;
