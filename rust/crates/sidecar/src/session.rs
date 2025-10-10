@@ -1,17 +1,13 @@
-use std::{
-    net::SocketAddr,
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc,
-    },
-};
+use std::collections::VecDeque;
+use std::io::ErrorKind;
+use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 
 use chrono::Utc;
-use tokio::{
-    net::UdpSocket,
-    sync::Mutex as AsyncMutex,
-    time::{timeout, Duration},
-};
+use tokio::net::UdpSocket;
+use tokio::sync::Mutex as AsyncMutex;
+use tokio::time::{sleep, timeout, Duration, Instant};
 
 use shared::{
     decode_ping, decode_pong, encode_ping, encode_pong, PeerAddress, PingMessage, PongMessage,
@@ -39,20 +35,37 @@ enum WireMessage {
     Pong(Vec<u8>),
 }
 
+#[derive(Debug, Clone)]
+pub struct DialRetryEvent {
+    pub peer: String,
+    pub attempt: u8,
+    pub max_attempts: u8,
+    pub backoff_ms: u64,
+    pub elapsed_ms: u128,
+    pub error: String,
+}
+
 struct SessionInner {
     config: SessionConfig,
     socket: Arc<UdpSocket>,
     remote_addr: AsyncMutex<Option<SocketAddr>>,
     attempts: AtomicU8,
+    events: AsyncMutex<VecDeque<PeerEvent>>,
 }
 
 impl SessionInner {
-    fn new(config: SessionConfig, socket: Arc<UdpSocket>, remote_addr: Option<SocketAddr>) -> Self {
+    fn new(
+        config: SessionConfig,
+        socket: Arc<UdpSocket>,
+        remote_addr: Option<SocketAddr>,
+        initial_events: VecDeque<PeerEvent>,
+    ) -> Self {
         Self {
             config,
             socket,
             remote_addr: AsyncMutex::new(remote_addr),
             attempts: AtomicU8::new(0),
+            events: AsyncMutex::new(initial_events),
         }
     }
 
@@ -60,8 +73,13 @@ impl SessionInner {
         self.attempts.load(Ordering::Relaxed)
     }
 
-    fn increment_attempts(&self) -> u8 {
-        self.attempts.fetch_add(1, Ordering::Relaxed) + 1
+    fn set_attempts(&self, attempts: u8) {
+        self.attempts.store(attempts, Ordering::Relaxed);
+    }
+
+    async fn pop_event(&self) -> Option<PeerEvent> {
+        let mut guard = self.events.lock().await;
+        guard.pop_front()
     }
 }
 
@@ -71,7 +89,12 @@ impl PeerSession {
         let local_addr = socket.local_addr().map_err(map_io_error)?;
         config.listen_addr = local_addr;
 
-        let inner = Arc::new(SessionInner::new(config.clone(), socket, None));
+        let inner = Arc::new(SessionInner::new(
+            config.clone(),
+            socket,
+            None,
+            VecDeque::new(),
+        ));
         let session = PeerSession {
             role: Role::Listener,
             inner,
@@ -87,12 +110,25 @@ impl PeerSession {
             .peer_id()
             .ok_or_else(|| PeerError::InvalidMultiaddr(peer_addr.as_str().to_string()))?;
 
-        let socket = Arc::new(UdpSocket::bind(config.listen_addr).await.map_err(map_io_error)?);
-        let local_addr = socket.local_addr().map_err(map_io_error)?;
+        let mut pending_events = VecDeque::new();
+        let (socket, local_addr, attempt) = retry_bind_and_connect(
+            config.listen_addr,
+            remote_addr,
+            config.max_retries,
+            config.retry_backoff_ms,
+            peer_addr.as_str(),
+            |event| pending_events.push_back(event),
+        )
+        .await?;
         config.listen_addr = local_addr;
-        socket.connect(remote_addr).await.map_err(map_io_error)?;
 
-        let inner = Arc::new(SessionInner::new(config.clone(), Arc::clone(&socket), Some(remote_addr)));
+        let inner = Arc::new(SessionInner::new(
+            config.clone(),
+            socket,
+            Some(remote_addr),
+            pending_events,
+        ));
+        inner.set_attempts(attempt);
 
         Ok(PeerSession {
             role: Role::Dialer,
@@ -102,7 +138,6 @@ impl PeerSession {
 
     pub async fn send_ping(&self, ping: &PingMessage) -> Result<(), PeerError> {
         let payload = encode_ping(ping)?;
-        self.inner.increment_attempts();
         self.send_wire(WireMessage::Ping(payload)).await
     }
 
@@ -112,6 +147,10 @@ impl PeerSession {
     }
 
     pub async fn next_event(&self, timeout_at: Duration) -> Result<PeerEvent, PeerError> {
+        if let Some(event) = self.inner.pop_event().await {
+            return Ok(event);
+        }
+
         let mut buffer = vec![0u8; MAX_DATAGRAM_LEN];
         let message = match self.role {
             Role::Dialer => {
@@ -199,6 +238,88 @@ impl PeerSession {
     }
 }
 
+async fn retry_bind_and_connect<F>(
+    listen_addr: SocketAddr,
+    remote_addr: SocketAddr,
+    max_retries: u8,
+    backoff_ms: u64,
+    peer_label: &str,
+    mut emit: F,
+) -> Result<(Arc<UdpSocket>, SocketAddr, u8), PeerError>
+where
+    F: FnMut(PeerEvent),
+{
+    let total_allowed = max_retries.saturating_add(1);
+    let mut attempt: u8 = 0;
+    let start = Instant::now();
+
+    loop {
+        attempt = attempt.saturating_add(1);
+        match bind_and_connect(listen_addr, remote_addr).await {
+            Ok((socket, local_addr)) => return Ok((socket, local_addr, attempt)),
+            Err(err) => {
+                if !should_retry_dial(&err) {
+                    return Err(err);
+                }
+
+                if attempt >= total_allowed {
+                    return Err(PeerError::DialAttemptsExhausted {
+                        attempts: attempt,
+                        last_error: Box::new(err),
+                    });
+                }
+
+                emit(PeerEvent::DialRetry(DialRetryEvent {
+                    peer: peer_label.to_string(),
+                    attempt,
+                    max_attempts: total_allowed,
+                    backoff_ms,
+                    elapsed_ms: start.elapsed().as_millis(),
+                    error: err.to_string(),
+                }));
+
+                sleep(Duration::from_millis(backoff_ms)).await;
+            }
+        }
+    }
+}
+
+async fn bind_and_connect(
+    listen_addr: SocketAddr,
+    remote_addr: SocketAddr,
+) -> Result<(Arc<UdpSocket>, SocketAddr), PeerError> {
+    let socket = UdpSocket::bind(listen_addr).await.map_err(map_io_error)?;
+
+    if let Err(err) = socket.connect(remote_addr).await {
+        return Err(map_io_error(err));
+    }
+
+    let socket = Arc::new(socket);
+    let local_addr = socket.local_addr().map_err(map_io_error)?;
+
+    Ok((socket, local_addr))
+}
+
+fn should_retry_dial(error: &PeerError) -> bool {
+    match error {
+        PeerError::ChannelClosed | PeerError::Timeout(_) => true,
+        PeerError::Io(err) => matches!(
+            err.kind(),
+            ErrorKind::ConnectionRefused
+                | ErrorKind::ConnectionReset
+                | ErrorKind::ConnectionAborted
+                | ErrorKind::TimedOut
+                | ErrorKind::Interrupted
+                | ErrorKind::NotConnected
+                | ErrorKind::NetworkUnreachable
+                | ErrorKind::HostUnreachable
+                | ErrorKind::AddrInUse
+                | ErrorKind::AddrNotAvailable
+        ),
+        _ => false,
+    }
+}
+
 fn decode_wire(bytes: &[u8]) -> Result<WireMessage, PeerError> {
     let (prefix, payload) = bytes
         .split_first()
@@ -219,6 +340,7 @@ fn map_io_error(err: std::io::Error) -> PeerError {
 }
 
 pub enum PeerEvent {
+    DialRetry(DialRetryEvent),
     Ping(PingMessage),
     Pong(PongMessage),
 }

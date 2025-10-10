@@ -1,0 +1,21 @@
+{
+  "id": "approval_1759563496978_bdsgs4pn4",
+  "title": "Requirements for peer-session-retry-loop",
+  "filePath": ".spec-workflow/specs/peer-session-retry-loop/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-04T07:38:16.978Z",
+  "category": "spec",
+  "categoryName": "peer-session-retry-loop",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. とりま日本語に\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"とりま日本語に\",\n      \"timestamp\": \"2025-10-04T08:07:40.959Z\",\n      \"id\": \"comment_1759565260959_vvq8ckze6\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. とりま日本語に\\n\\n\",\n  \"timestamp\": \"2025-10-04T08:07:43.358Z\"\n}",
+  "respondedAt": "2025-10-04T08:07:40.762Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "とりま日本語に",
+      "timestamp": "2025-10-04T08:07:40.959Z",
+      "id": "comment_1759565260959_vvq8ckze6"
+    }
+  ]
+}

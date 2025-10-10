@@ -54,18 +54,17 @@ pub async fn run(args: DialArgs) -> Result<()> {
     output::print_ping(&ping);
 
     let timeout = Duration::from_millis(args.receive_timeout_ms);
-    let event = session.next_event(timeout).await?;
-    let pong = match event {
-        PeerEvent::Pong(pong) => pong,
-        PeerEvent::Ping(ping) => {
-            // Unexpected ping from listener; respond and wait again.
-            let pong = PeerSession::make_pong(&ping);
-            session.send_pong(&pong).await?;
-            output::print_info("received ping while dialling, responded with pong");
-            let event = session.next_event(timeout).await?;
-            match event {
-                PeerEvent::Pong(pong) => pong,
-                _ => return Err(anyhow::anyhow!("expected pong after responding to listener")),
+    let pong = loop {
+        match session.next_event(timeout).await? {
+            PeerEvent::Pong(pong) => break pong,
+            PeerEvent::Ping(ping) => {
+                // Unexpected ping from listener; respond and wait again.
+                let pong = PeerSession::make_pong(&ping);
+                session.send_pong(&pong).await?;
+                output::print_info("received ping while dialling, responded with pong");
+            }
+            PeerEvent::DialRetry(retry) => {
+                output::print_retry(&retry)?;
             }
         }
     };

@@ -1,0 +1,21 @@
+{
+  "id": "approval_1759562442572_erobhtph8",
+  "title": "Requirements approval",
+  "filePath": ".spec-workflow/specs/voice-activity-detection-gating/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-04T07:20:42.572Z",
+  "category": "spec",
+  "categoryName": "voice-activity-detection-gating",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. とりあえず和訳\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"とりあえず和訳\",\n      \"timestamp\": \"2025-10-04T07:21:27.048Z\",\n      \"id\": \"comment_1759562487048_arwnrc2uq\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. とりあえず和訳\\n\\n\",\n  \"timestamp\": \"2025-10-04T07:21:29.928Z\"\n}",
+  "respondedAt": "2025-10-04T07:21:26.272Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "とりあえず和訳",
+      "timestamp": "2025-10-04T07:21:27.048Z",
+      "id": "comment_1759562487048_arwnrc2uq"
+    }
+  ]
+}

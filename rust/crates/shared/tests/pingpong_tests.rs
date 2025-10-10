@@ -1,8 +1,6 @@
 use chrono::Utc;
-use shared::{
-    decode_ping, decode_pong, encode_ping, encode_pong, format_multiaddr, Keypair, PeerAddress,
-    PingMessage, PongMessage,
-};
+use shared::{decode_ping, decode_pong, encode_ping, encode_pong, format_multiaddr, Keypair,
+             PeerAddress, PingMessage, PongMessage};
 
 #[test]
 fn ping_and_pong_roundtrip() {

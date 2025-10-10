@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/voice-activity-detection-gating/requirements.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-04T07:20:42.590Z",
+      "trigger": "initial",
+      "approvalId": "approval_1759562442572_erobhtph8",
+      "approvalTitle": "Requirements approval"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-10-04T07:21:26.268Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1759562442572_erobhtph8",
+      "approvalTitle": "Requirements approval"
+    }
+  ]
+}

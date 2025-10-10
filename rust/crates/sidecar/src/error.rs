@@ -10,6 +10,12 @@ pub enum PeerError {
     TransportNotReady,
     #[error("communication channel closed")]
     ChannelClosed,
+    #[error("dial attempts exhausted after {attempts} tries: {last_error}")]
+    DialAttemptsExhausted {
+        attempts: u8,
+        #[source]
+        last_error: Box<PeerError>,
+    },
     #[error("operation timed out after {0:?}")]
     Timeout(Duration),
     #[error("encoding error: {0}")]
