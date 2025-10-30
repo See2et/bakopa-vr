@@ -46,24 +46,6 @@
 4. `docs/tests/workspace/2025-10-30_workspace-bootstrap.md` を作成し、後述テストケースを記載する。
 5. `cargo check --workspace` が通ることを確認する（現時点では失敗が想定されるが、最終的な完了条件として明記）。
 
-## 疑似コード／スケルトン例
-```rust
-// crates/syncer/src/lib.rs
-pub fn initialize_syncer() {
-    // TODO: irohベースのP2P初期化ロジックを実装
-}
-
-// crates/sidecar/src/lib.rs
-pub fn bridge_connections() {
-    // TODO: WebSocketによるクライアント橋渡しロジック
-}
-
-// crates/bloom/src/lib.rs
-pub fn load_ugc() {
-    // TODO: BloomノードのUGC管理ロジック
-}
-```
-
 ## テスト方針
 - Rustワークスペースでのビルドが成立することを確認するためのテストを先に用意する。
 
