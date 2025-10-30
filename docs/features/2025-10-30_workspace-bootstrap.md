@@ -20,17 +20,16 @@
 /
 ├─ Cargo.toml              # ワークスペース定義のみ。実装コードは含めない。
 ├─ rust-toolchain.toml     # (任意) rustcバージョン固定。1.80.0 もしくは最新版stableを想定。
-├─ crates/
-│  ├─ syncer/
-│  │   ├─ Cargo.toml
-│  │   └─ src/lib.rs      # 空のモジュール。今後`src/bin/main.rs`追加予定。
-│  ├─ sidecar/
-│  │   ├─ Cargo.toml
-│  │   └─ src/lib.rs
-│  └─ bloom/
-│      ├─ Cargo.toml
-│      └─ src/lib.rs
-├─ client/               # Unityプロジェクトを配置する専用ディレクトリ。
+├─ syncer/
+│   ├─ Cargo.toml
+│   └─ src/lib.rs          # 空のモジュール。今後`src/bin/main.rs`追加予定。
+├─ sidecar/
+│   ├─ Cargo.toml
+│   └─ src/lib.rs
+│─ bloom/
+    ├─ Cargo.toml
+    └─ src/lib.rs
+├─ client/                 # Unityプロジェクトを配置する専用ディレクトリ。
 ```
 
 ## 実装方針
