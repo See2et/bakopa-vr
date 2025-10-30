@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::config::NodeConfig;
-use iroh::EndpointAddr;
+use iroh::{Endpoint, EndpointAddr};
 
 /// Placeholder structure representing a running Syncer node.
 #[derive(Clone, Debug)]
