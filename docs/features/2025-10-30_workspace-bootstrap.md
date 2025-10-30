@@ -29,7 +29,7 @@
 │─ bloom/
     ├─ Cargo.toml
     └─ src/lib.rs
-├─ client/                 # Unityプロジェクトを配置する専用ディレクトリ。
+└─ client/                 # Unityプロジェクトを配置する専用ディレクトリ。
 ```
 
 ## 実装方針
