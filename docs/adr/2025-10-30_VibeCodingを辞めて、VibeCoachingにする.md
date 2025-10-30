@@ -1,5 +1,5 @@
 ---
-status: "WIP"
+status: "ACCEPTED"
 ---
 # VibeCodingを辞めて、VibeCoachingにする
 
