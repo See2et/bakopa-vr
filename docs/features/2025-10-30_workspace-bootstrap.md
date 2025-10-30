@@ -33,17 +33,15 @@
 ```
 
 ## 実装方針
-- ワークスペースのトップレベル`Cargo.toml`には`[workspace]`セクションと`members`のみを記述する。依存関係は各クレートの`Cargo.toml`で管理する。
-- 各クレートの`Cargo.toml`はresolverとmemberのみ定義し、依存関係は追加しない。
-- `src/lib.rs` は最小限のプレースホルダ（例: `pub fn stub() {}`）を含むダミー関数の宣言に留め、今後の実装の足掛りにする。
+- ワークスペースのトップレベル`Cargo.toml`には`[workspace]`セクションと`resolver`、`members`のみを記述する。依存関係は各クレートの`Cargo.toml`で管理する。
+- `src/lib.rs`には`fn main()`のみを配置する。
 - Unityディレクトリには`.gitkeep`のみ配置し、今後Unity Hubでプロジェクトを生成しやすいよう空ディレクトリを確保する。
 
 ## 手順案
 1. ルートに`Cargo.toml`と（必要なら）`rust-toolchain.toml`を追加する。
 2. `crates/`以下に`cargo new --lib <name>`相当の構造を手動で作成し、ダミー関数だけを定義する。
 3. `client/unity/.gitkeep` を追加し、Unity側の入口を明示する。
-4. `docs/tests/workspace/2025-10-30_workspace-bootstrap.md` を作成し、後述テストケースを記載する。
-5. `cargo check --workspace` が通ることを確認する（現時点では失敗が想定されるが、最終的な完了条件として明記）。
+4. `cargo check --workspace` が通ることを確認する（現時点では失敗が想定されるが、最終的な完了条件として明記）。
 
 ## テスト方針
 - Rustワークスペースでのビルドが成立することを確認するためのテストを先に用意する。
