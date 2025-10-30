@@ -34,10 +34,9 @@
 
 ## 実装方針
 - ワークスペースのトップレベル`Cargo.toml`には`[workspace]`セクションと`members`のみを記述する。依存関係は各クレートの`Cargo.toml`で管理する。
-- 各クレートの`Cargo.toml`は`edition = "2021"`、`crate-type = ["rlib"]`のみ定義し、依存関係は追加しない。
+- 各クレートの`Cargo.toml`はresolverとmemberのみ定義し、依存関係は追加しない。
 - `src/lib.rs` は最小限のプレースホルダ（例: `pub fn stub() {}`）を含むダミー関数の宣言に留め、今後の実装の足掛りにする。
 - Unityディレクトリには`.gitkeep`のみ配置し、今後Unity Hubでプロジェクトを生成しやすいよう空ディレクトリを確保する。
-- `docs/tests/workspace/` に後述のテスト仕様書を配置することで、実装とテストの責務を分離する。
 
 ## 手順案
 1. ルートに`Cargo.toml`と（必要なら）`rust-toolchain.toml`を追加する。
