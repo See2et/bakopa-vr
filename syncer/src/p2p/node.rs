@@ -43,11 +43,21 @@ impl SyncerNode {
 
 fn load_or_generate_secret_key(secret_key_path: &Option<PathBuf>) -> Result<iroh::SecretKey> {
     let secret_key = if let Some(path) = secret_key_path {
-        let bytes = fs::read(path)?;
-        let bytes: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid secret key length"))?;
-        iroh::SecretKey::from_bytes(&bytes)
+        match fs::read(path) {
+            Ok(bytes) => {
+                let bytes: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("Invalid secret key length"))?;
+                iroh::SecretKey::from_bytes(&bytes)
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to read secret key at {:?}: {}. Generating new one.",
+                    path, e
+                );
+                iroh::SecretKey::generate(&mut rng())
+            }
+        }
     } else {
         iroh::SecretKey::generate(&mut rng())
     };
