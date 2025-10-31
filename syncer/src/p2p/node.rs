@@ -3,14 +3,18 @@ use rand::rng;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::config::NodeConfig;
 use iroh::{Endpoint, EndpointAddr};
 
 /// Placeholder structure representing a running Syncer node.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SyncerNode {
     endpoint: Endpoint,
+    accept_task: JoinHandle<()>,
+    cancel: CancellationToken,
 }
 
 impl SyncerNode {
@@ -25,8 +29,38 @@ impl SyncerNode {
                 .secret_key(secret_key)
                 .bind_addr_v6(*&v6),
         };
+
+        let endpoint = builder.bind().await?;
+
+        let cancel = CancellationToken::new();
+        let accept_task = tokio::spawn({
+            let endpoint = endpoint.clone();
+            let cancel = cancel.clone();
+            async move {
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        incoming = endpoint.accept() =>
+                            match incoming {
+                                Some(connecting) => match connecting.await {
+                                    Ok(connection) => {
+                                        todo!("successed to connect!")
+                                    }
+                                    Err(err) => {
+                                        todo!("failed to connect: {}", err)
+                                    }
+                                },
+                                _ => break,
+                            }
+                    }
+                }
+            }
+        });
+
         Ok(SyncerNode {
-            endpoint: builder.bind().await?,
+            endpoint: endpoint,
+            accept_task: accept_task,
+            cancel: cancel,
         })
     }
 
