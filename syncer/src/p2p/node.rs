@@ -1,4 +1,7 @@
 use anyhow::Result;
+use rand::rng;
+use std::fs;
+use std::path::PathBuf;
 
 use crate::config::NodeConfig;
 use iroh::{Endpoint, EndpointAddr};
@@ -11,6 +14,7 @@ impl SyncerNode {
     /// Spawns a Syncer node according to the provided configuration.
     pub async fn start(config: &NodeConfig) -> Result<Self> {
         let _ = config;
+        let key = load_or_generate_private_key(&config.private_key_path)?;
         todo!("SyncerNode::start is not implemented yet");
     }
 
@@ -23,4 +27,17 @@ impl SyncerNode {
     pub fn endpoint_addr(&self) -> EndpointAddr {
         todo!("SyncerNode::endpoint_addr is not implemented yet");
     }
+}
+
+fn load_or_generate_private_key(private_key_path: &Option<PathBuf>) -> Result<iroh::SecretKey> {
+    let private_key = if let Some(path) = private_key_path {
+        let bytes = fs::read(path)?;
+        let bytes: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid private key length"))?;
+        iroh::SecretKey::from_bytes(&bytes)
+    } else {
+        iroh::SecretKey::generate(&mut rng())
+    };
+    Ok(private_key)
 }
