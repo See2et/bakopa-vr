@@ -31,6 +31,8 @@ impl SyncerNode {
         };
 
         let endpoint = builder.bind().await?;
+        // ここのalpnsは適当に命名しました。来たるときに良い感じにしましょう
+        endpoint.set_alpns(vec![b"sutera/sync/0".to_vec()]);
 
         let cancel = CancellationToken::new();
         let accept_task = tokio::spawn({
