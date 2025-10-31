@@ -14,7 +14,7 @@ impl SyncerNode {
     /// Spawns a Syncer node according to the provided configuration.
     pub async fn start(config: &NodeConfig) -> Result<Self> {
         let _ = config;
-        let key = load_or_generate_private_key(&config.private_key_path)?;
+        let key = load_or_generate_secret_key(&config.secret_key_path)?;
         todo!("SyncerNode::start is not implemented yet");
     }
 
@@ -29,15 +29,15 @@ impl SyncerNode {
     }
 }
 
-fn load_or_generate_private_key(private_key_path: &Option<PathBuf>) -> Result<iroh::SecretKey> {
-    let private_key = if let Some(path) = private_key_path {
+fn load_or_generate_secret_key(secret_key_path: &Option<PathBuf>) -> Result<iroh::SecretKey> {
+    let secret_key = if let Some(path) = secret_key_path {
         let bytes = fs::read(path)?;
         let bytes: [u8; 32] = bytes
             .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid private key length"))?;
+            .map_err(|_| anyhow::anyhow!("Invalid secret key length"))?;
         iroh::SecretKey::from_bytes(&bytes)
     } else {
         iroh::SecretKey::generate(&mut rng())
     };
-    Ok(private_key)
+    Ok(secret_key)
 }

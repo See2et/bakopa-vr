@@ -7,7 +7,7 @@ use iroh::EndpointAddr;
 pub struct NodeConfig {
     pub listen_addr: SocketAddr,
     pub peers: Vec<EndpointAddr>,
-    pub private_key_path: Option<PathBuf>,
+    pub secret_key_path: Option<PathBuf>,
     pub bootstrap_message: Option<String>,
 }
 
@@ -17,7 +17,7 @@ impl NodeConfig {
         Self {
             listen_addr,
             peers: Vec::new(),
-            private_key_path: None,
+            secret_key_path: None,
             bootstrap_message: None,
         }
     }
@@ -35,8 +35,8 @@ impl NodeConfig {
     }
 
     /// Overrides the location where the node keeps its private key material.
-    pub fn with_private_key_path(mut self, path: PathBuf) -> Self {
-        self.private_key_path = Some(path);
+    pub fn with_secret_key_path(mut self, path: PathBuf) -> Self {
+        self.secret_key_path = Some(path);
         self
     }
 }
