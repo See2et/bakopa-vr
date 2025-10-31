@@ -1,6 +1,7 @@
 use anyhow::Result;
 use rand::rng;
 use std::fs;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use crate::config::NodeConfig;
@@ -8,14 +9,25 @@ use iroh::{Endpoint, EndpointAddr};
 
 /// Placeholder structure representing a running Syncer node.
 #[derive(Clone, Debug)]
-pub struct SyncerNode;
+pub struct SyncerNode {
+    endpoint: Endpoint,
+}
 
 impl SyncerNode {
     /// Spawns a Syncer node according to the provided configuration.
     pub async fn start(config: &NodeConfig) -> Result<Self> {
-        let _ = config;
-        let key = load_or_generate_secret_key(&config.secret_key_path)?;
-        todo!("SyncerNode::start is not implemented yet");
+        let secret_key = load_or_generate_secret_key(&config.secret_key_path)?;
+        let builder = match config.listen_addr {
+            SocketAddr::V4(v4) => Endpoint::builder()
+                .secret_key(secret_key)
+                .bind_addr_v4(*&v4),
+            SocketAddr::V6(v6) => Endpoint::builder()
+                .secret_key(secret_key)
+                .bind_addr_v6(*&v6),
+        };
+        Ok(SyncerNode {
+            endpoint: builder.bind().await?,
+        })
     }
 
     /// Returns advertised peer addresses for discovery.
