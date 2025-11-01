@@ -3,7 +3,7 @@ use rand::rng;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::config::NodeConfig;
@@ -64,6 +64,22 @@ impl SyncerNode {
             accept_task: accept_task,
             cancel: cancel,
         })
+    }
+
+    pub async fn shutdown(self) -> Result<(), JoinError> {
+        let SyncerNode {
+            endpoint,
+            accept_task,
+            cancel,
+        } = self;
+
+        cancel.cancel();
+        let _ = endpoint.close().await;
+
+        match accept_task.await {
+            Ok(()) => Ok(()),
+            Err(err) => Err(err),
+        }
     }
 
     /// Returns advertised peer addresses for discovery.
