@@ -165,55 +165,13 @@ where
                 }
             }
             ClientToServer::Offer { to, payload } => {
-                let room_id = self
-                    .room_id
-                    .clone()
-                    .expect("room must be set before signaling");
-                let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
-
-                self.core
-                    .relay_offer(&room_id, &self.participant_id, &to_id, payload.clone())
-                    .expect("relay_offer should succeed in this test");
-
-                let event = ServerToClient::Offer {
-                    from: self.participant_id.to_string(),
-                    payload,
-                };
-                self.broadcast.send_to(&to_id, event);
+                self.handle_signaling_offer(to, payload).await;
             }
             ClientToServer::Answer { to, payload } => {
-                let room_id = self
-                    .room_id
-                    .clone()
-                    .expect("room must be set before signaling");
-                let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
-
-                self.core
-                    .relay_answer(&room_id, &self.participant_id, &to_id, payload.clone())
-                    .expect("relay_answer should succeed in this test");
-
-                let event = ServerToClient::Answer {
-                    from: self.participant_id.to_string(),
-                    payload,
-                };
-                self.broadcast.send_to(&to_id, event);
+                self.handle_signaling_answer(to, payload).await;
             }
             ClientToServer::IceCandidate { to, payload } => {
-                let room_id = self
-                    .room_id
-                    .clone()
-                    .expect("room must be set before signaling");
-                let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
-
-                self.core
-                    .relay_ice_candidate(&room_id, &self.participant_id, &to_id, payload.clone())
-                    .expect("relay_ice_candidate should succeed in this test");
-
-                let event = ServerToClient::IceCandidate {
-                    from: self.participant_id.to_string(),
-                    payload,
-                };
-                self.broadcast.send_to(&to_id, event);
+                self.handle_signaling_ice(to, payload).await;
             }
         }
     }
@@ -245,6 +203,92 @@ where
 
             // room_idをクリア
             self.room_id = None;
+        }
+    }
+
+    async fn handle_signaling_offer(&mut self, to: String, payload: RelaySdp) {
+        let room_id = self
+            .room_id
+            .clone()
+            .expect("room must be set before signaling");
+        let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
+
+        match self
+            .core
+            .relay_offer(&room_id, &self.participant_id, &to_id, payload.clone())
+        {
+            Ok(_) => {
+                let event = ServerToClient::Offer {
+                    from: self.participant_id.to_string(),
+                    payload,
+                };
+                self.broadcast.send_to(&to_id, event);
+            }
+            Err(code) => {
+                let err = ServerToClient::Error {
+                    code,
+                    message: "failed to relay offer".into(),
+                };
+                self.sink.send(err);
+            }
+        }
+    }
+
+    async fn handle_signaling_answer(&mut self, to: String, payload: RelaySdp) {
+        let room_id = self
+            .room_id
+            .clone()
+            .expect("room must be set before signaling");
+        let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
+
+        match self
+            .core
+            .relay_answer(&room_id, &self.participant_id, &to_id, payload.clone())
+        {
+            Ok(_) => {
+                let event = ServerToClient::Answer {
+                    from: self.participant_id.to_string(),
+                    payload,
+                };
+                self.broadcast.send_to(&to_id, event);
+            }
+            Err(code) => {
+                let err = ServerToClient::Error {
+                    code,
+                    message: "failed to relay answer".into(),
+                };
+                self.sink.send(err);
+            }
+        }
+    }
+
+    async fn handle_signaling_ice(&mut self, to: String, payload: RelayIce) {
+        let room_id = self
+            .room_id
+            .clone()
+            .expect("room must be set before signaling");
+        let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
+
+        match self.core.relay_ice_candidate(
+            &room_id,
+            &self.participant_id,
+            &to_id,
+            payload.clone(),
+        ) {
+            Ok(_) => {
+                let event = ServerToClient::IceCandidate {
+                    from: self.participant_id.to_string(),
+                    payload,
+                };
+                self.broadcast.send_to(&to_id, event);
+            }
+            Err(code) => {
+                let err = ServerToClient::Error {
+                    code,
+                    message: "failed to relay ice".into(),
+                };
+                self.sink.send(err);
+            }
         }
     }
 }
@@ -628,5 +672,132 @@ mod tests {
         // 傍受者・送信者には届かない
         assert!(handler.broadcast.messages_for(&bystander).is_none());
         assert!(handler.broadcast.messages_for(&sender).is_none());
+    }
+
+    /// 宛先不在のOfferで、送信者にError(ParticipantNotFound)が返り、他参加者には何も届かないことを検証（RED）。
+    #[tokio::test]
+    async fn offer_to_missing_participant_returns_error_and_no_leak() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let missing = ParticipantId::new();
+        let receiver = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone()],
+        };
+
+        let core = MockCore::new(core_result)
+            .with_relay_offer_result(Err(ErrorCode::ParticipantNotFound));
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
+        handler.perform_handshake().await;
+        handler.room_id = Some(room_id.clone());
+
+        // 宛先missingに対するOfferを送信
+        handler
+            .handle_text_message(&format!(
+                r#"{{"type":"Offer","to":"{}","sdp":"v=0 offer"}}"#,
+                missing
+            ))
+            .await;
+
+        // 送信者にはErrorが1件届く
+        assert_eq!(handler.sink.sent.len(), 1);
+        assert!(matches!(
+            handler.sink.sent[0],
+            ServerToClient::Error {
+                code: ErrorCode::ParticipantNotFound,
+                ..
+            }
+        ));
+
+        // 宛先missingにも、既存receiverにも何も届かない
+        assert!(handler.broadcast.messages_for(&missing).is_none());
+        assert!(handler.broadcast.messages_for(&receiver).is_none());
+    }
+
+    /// 宛先不在のAnswerでも送信者にのみエラーを返し、他には送らない。
+    #[tokio::test]
+    async fn answer_to_missing_participant_returns_error_and_no_leak() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let missing = ParticipantId::new();
+        let receiver = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone()],
+        };
+
+        let core = MockCore::new(core_result)
+            .with_relay_answer_result(Err(ErrorCode::ParticipantNotFound));
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
+        handler.perform_handshake().await;
+        handler.room_id = Some(room_id.clone());
+
+        handler
+            .handle_text_message(&format!(
+                r#"{{"type":"Answer","to":"{}","sdp":"v=0 answer"}}"#,
+                missing
+            ))
+            .await;
+
+        assert_eq!(handler.sink.sent.len(), 1);
+        assert!(matches!(
+            handler.sink.sent[0],
+            ServerToClient::Error {
+                code: ErrorCode::ParticipantNotFound,
+                ..
+            }
+        ));
+        assert!(handler.broadcast.messages_for(&missing).is_none());
+        assert!(handler.broadcast.messages_for(&receiver).is_none());
+    }
+
+    /// 宛先不在のIceCandidateでも送信者にのみエラーを返し、他には送らない。
+    #[tokio::test]
+    async fn ice_to_missing_participant_returns_error_and_no_leak() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let missing = ParticipantId::new();
+        let receiver = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone()],
+        };
+
+        let core = MockCore::new(core_result)
+            .with_relay_ice_result(Err(ErrorCode::ParticipantNotFound));
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
+        handler.perform_handshake().await;
+        handler.room_id = Some(room_id.clone());
+
+        handler
+            .handle_text_message(&format!(
+                r#"{{"type":"IceCandidate","to":"{}","candidate":"cand1"}}"#,
+                missing
+            ))
+            .await;
+
+        assert_eq!(handler.sink.sent.len(), 1);
+        assert!(matches!(
+            handler.sink.sent[0],
+            ServerToClient::Error {
+                code: ErrorCode::ParticipantNotFound,
+                ..
+            }
+        ));
+        assert!(handler.broadcast.messages_for(&missing).is_none());
+        assert!(handler.broadcast.messages_for(&receiver).is_none());
     }
 }
