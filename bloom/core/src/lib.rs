@@ -88,6 +88,24 @@ impl RoomManager {
             None
         }
     }
+
+    /// 指定参加者をRoomから離脱させ、最新の参加者リストを返す。
+    pub fn leave_room(
+        &mut self,
+        room_id: &RoomId,
+        participant: &ParticipantId,
+    ) -> Option<Vec<ParticipantId>> {
+        if let Some(room) = self.rooms.get_mut(room_id) {
+            room.participants.retain(|p| p != participant);
+            if room.participants.is_empty() {
+                self.rooms.remove(room_id);
+                return Some(vec![]);
+            }
+            Some(room.participants.clone())
+        } else {
+            None
+        }
+    }
 }
 
 /// Room作成時の戻り値。
@@ -218,5 +236,59 @@ mod tests {
                 list
             ),
         }
+    }
+
+    #[test]
+    fn leave_room_removes_participant_and_keeps_others() {
+        let mut manager = RoomManager::new();
+        let owner = ParticipantId::new();
+        let create = manager.create_room(owner.clone());
+        let room_id = create.room_id.clone();
+
+        let p2 = ParticipantId::new();
+        let p3 = ParticipantId::new();
+        let _ = manager
+            .join_room(&room_id, p2.clone())
+            .expect("room exists")
+            .expect("join p2 ok");
+        let _ = manager
+            .join_room(&room_id, p3.clone())
+            .expect("room exists")
+            .expect("join p3 ok");
+
+        let after_leave = manager
+            .leave_room(&room_id, &p2)
+            .expect("room exists for leave");
+
+        assert!(
+            !after_leave.contains(&p2),
+            "離脱した参加者はリストから除去される"
+        );
+        assert!(after_leave.contains(&owner), "他の参加者は残る（オーナー）");
+        assert!(after_leave.contains(&p3), "他の参加者は残る（p3）");
+        assert_eq!(after_leave.len(), 2, "残り2名のはず");
+    }
+
+    #[test]
+    fn leave_room_removes_room_when_empty() {
+        let mut manager = RoomManager::new();
+        let owner = ParticipantId::new();
+        let create = manager.create_room(owner.clone());
+        let room_id = create.room_id.clone();
+
+        let after_leave = manager
+            .leave_room(&room_id, &owner)
+            .expect("room exists for leave");
+        assert!(
+            after_leave.is_empty(),
+            "最後の参加者が抜ければリストは空になる"
+        );
+
+        // 部屋が削除されているため、再joinはroomなしとして扱われることを期待
+        let join_after_empty = manager.join_room(&room_id, ParticipantId::new());
+        assert!(
+            join_after_empty.is_none(),
+            "空になった部屋は削除され、join不可であるべき"
+        );
     }
 }
