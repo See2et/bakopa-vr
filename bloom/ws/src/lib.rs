@@ -282,6 +282,112 @@ mod tests {
         assert!(has_room, "span must include room_id field when handling leave");
     }
 
+    /// coreイベントのPeerConnectedブロードキャストspanにroom_id/participant_idが含まれることを検証する（Red）。
+    #[tokio::test]
+    async fn core_peer_connected_span_contains_room_and_participant() {
+        let room_id = RoomId::new();
+        let p1 = ParticipantId::new();
+        let p2 = ParticipantId::new();
+        let newcomer = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: p1.clone(),
+            participants: vec![p1.clone(), p2.clone()],
+        };
+
+        let shared_broadcast = SharedBroadcastSink::default();
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let mut handler = WsHandler::new(core, p1.clone(), sink, shared_broadcast.clone());
+        handler.room_id = Some(room_id.clone());
+
+        let layer = RecordingLayer::default();
+        let subscriber = Registry::default().with(layer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        handler
+            .broadcast_peer_connected(&[p1.clone(), p2.clone()], &newcomer)
+            .await;
+
+        drop(_guard);
+
+        let spans = layer.spans.lock().expect("span records should be collected");
+        assert!(!spans.is_empty(), "peer connected should emit span");
+
+        let span = spans
+            .iter()
+            .find(|s| {
+                s.fields
+                    .get("participant_id")
+                    .map(|v| v.contains(&p1.to_string()))
+                    .unwrap_or(false)
+            })
+            .expect("span with participant_id should exist");
+
+        let has_room = span
+            .fields
+            .get("room_id")
+            .map(|v| v.contains(&room_id.to_string()))
+            .unwrap_or(false);
+
+        assert!(has_room, "peer connected span must include room_id");
+    }
+
+    /// coreイベントのPeerDisconnectedブロードキャストspanにroom_id/participant_idが含まれることを検証する（Red）。
+    #[tokio::test]
+    async fn core_peer_disconnected_span_contains_room_and_participant() {
+        let room_id = RoomId::new();
+        let p1 = ParticipantId::new();
+        let p2 = ParticipantId::new();
+        let leaving = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: p1.clone(),
+            participants: vec![p1.clone(), p2.clone(), leaving.clone()],
+        };
+
+        let shared_broadcast = SharedBroadcastSink::default();
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let mut handler = WsHandler::new(core, p1.clone(), sink, shared_broadcast.clone());
+        handler.room_id = Some(room_id.clone());
+
+        let layer = RecordingLayer::default();
+        let subscriber = Registry::default().with(layer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        handler
+            .broadcast_peer_disconnected(&[p1.clone(), p2.clone()], &leaving)
+            .await;
+
+        drop(_guard);
+
+        let spans = layer.spans.lock().expect("span records should be collected");
+        assert!(!spans.is_empty(), "peer disconnected should emit span");
+
+        let span = spans
+            .iter()
+            .find(|s| {
+                s.fields
+                    .get("participant_id")
+                    .map(|v| v.contains(&p1.to_string()))
+                    .unwrap_or(false)
+            })
+            .expect("span with participant_id should exist");
+
+        let has_room = span
+            .fields
+            .get("room_id")
+            .map(|v| v.contains(&room_id.to_string()))
+            .unwrap_or(false);
+
+        assert!(has_room, "peer disconnected span must include room_id");
+    }
+
     /// RateLimited時のwarnログにparticipant_idフィールドが文字列IDで入っていることを検証する（Red）。
     #[tokio::test]
     async fn rate_limit_warn_contains_participant_id_field() {
