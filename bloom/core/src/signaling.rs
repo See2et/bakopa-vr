@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bloom_api::{RelayIce, RelaySdp, ServerToClient};
+use bloom_api::{ErrorCode, RelayIce, RelaySdp, ServerToClient};
 
 use crate::ParticipantId;
 
@@ -57,6 +57,22 @@ pub fn relay_answer(
         payload,
     };
     delivery.send(to, message);
+}
+
+/// 受信者の存在確認付きでOfferを配送する。
+/// 宛先が参加者リストに存在しない場合はParticipantNotFoundを返し、配送しない。
+pub fn relay_offer_checked(
+    delivery: &mut impl DeliverySink,
+    participants: &[ParticipantId],
+    from: &ParticipantId,
+    to: &ParticipantId,
+    payload: RelaySdp,
+) -> Result<(), ErrorCode> {
+    if !participants.contains(to) {
+        return Err(ErrorCode::ParticipantNotFound);
+    }
+    relay_offer(delivery, from, to, payload);
+    Ok(())
 }
 
 /// ICE candidate を特定宛先へ1:1で配送する。
@@ -203,6 +219,37 @@ mod tests {
         assert!(
             sink.messages_for(&sender).is_none(),
             "送信者自身にメッセージが返らないこと"
+        );
+    }
+
+    #[test]
+    fn relay_offer_checked_returns_error_and_delivers_to_no_one_when_recipient_missing() {
+        let mut sink = MockDeliverySink::new();
+        let sender = ParticipantId::new();
+        let existing = ParticipantId::new();
+        let missing = ParticipantId::new();
+        let participants = vec![sender.clone(), existing];
+        let payload = RelaySdp {
+            sdp: "v=0 offer".into(),
+        };
+
+        let result =
+            relay_offer_checked(&mut sink, &participants, &sender, &missing, payload.clone());
+
+        assert_eq!(
+            result,
+            Err(ErrorCode::ParticipantNotFound),
+            "宛先不在ならParticipantNotFoundを返す"
+        );
+
+        // 宛先にも送信者にも配送されない
+        assert!(
+            sink.messages_for(&missing).is_none(),
+            "不在宛先には何も届かない"
+        );
+        assert!(
+            sink.messages_for(&sender).is_none(),
+            "送信者にもループバックしない"
         );
     }
 }
