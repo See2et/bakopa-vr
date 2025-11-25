@@ -68,7 +68,7 @@ pub fn relay_offer_checked(
     to: &ParticipantId,
     payload: RelaySdp,
 ) -> Result<(), ErrorCode> {
-    if !participants.contains(to) {
+    if !participants.contains(from) || !participants.contains(to) {
         return Err(ErrorCode::ParticipantNotFound);
     }
     relay_offer(delivery, from, to, payload);
@@ -250,6 +250,39 @@ mod tests {
         assert!(
             sink.messages_for(&sender).is_none(),
             "送信者にもループバックしない"
+        );
+    }
+
+    #[test]
+    fn relay_offer_checked_returns_error_when_sender_not_in_room() {
+        let mut sink = MockDeliverySink::new();
+        let sender_not_in_room = ParticipantId::new();
+        let receiver_in_room = ParticipantId::new();
+        let participants = vec![receiver_in_room.clone()];
+        let payload = RelaySdp {
+            sdp: "v=0 offer".into(),
+        };
+
+        let result = relay_offer_checked(
+            &mut sink,
+            &participants,
+            &sender_not_in_room,
+            &receiver_in_room,
+            payload,
+        );
+
+        assert_eq!(
+            result,
+            Err(ErrorCode::ParticipantNotFound),
+            "未参加送信者ならParticipantNotFoundを返す（専用コード未定のため流用）"
+        );
+        assert!(
+            sink.messages_for(&receiver_in_room).is_none(),
+            "宛先にも配送されない"
+        );
+        assert!(
+            sink.messages_for(&sender_not_in_room).is_none(),
+            "送信者にも配送されない"
         );
     }
 }
