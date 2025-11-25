@@ -81,9 +81,9 @@ Bloomはシグナリング専用の役割を担い、クライアント⇔Bloom�
 - `Cargo.toml` : Rustワークスペースルート
 - `bloom/`：Bloomのディレクトリ
     - `Cargo.toml`
-    - `bloom-api/`：プロトコルの定義だけを切り出す
-    - `bloom-core/`：状態やビジネスロジック
-    - `bloom-ws/`：WebSocketの取り扱い
+    - `api/`：プロトコルの定義だけを切り出す
+    - `core/`：状態やビジネスロジック
+    - `ws/`：WebSocketの取り扱い
 - `syncer/`：将来的に追加
 - `sidecar/`：将来的に追加
 - `docs/`
