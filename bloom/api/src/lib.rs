@@ -354,4 +354,85 @@ mod tests {
         let unknown_code = r#"{"type":"Error","code":"TotallyUnknown","message":"oops"}"#;
         assert!(serde_json::from_str::<ServerToClient>(unknown_code).is_err());
     }
+
+    #[test]
+    fn smoke_roundtrip_all_messages() {
+        // pick one sample for each variant to ensure tag-based dispatch works end-to-end
+        let samples: Vec<ClientToServer> = vec![
+            ClientToServer::CreateRoom,
+            ClientToServer::JoinRoom {
+                room_id: "r".into(),
+            },
+            ClientToServer::LeaveRoom,
+            ClientToServer::Offer {
+                to: "p2".into(),
+                payload: RelaySdp {
+                    sdp: "offer".into(),
+                },
+            },
+            ClientToServer::Answer {
+                to: "p1".into(),
+                payload: RelaySdp {
+                    sdp: "answer".into(),
+                },
+            },
+            ClientToServer::IceCandidate {
+                to: "p3".into(),
+                payload: RelayIce {
+                    candidate: "cand".into(),
+                },
+            },
+        ];
+
+        for msg in samples {
+            let json = serde_json::to_string(&msg).expect("serialize");
+            let back: ClientToServer = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(back, msg);
+        }
+
+        let events: Vec<ServerToClient> = vec![
+            ServerToClient::RoomCreated {
+                room_id: "r".into(),
+                self_id: "self".into(),
+            },
+            ServerToClient::RoomParticipants {
+                room_id: "r".into(),
+                participants: vec!["a".into(), "b".into()],
+            },
+            ServerToClient::PeerConnected {
+                participant_id: "a".into(),
+            },
+            ServerToClient::PeerDisconnected {
+                participant_id: "b".into(),
+            },
+            ServerToClient::Offer {
+                from: "a".into(),
+                payload: RelaySdp {
+                    sdp: "off".into(),
+                },
+            },
+            ServerToClient::Answer {
+                from: "b".into(),
+                payload: RelaySdp {
+                    sdp: "ans".into(),
+                },
+            },
+            ServerToClient::IceCandidate {
+                from: "c".into(),
+                payload: RelayIce {
+                    candidate: "cand".into(),
+                },
+            },
+            ServerToClient::Error {
+                code: ErrorCode::RoomFull,
+                message: "full".into(),
+            },
+        ];
+
+        for ev in events {
+            let json = serde_json::to_string(&ev).expect("serialize");
+            let back: ServerToClient = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(back, ev);
+        }
+    }
 }
