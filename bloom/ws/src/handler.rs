@@ -86,7 +86,7 @@ where
     B: BroadcastSink,
 {
     /// Perform WebSocket handshake (HTTP 101 expected).
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(participant_id=?self.participant_id))]
     pub async fn perform_handshake(&mut self) -> HandshakeResponse {
         HandshakeResponse { status: 101 }
     }
