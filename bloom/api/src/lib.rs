@@ -10,6 +10,8 @@ pub enum ClientToServer {
     CreateRoom,
     /// 既存Roomに参加する要求（room_id必須）。
     JoinRoom { room_id: String },
+    /// Roomから離脱する要求（フィールドなし）。
+    LeaveRoom,
 }
 
 #[cfg(test)]
@@ -58,5 +60,20 @@ mod tests {
 
         // Assert
         assert!(result.is_err(), "room_id欠落はエラーであるべき");
+    }
+
+    #[test]
+    fn leave_room_roundtrip_uses_type_tagged_json() {
+        // Arrange
+        let msg = ClientToServer::LeaveRoom;
+
+        // Act
+        let json = serde_json::to_string(&msg).expect("should serialize");
+
+        // Assert: 仕様では {"type":"LeaveRoom"} を期待する。
+        assert_eq!(json, r#"{"type":"LeaveRoom"}"#);
+
+        let back: ClientToServer = serde_json::from_str(&json).expect("should deserialize");
+        assert_eq!(back, msg);
     }
 }
