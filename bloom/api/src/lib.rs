@@ -42,7 +42,7 @@ mod tests {
         let json = serde_json::to_string(&msg).expect("should serialize");
 
         // Assert: 仕様では {"type":"JoinRoom","room_id":"..."} を期待する。
-        assert_eq!(json, r#"{\"type\":\"JoinRoom\",\"room_id\":\"room-1\"}"#);
+        assert_eq!(json, r#"{"type":"JoinRoom","room_id":"room-1"}"#);
 
         let back: ClientToServer = serde_json::from_str(&json).expect("should deserialize");
         assert_eq!(back, msg);
@@ -51,7 +51,7 @@ mod tests {
     #[test]
     fn join_room_missing_room_id_is_error() {
         // Arrange: room_id欠落。
-        let json = r#"{\"type\":\"JoinRoom\"}"#;
+        let json = r#"{"type":"JoinRoom"}"#;
 
         // Act
         let result: Result<ClientToServer, _> = serde_json::from_str(json);
