@@ -13,11 +13,23 @@ pub enum ClientToServer {
     /// Roomから離脱する要求（フィールドなし）。
     LeaveRoom,
     /// WebRTC Offer を特定participantへ中継要求。
-    Offer { to: String, sdp: String },
+    Offer {
+        to: String,
+        #[serde(flatten)]
+        payload: RelaySdp,
+    },
     /// WebRTC Answer を特定participantへ中継要求。
-    Answer { to: String, sdp: String },
+    Answer {
+        to: String,
+        #[serde(flatten)]
+        payload: RelaySdp,
+    },
     /// ICE candidate を特定participantへ中継要求。
-    IceCandidate { to: String, candidate: String },
+    IceCandidate {
+        to: String,
+        #[serde(flatten)]
+        payload: RelayIce,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -39,20 +51,37 @@ pub enum ServerToClient {
     },
     Offer {
         from: String,
-        sdp: String,
+        #[serde(flatten)]
+        payload: RelaySdp,
     },
     Answer {
         from: String,
-        sdp: String,
+        #[serde(flatten)]
+        payload: RelaySdp,
     },
     IceCandidate {
         from: String,
-        candidate: String,
+        #[serde(flatten)]
+        payload: RelayIce,
     },
     Error {
         code: ErrorCode,
         message: String,
     },
+}
+
+/// SDP を伴うシグナリング転送メッセージの共通ペイロード。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelaySdp {
+    pub sdp: String,
+}
+
+/// ICE candidate を伴うシグナリング転送メッセージの共通ペイロード。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelayIce {
+    pub candidate: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -131,7 +160,9 @@ mod tests {
     fn offer_roundtrip_and_rejects_unknown_field() {
         let msg = ClientToServer::Offer {
             to: "peer-b".into(),
-            sdp: "v=0...".into(),
+            payload: RelaySdp {
+                sdp: "v=0...".into(),
+            },
         };
 
         let json = serde_json::to_string(&msg).expect("serialize");
@@ -149,7 +180,9 @@ mod tests {
     fn answer_roundtrip_and_rejects_unknown_field() {
         let msg = ClientToServer::Answer {
             to: "peer-a".into(),
-            sdp: "v=0 ans".into(),
+            payload: RelaySdp {
+                sdp: "v=0 ans".into(),
+            },
         };
 
         let json = serde_json::to_string(&msg).expect("serialize");
@@ -166,7 +199,9 @@ mod tests {
     fn ice_candidate_roundtrip_and_missing_candidate_is_error() {
         let msg = ClientToServer::IceCandidate {
             to: "peer-c".into(),
-            candidate: "cand1".into(),
+            payload: RelayIce {
+                candidate: "cand1".into(),
+            },
         };
 
         let json = serde_json::to_string(&msg).expect("serialize");
@@ -252,7 +287,9 @@ mod tests {
     fn server_offer_answer_ice_roundtrip() {
         let offer = ServerToClient::Offer {
             from: "p1".into(),
-            sdp: "offer".into(),
+            payload: RelaySdp {
+                sdp: "offer".into(),
+            },
         };
         let json_offer = serde_json::to_string(&offer).expect("serialize");
         assert_eq!(json_offer, r#"{"type":"Offer","from":"p1","sdp":"offer"}"#);
@@ -261,7 +298,9 @@ mod tests {
 
         let answer = ServerToClient::Answer {
             from: "p2".into(),
-            sdp: "answer".into(),
+            payload: RelaySdp {
+                sdp: "answer".into(),
+            },
         };
         let json_answer = serde_json::to_string(&answer).expect("serialize");
         assert_eq!(
@@ -273,7 +312,9 @@ mod tests {
 
         let ice = ServerToClient::IceCandidate {
             from: "p3".into(),
-            candidate: "cand".into(),
+            payload: RelayIce {
+                candidate: "cand".into(),
+            },
         };
         let json_ice = serde_json::to_string(&ice).expect("serialize");
         assert_eq!(
@@ -282,5 +323,17 @@ mod tests {
         );
         let back_ice: ServerToClient = serde_json::from_str(&json_ice).expect("deserialize");
         assert_eq!(back_ice, ice);
+    }
+
+    #[test]
+    fn server_offer_answer_ice_rejects_unknown_fields() {
+        let extra_offer = r#"{"type":"Offer","from":"p1","sdp":"offer","x":1}"#;
+        assert!(serde_json::from_str::<ServerToClient>(extra_offer).is_err());
+
+        let extra_answer = r#"{"type":"Answer","from":"p2","sdp":"answer","unexpected":true}"#;
+        assert!(serde_json::from_str::<ServerToClient>(extra_answer).is_err());
+
+        let extra_ice = r#"{"type":"IceCandidate","from":"p3","candidate":"cand","foo":"bar"}"#;
+        assert!(serde_json::from_str::<ServerToClient>(extra_ice).is_err());
     }
 }
