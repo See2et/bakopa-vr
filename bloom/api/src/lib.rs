@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "PascalCase", deny_unknown_fields)]
 pub enum ClientToServer {
     /// Roomを新規作成する要求（フィールドなし）。
     CreateRoom,
@@ -22,7 +23,7 @@ mod tests {
         let json = serde_json::to_string(&msg).expect("should serialize");
 
         // Assert: 仕様では {"type":"CreateRoom"} を期待する。
-        assert_eq!(json, r#"{\"type\":\"CreateRoom\"}"#);
+        assert_eq!(json, r#"{"type":"CreateRoom"}"#);
 
         let back: ClientToServer = serde_json::from_str(&json).expect("should deserialize");
         assert_eq!(back, msg);
