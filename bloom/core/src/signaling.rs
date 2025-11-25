@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bloom_api::{RelaySdp, ServerToClient};
+use bloom_api::{RelayIce, RelaySdp, ServerToClient};
 
 use crate::ParticipantId;
 
@@ -55,6 +55,21 @@ pub fn relay_answer(
     payload: RelaySdp,
 ) {
     let message = ServerToClient::Answer {
+        from: from.to_string(),
+        payload,
+    };
+    delivery.send(to, message);
+}
+
+/// ICE candidate を特定宛先へ1:1で配送する。
+/// 現在はフェーズ1（Red）用に中身は未実装。
+pub fn relay_ice_candidate(
+    delivery: &mut impl DeliverySink,
+    from: &ParticipantId,
+    to: &ParticipantId,
+    payload: RelayIce,
+) {
+    let message = ServerToClient::IceCandidate {
         from: from.to_string(),
         payload,
     };
@@ -151,6 +166,37 @@ mod tests {
         assert_eq!(
             to_receiver[0],
             ServerToClient::Answer {
+                from: sender.to_string(),
+                payload
+            }
+        );
+
+        // 送信者Aには配送されない
+        assert!(
+            sink.messages_for(&sender).is_none(),
+            "送信者自身にメッセージが返らないこと"
+        );
+    }
+
+    #[test]
+    fn relay_ice_candidate_sends_only_to_target_peer() {
+        let mut sink = MockDeliverySink::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+        let payload = RelayIce {
+            candidate: "cand1".into(),
+        };
+
+        relay_ice_candidate(&mut sink, &sender, &receiver, payload.clone());
+
+        // 宛先BにはIceCandidateが1件届く
+        let to_receiver = sink
+            .messages_for(&receiver)
+            .expect("receiver should get message");
+        assert_eq!(to_receiver.len(), 1, "Bには1件だけ届く");
+        assert_eq!(
+            to_receiver[0],
+            ServerToClient::IceCandidate {
                 from: sender.to_string(),
                 payload
             }
