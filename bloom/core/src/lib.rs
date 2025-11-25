@@ -38,6 +38,8 @@ pub struct RoomManager {
     rooms: HashMap<RoomId, RoomState>,
 }
 
+const MAX_PARTICIPANTS: usize = 8;
+
 #[derive(Clone, Debug)]
 struct RoomState {
     participants: Vec<ParticipantId>,
@@ -71,12 +73,17 @@ impl RoomManager {
         &mut self,
         room_id: &RoomId,
         participant: ParticipantId,
-    ) -> Option<Vec<ParticipantId>> {
+    ) -> Option<Result<Vec<ParticipantId>, JoinRoomError>> {
         if let Some(room) = self.rooms.get_mut(room_id) {
+            if room.participants.len() >= MAX_PARTICIPANTS
+                && !room.participants.contains(&participant)
+            {
+                return Some(Err(JoinRoomError::RoomFull));
+            }
             if !room.participants.contains(&participant) {
                 room.participants.push(participant);
             }
-            Some(room.participants.clone())
+            Some(Ok(room.participants.clone()))
         } else {
             None
         }
@@ -89,6 +96,11 @@ pub struct CreateRoomResult {
     pub room_id: RoomId,
     pub self_id: ParticipantId,
     pub participants: Vec<ParticipantId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JoinRoomError {
+    RoomFull,
 }
 
 #[cfg(test)]
@@ -151,6 +163,7 @@ mod tests {
             .join_room(&room_id, new_participant.clone())
             .expect("room should exist");
 
+        let joined = joined.expect("should join without error");
         assert_eq!(joined.len(), 2, "オーナーと新規参加者の2名になるはず");
         assert!(
             joined.contains(&owner),
@@ -165,10 +178,45 @@ mod tests {
         let joined_again = manager
             .join_room(&room_id, new_participant.clone())
             .expect("room should exist");
+        let joined_again = joined_again.expect("should allow duplicate join as no-op");
         assert_eq!(
             joined_again.len(),
             2,
             "同一参加者で二重に増えないこと（重複防止）"
         );
+    }
+
+    #[test]
+    fn join_room_returns_room_full_when_exceeding_capacity() {
+        let mut manager = RoomManager::new();
+        let owner = ParticipantId::new();
+        let create = manager.create_room(owner);
+        let room_id = create.room_id.clone();
+
+        // 7人追加で合計8人までは成功
+        for _ in 0..6 {
+            let _ = manager
+                .join_room(&room_id, ParticipantId::new())
+                .expect("room exists")
+                .expect("should not be full yet");
+        }
+        // 8人目はまだ許容される
+        let _ = manager
+            .join_room(&room_id, ParticipantId::new())
+            .expect("room exists")
+            .expect("8人目までは許容");
+
+        // 9人目でRoomFullエラー
+        let ninth_result = manager
+            .join_room(&room_id, ParticipantId::new())
+            .expect("room exists");
+
+        match ninth_result {
+            Err(JoinRoomError::RoomFull) => {}
+            Ok(list) => panic!(
+                "9人目は受け入れずRoomFullを返すべきだが {:?} を返した",
+                list
+            ),
+        }
     }
 }
