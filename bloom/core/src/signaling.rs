@@ -49,10 +49,7 @@ pub fn relay_answer(
     to: &ParticipantId,
     payload: RelaySdp,
 ) {
-    let message = ServerToClient::Answer {
-        from: from.to_string(),
-        payload,
-    };
+    let message = shape_answer_event(from, payload);
     delivery.send(to, message);
 }
 
@@ -65,17 +62,46 @@ pub fn relay_offer_checked(
     to: &ParticipantId,
     payload: RelaySdp,
 ) -> Result<(), ErrorCode> {
-    if !participants.contains(from) || !participants.contains(to) {
-        return Err(ErrorCode::ParticipantNotFound);
+    if let Err(e) = validate_membership(participants, from, to) {
+        return Err(e);
     }
     relay_offer(delivery, from, to, payload);
     Ok(())
+}
+
+/// 送信者・宛先が参加者リストに含まれるか検証する。
+fn validate_membership(
+    participants: &[ParticipantId],
+    from: &ParticipantId,
+    to: &ParticipantId,
+) -> Result<(), ErrorCode> {
+    if participants.contains(from) && participants.contains(to) {
+        Ok(())
+    } else {
+        Err(ErrorCode::ParticipantNotFound)
+    }
 }
 
 /// Offerイベントの出力整形を一元化する。
 /// 仕様: `from`フィールドを付与し、`to`は含めない。
 pub fn shape_offer_event(from: &ParticipantId, payload: RelaySdp) -> ServerToClient {
     ServerToClient::Offer {
+        from: from.to_string(),
+        payload,
+    }
+}
+
+/// Answerイベントの出力整形。
+pub fn shape_answer_event(from: &ParticipantId, payload: RelaySdp) -> ServerToClient {
+    ServerToClient::Answer {
+        from: from.to_string(),
+        payload,
+    }
+}
+
+/// IceCandidateイベントの出力整形。
+pub fn shape_ice_event(from: &ParticipantId, payload: RelayIce) -> ServerToClient {
+    ServerToClient::IceCandidate {
         from: from.to_string(),
         payload,
     }
@@ -88,10 +114,7 @@ pub fn relay_ice_candidate(
     to: &ParticipantId,
     payload: RelayIce,
 ) {
-    let message = ServerToClient::IceCandidate {
-        from: from.to_string(),
-        payload,
-    };
+    let message = shape_ice_event(from, payload);
     delivery.send(to, message);
 }
 
@@ -99,6 +122,10 @@ pub fn relay_ice_candidate(
 mod tests {
     use super::*;
     use bloom_api::ServerToClient;
+
+    fn three_participants() -> (ParticipantId, ParticipantId, ParticipantId) {
+        (ParticipantId::new(), ParticipantId::new(), ParticipantId::new())
+    }
 
     #[test]
     fn mock_delivery_sink_records_messages_by_recipient() {
@@ -321,9 +348,7 @@ mod tests {
     #[test]
     fn relay_offer_does_not_leak_to_other_participants() {
         let mut sink = MockDeliverySink::new();
-        let sender = ParticipantId::new();
-        let receiver = ParticipantId::new();
-        let bystander = ParticipantId::new();
+        let (sender, receiver, bystander) = three_participants();
 
         // AとBがRoom参加者、Cは別の参加者として用意（配送先には指定しない）
         let participants = vec![sender.clone(), receiver.clone(), bystander.clone()];
