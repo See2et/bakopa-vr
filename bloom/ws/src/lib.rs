@@ -1,5 +1,7 @@
 use bloom_api::{ClientToServer, ServerToClient};
-use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
+use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
+use std::collections::HashMap;
+use std::str::FromStr;
 
 /// Core domain API that the WebSocket layer depends on.
 pub trait CoreApi {
@@ -21,6 +23,11 @@ pub trait OutSink {
     fn send(&mut self, message: ServerToClient);
 }
 
+/// Broadcast sink that can deliver messages to specific participants.
+pub trait BroadcastSink {
+    fn send_to(&mut self, to: &ParticipantId, message: ServerToClient);
+}
+
 /// Minimal handshake response used by tests.
 #[derive(Debug, PartialEq, Eq)]
 pub struct HandshakeResponse {
@@ -28,26 +35,29 @@ pub struct HandshakeResponse {
 }
 
 /// Handler per WebSocket connection.
-pub struct WsHandler<C, S> {
+pub struct WsHandler<C, S, B> {
     core: C,
     participant_id: ParticipantId,
     sink: S,
+    broadcast: B,
 }
 
-impl<C, S> WsHandler<C, S> {
-    pub fn new(core: C, participant_id: ParticipantId, sink: S) -> Self {
+impl<C, S, B> WsHandler<C, S, B> {
+    pub fn new(core: C, participant_id: ParticipantId, sink: S, broadcast: B) -> Self {
         Self {
             core,
             participant_id,
             sink,
+            broadcast,
         }
     }
 }
 
-impl<C, S> WsHandler<C, S>
+impl<C, S, B> WsHandler<C, S, B>
 where
     C: CoreApi,
     S: OutSink,
+    B: BroadcastSink,
 {
     /// Perform WebSocket handshake (HTTP 101 expected).
     pub async fn perform_handshake(&mut self) -> HandshakeResponse {
@@ -56,10 +66,10 @@ where
     }
 
     /// Handle a single incoming text message from the client.
-    pub async fn handle_text_message(&mut self, _text: &str) {
+    pub async fn handle_text_message(&mut self, text: &str) {
         // For simplicity, we directly parse the message here.
         let message: ClientToServer =
-            serde_json::from_str(_text).expect("deserialize client message");
+            serde_json::from_str(text).expect("deserialize client message");
 
         match message {
             ClientToServer::CreateRoom => {
@@ -70,8 +80,31 @@ where
                 };
                 self.sink.send(response);
             }
-            _ => {
-                unimplemented!("Only CreateRoom is implemented in this test handler");
+            ClientToServer::JoinRoom { room_id } => {
+                let room_id_parsed =
+                    RoomId::from_str(&room_id).expect("room_id should be UUID string");
+                match self
+                    .core
+                    .join_room(&room_id_parsed, self.participant_id.clone())
+                {
+                    Some(Ok(participants)) => {
+                        let participants_str: Vec<String> =
+                            participants.iter().map(ToString::to_string).collect();
+                        let event = ServerToClient::RoomParticipants {
+                            room_id: room_id.clone(),
+                            participants: participants_str,
+                        };
+                        for p in participants.iter() {
+                            self.broadcast.send_to(p, event.clone());
+                        }
+                    }
+                    other => {
+                        panic!("JoinRoom not handled yet: {:?}", other);
+                    }
+                }
+            }
+            other => {
+                unimplemented!("Handler for {other:?} not implemented");
             }
         }
     }
@@ -89,11 +122,39 @@ impl OutSink for RecordingSink {
     }
 }
 
+/// Test helper broadcast sink that records messages per participant.
+#[derive(Default, Debug)]
+pub struct RecordingBroadcastSink {
+    pub sent: HashMap<ParticipantId, Vec<ServerToClient>>,
+}
+
+impl RecordingBroadcastSink {
+    pub fn messages_for(&self, participant: &ParticipantId) -> Option<&[ServerToClient]> {
+        self.sent.get(participant).map(Vec::as_slice)
+    }
+}
+
+impl BroadcastSink for RecordingBroadcastSink {
+    fn send_to(&mut self, to: &ParticipantId, message: ServerToClient) {
+        self.sent.entry(to.clone()).or_default().push(message);
+    }
+}
+
+/// No-op broadcast sink for tests that don't assert broadcasts.
+#[derive(Default)]
+pub struct NoopBroadcastSink;
+
+impl BroadcastSink for NoopBroadcastSink {
+    fn send_to(&mut self, _to: &ParticipantId, _message: ServerToClient) {}
+}
+
 /// Test helper core that returns predetermined values.
 #[derive(Clone, Debug)]
 pub struct MockCore {
     pub create_room_result: CreateRoomResult,
     pub create_room_calls: Vec<ParticipantId>,
+    pub join_room_result: Option<Result<Vec<ParticipantId>, JoinRoomError>>,
+    pub join_room_calls: Vec<(RoomId, ParticipantId)>,
 }
 
 impl MockCore {
@@ -101,7 +162,17 @@ impl MockCore {
         Self {
             create_room_result,
             create_room_calls: Vec::new(),
+            join_room_result: None,
+            join_room_calls: Vec::new(),
         }
+    }
+
+    pub fn with_join_result(
+        mut self,
+        result: Option<Result<Vec<ParticipantId>, JoinRoomError>>,
+    ) -> Self {
+        self.join_room_result = result;
+        self
     }
 }
 
@@ -113,10 +184,11 @@ impl CoreApi for MockCore {
 
     fn join_room(
         &mut self,
-        _room_id: &RoomId,
-        _participant: ParticipantId,
+        room_id: &RoomId,
+        participant: ParticipantId,
     ) -> Option<Result<Vec<ParticipantId>, bloom_core::JoinRoomError>> {
-        unimplemented!("join_room not needed for this test yet")
+        self.join_room_calls.push((room_id.clone(), participant));
+        self.join_room_result.clone()
     }
 
     fn leave_room(
@@ -147,7 +219,8 @@ mod tests {
 
         let core = MockCore::new(core_result.clone());
         let sink = RecordingSink::default();
-        let mut handler = WsHandler::new(core, self_id.clone(), sink);
+        let broadcast = NoopBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
 
         let handshake = handler.perform_handshake().await;
         assert_eq!(handshake.status, 101, "HTTP 101 Switching Protocols を期待");
@@ -176,5 +249,58 @@ mod tests {
         let roundtrip: ServerToClient =
             serde_json::from_str(&json).expect("deserialize server message");
         assert_eq!(roundtrip, *sent);
+    }
+
+    /// JoinRoom要求でRoomParticipantsブロードキャストが全参加者（自分を含む）へ届くことを検証する。
+    /// 現時点で未実装のためRED。
+    #[tokio::test]
+    async fn join_room_broadcasts_room_participants_to_all_members() {
+        let room_id = RoomId::new();
+        let existing = ParticipantId::new();
+        let self_id = ParticipantId::new();
+        let participants = vec![existing.clone(), self_id.clone()];
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: existing.clone(),
+            participants: vec![existing.clone()],
+        };
+
+        let core = MockCore::new(core_result).with_join_result(Some(Ok(participants.clone())));
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
+
+        handler.perform_handshake().await;
+        handler
+            .handle_text_message(&format!(r#"{{"type":"JoinRoom","room_id":"{}"}}"#, room_id))
+            .await;
+
+        // core.join_roomが呼ばれること
+        assert_eq!(
+            handler.core.join_room_calls.len(),
+            1,
+            "join_roomが1度呼ばれる"
+        );
+        assert_eq!(
+            handler.core.join_room_calls[0].0, room_id,
+            "指定room_idで呼ばれる"
+        );
+
+        // 各参加者にRoomParticipantsが配信されること
+        for p in &participants {
+            let messages = handler
+                .broadcast
+                .messages_for(p)
+                .expect("各参加者にメッセージが届くはず");
+            assert!(
+                matches!(
+                    messages.last(),
+                    Some(ServerToClient::RoomParticipants { room_id: _, participants: ps })
+                        if ps.len() == participants.len()
+                ),
+                "RoomParticipantsが届く"
+            );
+        }
     }
 }
