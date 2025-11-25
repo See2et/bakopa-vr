@@ -1,3 +1,5 @@
+use std::fmt;
+
 use uuid::Uuid;
 
 /// ルームを一意に識別するID。
@@ -15,6 +17,12 @@ impl RoomId {
     }
 }
 
+impl fmt::Display for RoomId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// 参加者を一意に識別するID。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ParticipantId(Uuid);
@@ -27,5 +35,11 @@ impl ParticipantId {
 
     pub fn as_uuid(&self) -> &Uuid {
         &self.0
+    }
+}
+
+impl fmt::Display for ParticipantId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
