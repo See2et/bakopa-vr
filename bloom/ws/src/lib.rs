@@ -93,8 +93,16 @@ where
     /// Handle a single incoming text message from the client.
     pub async fn handle_text_message(&mut self, text: &str) {
         // For simplicity, we directly parse the message here.
-        let message: ClientToServer =
-            serde_json::from_str(text).expect("deserialize client message");
+        let message: ClientToServer = match serde_json::from_str(text) {
+            Ok(m) => m,
+            Err(_) => {
+                self.sink.send(ServerToClient::Error {
+                    code: ErrorCode::InvalidPayload,
+                    message: "invalid payload".into(),
+                });
+                return;
+            }
+        };
 
         match message {
             ClientToServer::CreateRoom => {
@@ -269,12 +277,10 @@ where
             .expect("room must be set before signaling");
         let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
 
-        match self.core.relay_ice_candidate(
-            &room_id,
-            &self.participant_id,
-            &to_id,
-            payload.clone(),
-        ) {
+        match self
+            .core
+            .relay_ice_candidate(&room_id, &self.participant_id, &to_id, payload.clone())
+        {
             Ok(_) => {
                 let event = ServerToClient::IceCandidate {
                     from: self.participant_id.to_string(),
@@ -688,8 +694,8 @@ mod tests {
             participants: vec![sender.clone(), receiver.clone()],
         };
 
-        let core = MockCore::new(core_result)
-            .with_relay_offer_result(Err(ErrorCode::ParticipantNotFound));
+        let core =
+            MockCore::new(core_result).with_relay_offer_result(Err(ErrorCode::ParticipantNotFound));
         let sink = RecordingSink::default();
         let broadcast = RecordingBroadcastSink::default();
         let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
@@ -774,8 +780,8 @@ mod tests {
             participants: vec![sender.clone(), receiver.clone()],
         };
 
-        let core = MockCore::new(core_result)
-            .with_relay_ice_result(Err(ErrorCode::ParticipantNotFound));
+        let core =
+            MockCore::new(core_result).with_relay_ice_result(Err(ErrorCode::ParticipantNotFound));
         let sink = RecordingSink::default();
         let broadcast = RecordingBroadcastSink::default();
         let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
@@ -799,5 +805,47 @@ mod tests {
         ));
         assert!(handler.broadcast.messages_for(&missing).is_none());
         assert!(handler.broadcast.messages_for(&receiver).is_none());
+    }
+
+    /// 必須フィールド欠落のJSONはInvalidPayloadを返し、core呼び出しが一切発生しないこと（RED）。
+    #[tokio::test]
+    async fn invalid_payload_returns_error_and_skips_core_calls() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
+        handler.perform_handshake().await;
+
+        // room_idフィールド欠落のJoinRoom
+        handler.handle_text_message(r#"{"type":"JoinRoom"}"#).await;
+
+        // Error(InvalidPayload) が送られること
+        assert_eq!(handler.sink.sent.len(), 1, "エラーが1件返る");
+        assert!(matches!(
+            handler.sink.sent[0],
+            ServerToClient::Error {
+                code: ErrorCode::InvalidPayload,
+                ..
+            }
+        ));
+
+        // coreの各呼び出しが発生していないこと
+        assert!(handler.core.create_room_calls.is_empty());
+        assert!(handler.core.join_room_calls.is_empty());
+        assert!(handler.core.leave_room_calls.is_empty());
+        assert!(handler.core.relay_offer_calls.is_empty());
+        assert!(handler.core.relay_answer_calls.is_empty());
+        assert!(handler.core.relay_ice_calls.is_empty());
+
+        // ブロードキャストも発生しないこと
+        assert!(handler.broadcast.sent.is_empty());
     }
 }
