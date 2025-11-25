@@ -305,6 +305,10 @@ where
     }
 
     /// Hook to forward peer connection events from core to all participants in the room.
+    #[instrument(
+        skip(self, participants, joined),
+        fields(room_id=?self.room_id, participant_id=?self.participant_id)
+    )]
     pub async fn broadcast_peer_connected(
         &mut self,
         participants: &[ParticipantId],
@@ -319,6 +323,10 @@ where
     }
 
     /// Hook to forward peer disconnection events from core to all participants in the room.
+    #[instrument(
+        skip(self, participants, left),
+        fields(room_id=?self.room_id, participant_id=?self.participant_id)
+    )]
     pub async fn broadcast_peer_disconnected(
         &mut self,
         participants: &[ParticipantId],
