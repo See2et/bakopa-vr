@@ -21,15 +21,38 @@ pub enum ClientToServer {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "PascalCase", deny_unknown_fields)]
 pub enum ServerToClient {
-    RoomCreated { room_id: String, self_id: String },
-    RoomParticipants { room_id: String, participants: Vec<String> },
-    PeerConnected { participant_id: String },
-    PeerDisconnected { participant_id: String },
-    Offer { from: String, sdp: String },
-    Answer { from: String, sdp: String },
-    IceCandidate { from: String, candidate: String },
-    Error { code: ErrorCode, message: String },
+    RoomCreated {
+        room_id: String,
+        self_id: String,
+    },
+    RoomParticipants {
+        room_id: String,
+        participants: Vec<String>,
+    },
+    PeerConnected {
+        participant_id: String,
+    },
+    PeerDisconnected {
+        participant_id: String,
+    },
+    Offer {
+        from: String,
+        sdp: String,
+    },
+    Answer {
+        from: String,
+        sdp: String,
+    },
+    IceCandidate {
+        from: String,
+        candidate: String,
+    },
+    Error {
+        code: ErrorCode,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -147,7 +170,10 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("serialize");
-        assert_eq!(json, r#"{"type":"IceCandidate","to":"peer-c","candidate":"cand1"}"#);
+        assert_eq!(
+            json,
+            r#"{"type":"IceCandidate","to":"peer-c","candidate":"cand1"}"#
+        );
 
         let back: ClientToServer = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, msg);
@@ -164,7 +190,10 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("serialize");
-        assert_eq!(json, r#"{"type":"RoomCreated","room_id":"room-1","self_id":"self-1"}"#);
+        assert_eq!(
+            json,
+            r#"{"type":"RoomCreated","room_id":"room-1","self_id":"self-1"}"#
+        );
 
         let back: ServerToClient = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, msg);
@@ -177,7 +206,10 @@ mod tests {
             participants: vec![],
         };
         let json_empty = serde_json::to_string(&msg_empty).expect("serialize");
-        assert_eq!(json_empty, r#"{"type":"RoomParticipants","room_id":"room-1","participants":[]}"#);
+        assert_eq!(
+            json_empty,
+            r#"{"type":"RoomParticipants","room_id":"room-1","participants":[]}"#
+        );
         let back_empty: ServerToClient = serde_json::from_str(&json_empty).expect("deserialize");
         assert_eq!(back_empty, msg_empty);
 
@@ -186,7 +218,10 @@ mod tests {
             participants: vec!["a".into(), "b".into()],
         };
         let json_many = serde_json::to_string(&msg_many).expect("serialize");
-        assert_eq!(json_many, r#"{"type":"RoomParticipants","room_id":"room-1","participants":["a","b"]}"#);
+        assert_eq!(
+            json_many,
+            r#"{"type":"RoomParticipants","room_id":"room-1","participants":["a","b"]}"#
+        );
         let back_many: ServerToClient = serde_json::from_str(&json_many).expect("deserialize");
         assert_eq!(back_many, msg_many);
     }
@@ -205,7 +240,10 @@ mod tests {
             participant_id: "p1".into(),
         };
         let json_d = serde_json::to_string(&disconnected).expect("serialize");
-        assert_eq!(json_d, r#"{"type":"PeerDisconnected","participant_id":"p1"}"#);
+        assert_eq!(
+            json_d,
+            r#"{"type":"PeerDisconnected","participant_id":"p1"}"#
+        );
         let back_d: ServerToClient = serde_json::from_str(&json_d).expect("deserialize");
         assert_eq!(back_d, disconnected);
     }
@@ -226,7 +264,10 @@ mod tests {
             sdp: "answer".into(),
         };
         let json_answer = serde_json::to_string(&answer).expect("serialize");
-        assert_eq!(json_answer, r#"{"type":"Answer","from":"p2","sdp":"answer"}"#);
+        assert_eq!(
+            json_answer,
+            r#"{"type":"Answer","from":"p2","sdp":"answer"}"#
+        );
         let back_answer: ServerToClient = serde_json::from_str(&json_answer).expect("deserialize");
         assert_eq!(back_answer, answer);
 
@@ -235,7 +276,10 @@ mod tests {
             candidate: "cand".into(),
         };
         let json_ice = serde_json::to_string(&ice).expect("serialize");
-        assert_eq!(json_ice, r#"{"type":"IceCandidate","from":"p3","candidate":"cand"}"#);
+        assert_eq!(
+            json_ice,
+            r#"{"type":"IceCandidate","from":"p3","candidate":"cand"}"#
+        );
         let back_ice: ServerToClient = serde_json::from_str(&json_ice).expect("deserialize");
         assert_eq!(back_ice, ice);
     }
