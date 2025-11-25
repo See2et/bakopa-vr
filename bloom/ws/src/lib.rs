@@ -1,11 +1,13 @@
 mod core_api;
 mod handler;
 mod mocks;
+mod rate_limit;
 mod sinks;
 
 pub use core_api::CoreApi;
 pub use handler::{HandshakeResponse, WsHandler};
 pub use mocks::MockCore;
+pub use rate_limit::{Clock, RateLimitDecision, RateLimiter};
 pub use sinks::{BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink, SharedBroadcastSink};
 
 #[cfg(test)]
