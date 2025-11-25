@@ -282,15 +282,78 @@ mod tests {
         assert!(has_room, "span must include room_id field when handling leave");
     }
 
+    /// RateLimited時のwarnログにparticipant_idフィールドが文字列IDで入っていることを検証する（Red）。
+    #[tokio::test]
+    async fn rate_limit_warn_contains_participant_id_field() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+
+        let clock = Arc::new(TestClock::start_at(Instant::now()));
+        let dyn_clock: DynClock = clock.clone();
+        let limiter = RateLimiter::from_config(dyn_clock, RateLimitConfig::default());
+
+        let mut handler = WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
+        handler.room_id = Some(room_id.clone());
+
+        let layer = RecordingLayer::default();
+        let subscriber = Registry::default().with(layer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let msg = format!(
+            r#"{{\"type\":\"IceCandidate\",\"to\":\"{}\",\"candidate\":\"cand\"}}"#,
+            receiver
+        );
+
+        // 21件目でレートリミットに到達させる
+        for _ in 0..21 {
+            handler.handle_text_message(&msg).await;
+        }
+
+        drop(_guard);
+
+        let events = layer.events.lock().expect("events should be recorded");
+        let warn_with_participant = events.iter().find(|e| {
+            e.level == tracing::Level::WARN
+                && e
+                    .fields
+                    .get("participant_id")
+                    .map(|v| v == &sender.to_string())
+                    .unwrap_or(false)
+        });
+
+        assert!(
+            warn_with_participant.is_some(),
+            "warn log must include participant_id field as string"
+        );
+    }
+
     /// Spanを記録するテスト用Layer。span生成時のフィールドを保持する。
     #[derive(Clone, Default)]
     struct RecordingLayer {
         spans: Arc<Mutex<Vec<SpanRecord>>>,
+        events: Arc<Mutex<Vec<EventRecord>>>,
     }
 
     #[derive(Debug, Clone, Default)]
     struct SpanRecord {
         name: String,
+        fields: HashMap<String, String>,
+    }
+
+    #[derive(Debug, Clone)]
+    struct EventRecord {
+        level: tracing::Level,
         fields: HashMap<String, String>,
     }
 
@@ -325,6 +388,19 @@ mod tests {
             };
 
             if let Ok(mut guard) = self.spans.lock() {
+                guard.push(record);
+            }
+        }
+
+        fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
+            let mut visitor = FieldVisitor::default();
+            event.record(&mut visitor);
+            let record = EventRecord {
+                level: *event.metadata().level(),
+                fields: visitor.fields,
+            };
+
+            if let Ok(mut guard) = self.events.lock() {
                 guard.push(record);
             }
         }

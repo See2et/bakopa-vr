@@ -194,7 +194,7 @@ where
         if let Some(limiter) = self.rate_limiter.as_mut() {
             let decision = limiter.check();
             if !decision.allowed {
-                tracing::warn!(participant_id=?self.participant_id, "rate limited");
+                tracing::warn!(participant_id=%self.participant_id, "rate limited");
                 self.send_error(ErrorCode::RateLimited, "rate limited");
                 return decision.should_drop;
             }
