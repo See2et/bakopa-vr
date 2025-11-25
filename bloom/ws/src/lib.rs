@@ -7,7 +7,7 @@ mod sinks;
 pub use core_api::CoreApi;
 pub use handler::{HandshakeResponse, WsHandler};
 pub use mocks::MockCore;
-pub use rate_limit::{Clock, RateLimitDecision, RateLimiter};
+pub use rate_limit::{Clock, RateLimitDecision, RateLimiter, SystemClock};
 pub use sinks::{BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink, SharedBroadcastSink};
 
 #[cfg(test)]
@@ -15,6 +15,7 @@ mod tests {
     use super::*;
     use bloom_api::{ErrorCode, ServerToClient};
     use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
+    use std::time::Duration;
 
     fn new_room() -> (RoomId, ParticipantId) {
         (RoomId::new(), ParticipantId::new())
@@ -496,4 +497,95 @@ mod tests {
             .iter()
             .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &newcomer.to_string())));
     }
+
+    /// 21個目のシグナリングはRateLimitedで弾かれ、coreにはforwardされないこと。
+    #[tokio::test]
+    async fn rate_limiting_blocks_21st_signaling_message() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+
+        let limiter = RateLimiter::new(SystemClock::default(), 20, Duration::from_secs(1));
+
+        let mut handler = WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
+        handler.perform_handshake().await;
+        handler.room_id = Some(room_id.clone());
+
+        let msg = format!(
+            r#"{{"type":"IceCandidate","to":"{}","candidate":"cand"}}"#,
+            receiver
+        );
+
+        for _ in 0..20 {
+            handler.handle_text_message(&msg).await;
+        }
+
+        assert_eq!(handler.core.relay_ice_calls.len(), 20, "first 20 forwarded");
+
+        handler.handle_text_message(&msg).await;
+
+        assert_eq!(
+            handler.core.relay_ice_calls.len(),
+            20,
+            "21st should not reach core"
+        );
+        let last = handler.sink.sent.last().expect("an error should be sent");
+        assert!(matches!(last, ServerToClient::Error { code: ErrorCode::RateLimited, .. }));
+    }
+
+    /// レート超過後1秒経過すると再び許可され、coreへのforwardが再開されること。
+    #[tokio::test]
+    async fn rate_limiting_lifts_after_cooldown() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+
+        let limiter = RateLimiter::new(SystemClock::default(), 20, Duration::from_secs(1));
+
+        let mut handler = WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
+        handler.perform_handshake().await;
+        handler.room_id = Some(room_id.clone());
+
+        let msg = format!(
+            r#"{{"type":"IceCandidate","to":"{}","candidate":"cand"}}"#,
+            receiver
+        );
+
+        for _ in 0..21 {
+            handler.handle_text_message(&msg).await;
+        }
+
+        assert_eq!(handler.core.relay_ice_calls.len(), 20, "21st should be blocked");
+
+        std::thread::sleep(Duration::from_millis(1100));
+
+        handler.handle_text_message(&msg).await;
+
+        assert_eq!(
+            handler.core.relay_ice_calls.len(),
+            21,
+            "after cooldown, forwarding resumes"
+        );
+    }
+
 }
