@@ -133,6 +133,13 @@ where
                             self.broadcast.send_to(p, event.clone());
                         }
                     }
+                    Some(Err(JoinRoomError::RoomFull)) => {
+                        let err = ServerToClient::Error {
+                            code: ErrorCode::RoomFull,
+                            message: "room is full".into(),
+                        };
+                        self.sink.send(err);
+                    }
                     other => {
                         panic!("JoinRoom not handled yet: {:?}", other);
                     }
@@ -846,6 +853,45 @@ mod tests {
         assert!(handler.core.relay_ice_calls.is_empty());
 
         // ブロードキャストも発生しないこと
+        assert!(handler.broadcast.sent.is_empty());
+    }
+
+    /// JoinRoomでRoomFullが返った場合、Error(RoomFull)が送信されブロードキャストされないことを確認（RED）。
+    #[tokio::test]
+    async fn join_room_full_returns_error_without_broadcast() {
+        let room_id = RoomId::new();
+        let self_id = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: self_id.clone(),
+            participants: vec![self_id.clone()],
+        };
+
+        let core = MockCore::new(core_result).with_join_result(Some(Err(JoinRoomError::RoomFull)));
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
+
+        handler.perform_handshake().await;
+        handler
+            .handle_text_message(&format!(r#"{{"type":"JoinRoom","room_id":"{}"}}"#, room_id))
+            .await;
+
+        // core.join_room が1回呼ばれる
+        assert_eq!(handler.core.join_room_calls.len(), 1);
+
+        // Error RoomFull が送信者に返る
+        assert_eq!(handler.sink.sent.len(), 1);
+        assert!(matches!(
+            handler.sink.sent[0],
+            ServerToClient::Error {
+                code: ErrorCode::RoomFull,
+                ..
+            }
+        ));
+
+        // ブロードキャストは発生しない
         assert!(handler.broadcast.sent.is_empty());
     }
 }
