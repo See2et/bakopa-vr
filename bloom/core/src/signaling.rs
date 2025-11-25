@@ -53,6 +53,19 @@ pub fn relay_answer(
     delivery.send(to, message);
 }
 
+/// 受信者の存在確認付きでAnswerを配送する。
+pub fn relay_answer_checked(
+    delivery: &mut impl DeliverySink,
+    participants: &[ParticipantId],
+    from: &ParticipantId,
+    to: &ParticipantId,
+    payload: RelaySdp,
+) -> Result<(), ErrorCode> {
+    validate_membership(participants, from, to)?;
+    relay_answer(delivery, from, to, payload);
+    Ok(())
+}
+
 /// 受信者の存在確認付きでOfferを配送する。
 /// 宛先が参加者リストに存在しない場合はParticipantNotFoundを返し、配送しない。
 pub fn relay_offer_checked(
@@ -116,6 +129,19 @@ pub fn relay_ice_candidate(
 ) {
     let message = shape_ice_event(from, payload);
     delivery.send(to, message);
+}
+
+/// 受信者の存在確認付きでICE candidateを配送する。
+pub fn relay_ice_candidate_checked(
+    delivery: &mut impl DeliverySink,
+    participants: &[ParticipantId],
+    from: &ParticipantId,
+    to: &ParticipantId,
+    payload: RelayIce,
+) -> Result<(), ErrorCode> {
+    validate_membership(participants, from, to)?;
+    relay_ice_candidate(delivery, from, to, payload);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -251,6 +277,50 @@ mod tests {
     }
 
     #[test]
+    fn relay_answer_checked_errors_when_recipient_missing() {
+        let mut sink = MockDeliverySink::new();
+        let (sender, receiver, missing) = three_participants();
+        let participants = vec![sender.clone(), receiver.clone()];
+        let payload = RelaySdp {
+            sdp: "v=0 answer".into(),
+        };
+
+        let result = relay_answer_checked(
+            &mut sink,
+            &participants,
+            &sender,
+            &missing,
+            payload.clone(),
+        );
+
+        assert_eq!(result, Err(ErrorCode::ParticipantNotFound));
+        assert!(sink.messages_for(&receiver).is_none());
+        assert!(sink.messages_for(&missing).is_none());
+    }
+
+    #[test]
+    fn relay_answer_checked_errors_when_sender_missing() {
+        let mut sink = MockDeliverySink::new();
+        let (sender_missing, receiver, extra) = three_participants();
+        let participants = vec![receiver.clone(), extra];
+        let payload = RelaySdp {
+            sdp: "v=0 answer".into(),
+        };
+
+        let result = relay_answer_checked(
+            &mut sink,
+            &participants,
+            &sender_missing,
+            &receiver,
+            payload,
+        );
+
+        assert_eq!(result, Err(ErrorCode::ParticipantNotFound));
+        assert!(sink.messages_for(&receiver).is_none());
+        assert!(sink.messages_for(&sender_missing).is_none());
+    }
+
+    #[test]
     fn relay_ice_candidate_sends_only_to_target_peer() {
         let mut sink = MockDeliverySink::new();
         let sender = ParticipantId::new();
@@ -279,6 +349,50 @@ mod tests {
             sink.messages_for(&sender).is_none(),
             "送信者自身にメッセージが返らないこと"
         );
+    }
+
+    #[test]
+    fn relay_ice_candidate_checked_errors_when_recipient_missing() {
+        let mut sink = MockDeliverySink::new();
+        let (sender, receiver, missing) = three_participants();
+        let participants = vec![sender.clone(), receiver.clone()];
+        let payload = RelayIce {
+            candidate: "cand1".into(),
+        };
+
+        let result = relay_ice_candidate_checked(
+            &mut sink,
+            &participants,
+            &sender,
+            &missing,
+            payload.clone(),
+        );
+
+        assert_eq!(result, Err(ErrorCode::ParticipantNotFound));
+        assert!(sink.messages_for(&receiver).is_none());
+        assert!(sink.messages_for(&missing).is_none());
+    }
+
+    #[test]
+    fn relay_ice_candidate_checked_errors_when_sender_missing() {
+        let mut sink = MockDeliverySink::new();
+        let (sender_missing, receiver, extra) = three_participants();
+        let participants = vec![receiver.clone(), extra];
+        let payload = RelayIce {
+            candidate: "cand1".into(),
+        };
+
+        let result = relay_ice_candidate_checked(
+            &mut sink,
+            &participants,
+            &sender_missing,
+            &receiver,
+            payload,
+        );
+
+        assert_eq!(result, Err(ErrorCode::ParticipantNotFound));
+        assert!(sink.messages_for(&receiver).is_none());
+        assert!(sink.messages_for(&sender_missing).is_none());
     }
 
     #[test]
