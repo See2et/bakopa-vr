@@ -1,4 +1,4 @@
-use bloom_api::{ClientToServer, ServerToClient};
+use bloom_api::{ClientToServer, ErrorCode, RelayIce, RelaySdp, ServerToClient};
 use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -16,6 +16,28 @@ pub trait CoreApi {
         room_id: &RoomId,
         participant: &ParticipantId,
     ) -> Option<Vec<ParticipantId>>;
+
+    fn relay_offer(
+        &mut self,
+        room_id: &RoomId,
+        from: &ParticipantId,
+        to: &ParticipantId,
+        payload: RelaySdp,
+    ) -> Result<(), ErrorCode>;
+    fn relay_answer(
+        &mut self,
+        room_id: &RoomId,
+        from: &ParticipantId,
+        to: &ParticipantId,
+        payload: RelaySdp,
+    ) -> Result<(), ErrorCode>;
+    fn relay_ice_candidate(
+        &mut self,
+        room_id: &RoomId,
+        from: &ParticipantId,
+        to: &ParticipantId,
+        payload: RelayIce,
+    ) -> Result<(), ErrorCode>;
 }
 
 /// Outgoing sink abstraction (e.g., a WebSocket sender).
@@ -142,8 +164,56 @@ where
                     None => panic!("leave_room returned None (room not found)"),
                 }
             }
-            other => {
-                unimplemented!("Handler for {other:?} not implemented");
+            ClientToServer::Offer { to, payload } => {
+                let room_id = self
+                    .room_id
+                    .clone()
+                    .expect("room must be set before signaling");
+                let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
+
+                self.core
+                    .relay_offer(&room_id, &self.participant_id, &to_id, payload.clone())
+                    .expect("relay_offer should succeed in this test");
+
+                let event = ServerToClient::Offer {
+                    from: self.participant_id.to_string(),
+                    payload,
+                };
+                self.broadcast.send_to(&to_id, event);
+            }
+            ClientToServer::Answer { to, payload } => {
+                let room_id = self
+                    .room_id
+                    .clone()
+                    .expect("room must be set before signaling");
+                let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
+
+                self.core
+                    .relay_answer(&room_id, &self.participant_id, &to_id, payload.clone())
+                    .expect("relay_answer should succeed in this test");
+
+                let event = ServerToClient::Answer {
+                    from: self.participant_id.to_string(),
+                    payload,
+                };
+                self.broadcast.send_to(&to_id, event);
+            }
+            ClientToServer::IceCandidate { to, payload } => {
+                let room_id = self
+                    .room_id
+                    .clone()
+                    .expect("room must be set before signaling");
+                let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
+
+                self.core
+                    .relay_ice_candidate(&room_id, &self.participant_id, &to_id, payload.clone())
+                    .expect("relay_ice_candidate should succeed in this test");
+
+                let event = ServerToClient::IceCandidate {
+                    from: self.participant_id.to_string(),
+                    payload,
+                };
+                self.broadcast.send_to(&to_id, event);
             }
         }
     }
@@ -226,6 +296,12 @@ pub struct MockCore {
     pub join_room_calls: Vec<(RoomId, ParticipantId)>,
     pub leave_room_result: Option<Vec<ParticipantId>>,
     pub leave_room_calls: Vec<(RoomId, ParticipantId)>,
+    pub relay_offer_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelaySdp)>,
+    pub relay_offer_result: Result<(), ErrorCode>,
+    pub relay_answer_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelaySdp)>,
+    pub relay_answer_result: Result<(), ErrorCode>,
+    pub relay_ice_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelayIce)>,
+    pub relay_ice_result: Result<(), ErrorCode>,
 }
 
 impl MockCore {
@@ -237,6 +313,12 @@ impl MockCore {
             join_room_calls: Vec::new(),
             leave_room_result: None,
             leave_room_calls: Vec::new(),
+            relay_offer_calls: Vec::new(),
+            relay_offer_result: Ok(()),
+            relay_answer_calls: Vec::new(),
+            relay_answer_result: Ok(()),
+            relay_ice_calls: Vec::new(),
+            relay_ice_result: Ok(()),
         }
     }
 
@@ -250,6 +332,21 @@ impl MockCore {
 
     pub fn with_leave_result(mut self, result: Option<Vec<ParticipantId>>) -> Self {
         self.leave_room_result = result;
+        self
+    }
+
+    pub fn with_relay_offer_result(mut self, result: Result<(), ErrorCode>) -> Self {
+        self.relay_offer_result = result;
+        self
+    }
+
+    pub fn with_relay_answer_result(mut self, result: Result<(), ErrorCode>) -> Self {
+        self.relay_answer_result = result;
+        self
+    }
+
+    pub fn with_relay_ice_result(mut self, result: Result<(), ErrorCode>) -> Self {
+        self.relay_ice_result = result;
         self
     }
 }
@@ -277,6 +374,42 @@ impl CoreApi for MockCore {
         self.leave_room_calls
             .push((room_id.clone(), participant.clone()));
         self.leave_room_result.clone()
+    }
+
+    fn relay_offer(
+        &mut self,
+        room_id: &RoomId,
+        from: &ParticipantId,
+        to: &ParticipantId,
+        payload: RelaySdp,
+    ) -> Result<(), ErrorCode> {
+        self.relay_offer_calls
+            .push((room_id.clone(), from.clone(), to.clone(), payload));
+        self.relay_offer_result.clone()
+    }
+
+    fn relay_answer(
+        &mut self,
+        room_id: &RoomId,
+        from: &ParticipantId,
+        to: &ParticipantId,
+        payload: RelaySdp,
+    ) -> Result<(), ErrorCode> {
+        self.relay_answer_calls
+            .push((room_id.clone(), from.clone(), to.clone(), payload));
+        self.relay_answer_result.clone()
+    }
+
+    fn relay_ice_candidate(
+        &mut self,
+        room_id: &RoomId,
+        from: &ParticipantId,
+        to: &ParticipantId,
+        payload: RelayIce,
+    ) -> Result<(), ErrorCode> {
+        self.relay_ice_calls
+            .push((room_id.clone(), from.clone(), to.clone(), payload));
+        self.relay_ice_result.clone()
     }
 }
 
@@ -447,5 +580,53 @@ mod tests {
                 "最新RoomParticipantsが届く"
             );
         }
+    }
+
+    /// Offer/Answer/IceCandidate が宛先参加者にだけ配送されることを検証する（未実装のためRED）。
+    #[tokio::test]
+    async fn signaling_messages_are_routed_only_to_target() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+        let bystander = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone(), bystander.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
+        handler.perform_handshake().await;
+        handler.room_id = Some(room_id.clone());
+
+        // テーブル駆動でOffer/Answer/IceCandidateを送信
+        let cases = vec![
+            r#"{"type":"Offer","to":"TARGET","sdp":"v=0 offer"}"#,
+            r#"{"type":"Answer","to":"TARGET","sdp":"v=0 answer"}"#,
+            r#"{"type":"IceCandidate","to":"TARGET","candidate":"cand1"}"#,
+        ];
+
+        for json_tpl in cases {
+            let json = json_tpl.replace("TARGET", &receiver.to_string());
+            handler.handle_text_message(&json).await;
+        }
+
+        // 宛先のみが受信する
+        let recv_msgs = handler
+            .broadcast
+            .messages_for(&receiver)
+            .expect("receiver should get messages");
+        assert_eq!(recv_msgs.len(), 3, "3種類のシグナリングが届く");
+        assert!(matches!(recv_msgs[0], ServerToClient::Offer { .. }));
+        assert!(matches!(recv_msgs[1], ServerToClient::Answer { .. }));
+        assert!(matches!(recv_msgs[2], ServerToClient::IceCandidate { .. }));
+
+        // 傍受者・送信者には届かない
+        assert!(handler.broadcast.messages_for(&bystander).is_none());
+        assert!(handler.broadcast.messages_for(&sender).is_none());
     }
 }
