@@ -141,7 +141,7 @@ where
                         self.sink.send(err);
                     }
                     other => {
-                        panic!("JoinRoom not handled yet: {:?}", other);
+                        todo!("JoinRoom not handled yet: {:?}", other);
                     }
                 }
             }
