@@ -20,7 +20,7 @@ mod tests {
     use super::*;
     use bloom_api::{ErrorCode, ServerToClient};
     use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, OnceLock};
     use std::time::{Duration, Instant};
     use std::{collections::HashMap, fmt};
     use tracing::Subscriber;
@@ -29,6 +29,20 @@ mod tests {
         prelude::*,
         registry::{LookupSpan, Registry},
     };
+
+    fn ensure_global_tracing() -> RecordingLayer {
+        static LAYER: OnceLock<RecordingLayer> = OnceLock::new();
+        let layer = LAYER.get_or_init(RecordingLayer::default).clone();
+        static DISPATCH: OnceLock<()> = OnceLock::new();
+        DISPATCH.get_or_init(|| {
+            let _ = tracing::subscriber::set_global_default(
+                tracing_subscriber::registry()
+                    .with(tracing_subscriber::filter::LevelFilter::TRACE)
+                    .with(layer.clone()),
+            );
+        });
+        layer
+    }
 
     fn new_room() -> (RoomId, ParticipantId) {
         (RoomId::new(), ParticipantId::new())
@@ -66,9 +80,9 @@ mod tests {
         assert!(has_participant_id, "span must include participant_id field");
     }
 
-    /// Offer処理のspanにparticipant_idとroom_idの両方が含まれることを検証する（Red）。
+    /// Offer処理のspanにparticipant_idとroom_idの両方が含まれることを検証する。
     #[tokio::test]
-    async fn offer_span_contains_participant_and_room() {
+    async fn offer_span_includes_participant_and_room() {
         let room_id = RoomId::new();
         let sender = ParticipantId::new();
         let receiver = ParticipantId::new();
@@ -113,7 +127,7 @@ mod tests {
 
     /// Answer処理のspanにparticipant_idとroom_idが含まれることを検証する。
     #[tokio::test]
-    async fn answer_span_contains_participant_and_room() {
+    async fn answer_span_includes_participant_and_room() {
         let room_id = RoomId::new();
         let sender = ParticipantId::new();
         let receiver = ParticipantId::new();
@@ -158,7 +172,7 @@ mod tests {
 
     /// IceCandidate処理のspanにparticipant_idとroom_idが含まれることを検証する。
     #[tokio::test]
-    async fn ice_span_contains_participant_and_room() {
+    async fn ice_span_includes_participant_and_room() {
         let room_id = RoomId::new();
         let sender = ParticipantId::new();
         let receiver = ParticipantId::new();
@@ -203,7 +217,7 @@ mod tests {
 
     /// LeaveRoom処理のspanにparticipant_idとroom_idが含まれることを検証する。
     #[tokio::test]
-    async fn leave_span_contains_participant_and_room() {
+    async fn leave_span_includes_participant_and_room() {
         let room_id = RoomId::new();
         let self_id = ParticipantId::new();
         let remaining = vec![ParticipantId::new()];
@@ -279,9 +293,9 @@ mod tests {
         assert!(has_participant, "span must include participant_id even on invalid payload");
     }
 
-    /// coreイベントのPeerConnectedブロードキャストspanにroom_id/participant_idが含まれることを検証する（Red）。
+    /// coreイベントのPeerConnectedブロードキャストspanにroom_id/participant_idが含まれることを検証する。
     #[tokio::test]
-    async fn core_peer_connected_span_contains_room_and_participant() {
+    async fn core_peer_connected_span_includes_room_and_participant() {
         let room_id = RoomId::new();
         let p1 = ParticipantId::new();
         let p2 = ParticipantId::new();
@@ -323,9 +337,9 @@ mod tests {
         );
     }
 
-    /// coreイベントのPeerDisconnectedブロードキャストspanにroom_id/participant_idが含まれることを検証する（Red）。
+    /// coreイベントのPeerDisconnectedブロードキャストspanにroom_id/participant_idが含まれることを検証する。
     #[tokio::test]
-    async fn core_peer_disconnected_span_contains_room_and_participant() {
+    async fn core_peer_disconnected_span_includes_room_and_participant() {
         let room_id = RoomId::new();
         let p1 = ParticipantId::new();
         let p2 = ParticipantId::new();
@@ -391,21 +405,33 @@ mod tests {
         let mut handler = WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
         handler.room_id = Some(room_id.clone());
 
-        let layer = RecordingLayer::default();
-        let subscriber = Registry::default().with(layer.clone());
-        let _guard = tracing::subscriber::set_default(subscriber);
-
-        let msg = format!(
-            r#"{{\"type\":\"IceCandidate\",\"to\":\"{}\",\"candidate\":\"cand\"}}"#,
-            receiver
-        );
-
-        // 21件目でレートリミットに到達させる
-        for _ in 0..21 {
-            handler.handle_text_message(&msg).await;
+        let layer = ensure_global_tracing();
+        // 共有レイヤーを使うので事前にクリア
+        if let Ok(mut spans) = layer.spans.lock() {
+            spans.clear();
+        }
+        if let Ok(mut events) = layer.events.lock() {
+            events.clear();
         }
 
-        drop(_guard);
+        let subscriber = Registry::default()
+            .with(tracing_subscriber::filter::LevelFilter::TRACE)
+            .with(layer.clone());
+
+        tracing::subscriber::with_default(subscriber, || async {
+            tracing::callsite::rebuild_interest_cache();
+
+            let msg = format!(
+                r#"{{\"type\":\"IceCandidate\",\"to\":\"{}\",\"candidate\":\"cand\"}}"#,
+                receiver
+            );
+
+            // 21件目でレートリミットに到達させる
+            for _ in 0..21 {
+                handler.handle_text_message(&msg).await;
+            }
+        })
+        .await;
 
         // RateLimitedエラーが返っていることも確認しておく。
         let last_err = handler.sink.sent.last();
