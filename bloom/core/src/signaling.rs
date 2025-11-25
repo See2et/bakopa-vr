@@ -32,7 +32,6 @@ impl DeliverySink for MockDeliverySink {
 }
 
 /// Offerを特定宛先へ1:1で配送する。
-/// 現在はフェーズ1（Red）用に中身は未実装。
 pub fn relay_offer(
     delivery: &mut impl DeliverySink,
     from: &ParticipantId,
@@ -47,7 +46,6 @@ pub fn relay_offer(
 }
 
 /// Answerを特定宛先へ1:1で配送する。
-/// 現在はフェーズ1（Red）用に中身は未実装。
 pub fn relay_answer(
     delivery: &mut impl DeliverySink,
     from: &ParticipantId,
@@ -62,7 +60,6 @@ pub fn relay_answer(
 }
 
 /// ICE candidate を特定宛先へ1:1で配送する。
-/// 現在はフェーズ1（Red）用に中身は未実装。
 pub fn relay_ice_candidate(
     delivery: &mut impl DeliverySink,
     from: &ParticipantId,
