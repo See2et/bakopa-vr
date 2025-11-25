@@ -17,6 +17,11 @@ impl RoomId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// UUID v4 を生成してRoomIdを作る（TDD Red: まだ正しい生成をしていない）。
+    pub fn generate() -> Self {
+        Self(String::new())
+    }
 }
 
 /// 参加者を一意に識別するID。
@@ -30,6 +35,11 @@ impl ParticipantId {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// UUID v4 を生成してParticipantIdを作る（TDD Red: まだ正しい生成をしていない）。
+    pub fn generate() -> Self {
+        Self(String::new())
     }
 }
 
@@ -49,7 +59,6 @@ impl RoomManager {
     }
 
     /// 新規Roomを作成し、作成者自身を最初の参加者として登録する。
-    /// TODO: 実装はこれから。現段階ではRedテストを発火させるためのスタブ。
     pub fn create_room(&mut self, room_owner: ParticipantId) -> CreateRoomResult {
         let room_id = RoomId(Uuid::new_v4().to_string());
         let self_id = room_owner.clone(); // 便宜上生成しているが、実際には接続してきたクライアントから取得する想定。
@@ -74,6 +83,25 @@ pub struct CreateRoomResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn generated_room_id_is_valid_uuid() {
+        let room_id = RoomId::generate();
+
+        let parsed = Uuid::parse_str(room_id.as_str());
+        assert!(parsed.is_ok(), "生成IDはUUIDとして解釈できる");
+        assert_ne!(parsed.unwrap(), Uuid::nil(), "nil UUID ではないこと",);
+    }
+
+    #[test]
+    fn generated_participant_id_is_valid_uuid() {
+        let participant_id = ParticipantId::generate();
+
+        let parsed = Uuid::parse_str(participant_id.as_str());
+        assert!(parsed.is_ok(), "生成IDはUUIDとして解釈できる");
+        assert_ne!(parsed.unwrap(), Uuid::nil(), "nil UUID ではないこと",);
+    }
 
     #[test]
     fn create_room_returns_ids_and_self_is_only_participant() {
