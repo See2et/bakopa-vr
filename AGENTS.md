@@ -77,19 +77,6 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
   - スペック（ドキュメント／コメント／Issue のチェックリストなど）がコードと乖離していないこと。
 
 
-### Use Strong Types, Not Primitive Obsession
-❌ 全てを`String`,`u64`,`i32`などのプリミティブ型で表現
-✅ 必要に応じて`UserID`,`Timeout`,`EmailAddress`などの意味を持った型やenumを定義
-
-**examples**
-```diff
-- fn send_email(to: String, body: String) { /* ... */ }
-+ pub struct EmailAddress(String);
-+ pub struct EmailBody(String);
-+ 
-* fn send_email(to: EmailAddress, body: EmailBody) { /* ... */ }
-```
-
 ### Logging/Trace
 #### 使用クレートと前提
 
@@ -230,3 +217,27 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 
    * 1 つの巨大な `Error` enum に何でも詰め込まず、
      「RepositoryError」「DomainError」「ApiError」のように責務ごとに分割する。
+
+### Use Strong Types, Not Primitive Obsession
+❌ 全てを`String`,`u64`,`i32`などのプリミティブ型で表現
+✅ 必要に応じて`UserID`,`Timeout`,`EmailAddress`などの意味を持った型やenumを定義
+
+**examples**
+```diff
+- fn send_email(to: String, body: String) { /* ... */ }
++ pub struct EmailAddress(String);
++ pub struct EmailBody(String);
++ 
+* fn send_email(to: EmailAddress, body: EmailBody) { /* ... */ }
+```
+
+### 単純な抽象 (Simple Abstractions)
+- 公開APIでジェネリクス・ネストを深くしない。
+    - 例: `Foo<T>` までは許容、`Foo<Bar<Baz<T>>>` のような型をパブリックに出さない。
+- 特に「サービスレベル型」では、`Service<Backend<Store>>` のような多段ネスト型を公開しない。
+    - 公開型は `Service` など単純な表現とし、内部で構成要素を隠蔽する。
+
+### ラッパー型／スマートポインタ非露出
+- 公開APIの引数・戻り値に `Arc<T>` / `Rc<T>` / `Box<T>` / `RefCell<T>` 等を直接出ささない。
+- 原則として `T` / `&T` / `&mut T` を使わせる。
+- 共有や所有戦略はライブラリ内部に閉じ込める。
