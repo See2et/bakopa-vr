@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "PascalCase", deny_unknown_fields)]
 pub enum ClientToServer {
     /// Roomを新規作成する要求（フィールドなし）。
     CreateRoom,
