@@ -1,4 +1,5 @@
 use std::fmt;
+use std::str::FromStr;
 
 use uuid::Uuid;
 
@@ -23,6 +24,14 @@ impl fmt::Display for RoomId {
     }
 }
 
+impl FromStr for RoomId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(uuid::Uuid::parse_str(s)?))
+    }
+}
+
 /// 参加者を一意に識別するID。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ParticipantId(Uuid);
@@ -41,5 +50,13 @@ impl ParticipantId {
 impl fmt::Display for ParticipantId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for ParticipantId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(uuid::Uuid::parse_str(s)?))
     }
 }
