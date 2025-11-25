@@ -336,4 +336,22 @@ mod tests {
         let extra_ice = r#"{"type":"IceCandidate","from":"p3","candidate":"cand","foo":"bar"}"#;
         assert!(serde_json::from_str::<ServerToClient>(extra_ice).is_err());
     }
+
+    #[test]
+    fn error_event_roundtrip_and_unknown_code_fails() {
+        let msg = ServerToClient::Error {
+            code: ErrorCode::ParticipantNotFound,
+            message: "target missing".into(),
+        };
+
+        let json = serde_json::to_string(&msg).expect("serialize");
+        assert_eq!(json, r#"{"type":"Error","code":"ParticipantNotFound","message":"target missing"}"#);
+
+        let back: ServerToClient = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, msg);
+
+        // unknown code must be rejected
+        let unknown_code = r#"{"type":"Error","code":"TotallyUnknown","message":"oops"}"#;
+        assert!(serde_json::from_str::<ServerToClient>(unknown_code).is_err());
+    }
 }
