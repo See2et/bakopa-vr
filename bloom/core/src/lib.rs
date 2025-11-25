@@ -1,57 +1,38 @@
-//! Core domain types and room management skeleton for Bloom signaling.
-//! 現時点では仕様書 2-0 準備段階の骨組みのみを提供する。
-
-use std::collections::HashMap;
-
 use uuid::Uuid;
 
 /// ルームを一意に識別するID。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RoomId(String);
+pub struct RoomId(Uuid);
 
 impl RoomId {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    /// UUID v4 を生成してRoomIdを作る。
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn as_uuid(&self) -> &Uuid {
         &self.0
-    }
-
-    /// UUID v4 を生成してRoomIdを作る（TDD Red: まだ正しい生成をしていない）。
-    pub fn generate() -> Self {
-        Self(String::new())
     }
 }
 
 /// 参加者を一意に識別するID。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ParticipantId(String);
+pub struct ParticipantId(Uuid);
 
 impl ParticipantId {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    /// UUID v4 を生成してParticipantIdを作る。
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn as_uuid(&self) -> &Uuid {
         &self.0
-    }
-
-    /// UUID v4 を生成してParticipantIdを作る（TDD Red: まだ正しい生成をしていない）。
-    pub fn generate() -> Self {
-        Self(String::new())
     }
 }
 
 /// ルーム・参加者管理を担うコンポーネントの骨組み。
 #[derive(Default)]
-pub struct RoomManager {
-    rooms: HashMap<RoomId, RoomState>,
-}
-
-struct RoomState {
-    participants: Vec<ParticipantId>,
-}
+pub struct RoomManager;
 
 impl RoomManager {
     pub fn new() -> Self {
@@ -60,14 +41,14 @@ impl RoomManager {
 
     /// 新規Roomを作成し、作成者自身を最初の参加者として登録する。
     pub fn create_room(&mut self, room_owner: ParticipantId) -> CreateRoomResult {
-        let room_id = RoomId(Uuid::new_v4().to_string());
-        let self_id = room_owner.clone(); // 便宜上生成しているが、実際には接続してきたクライアントから取得する想定。
+        let room_id = RoomId::new();
+        let self_id = room_owner;
         let participants = vec![self_id.clone()];
 
         CreateRoomResult {
-            room_id: room_id,
-            self_id: self_id,
-            participants: participants,
+            room_id,
+            self_id,
+            participants,
         }
     }
 }
@@ -83,40 +64,43 @@ pub struct CreateRoomResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
 
     #[test]
     fn generated_room_id_is_valid_uuid() {
-        let room_id = RoomId::generate();
+        let room_id = RoomId::new();
 
-        let parsed = Uuid::parse_str(room_id.as_str());
-        assert!(parsed.is_ok(), "生成IDはUUIDとして解釈できる");
-        assert_ne!(parsed.unwrap(), Uuid::nil(), "nil UUID ではないこと",);
+        assert_ne!(
+            *room_id.as_uuid(),
+            Uuid::nil(),
+            "生成されたRoomIdはnil UUIDではない"
+        );
     }
 
     #[test]
     fn generated_participant_id_is_valid_uuid() {
-        let participant_id = ParticipantId::generate();
+        let participant_id = ParticipantId::new();
 
-        let parsed = Uuid::parse_str(participant_id.as_str());
-        assert!(parsed.is_ok(), "生成IDはUUIDとして解釈できる");
-        assert_ne!(parsed.unwrap(), Uuid::nil(), "nil UUID ではないこと",);
+        assert_ne!(
+            *participant_id.as_uuid(),
+            Uuid::nil(),
+            "生成されたParticipantIdはnil UUIDではない"
+        );
     }
 
     #[test]
     fn create_room_returns_ids_and_self_is_only_participant() {
         let mut manager = RoomManager::new();
-        let room_owner_id = ParticipantId(Uuid::new_v4().to_string());
+        let room_owner_id = ParticipantId::new();
 
         let result = manager.create_room(room_owner_id);
 
         assert!(
-            !result.room_id.as_str().is_empty(),
-            "room_idは空であってはならない"
+            *result.room_id.as_uuid() != Uuid::nil(),
+            "room_idはnilであってはならない"
         );
         assert!(
-            !result.self_id.as_str().is_empty(),
-            "self_idは空であってはならない"
+            *result.self_id.as_uuid() != Uuid::nil(),
+            "self_idはnilであってはならない"
         );
         assert_eq!(
             result.participants,
