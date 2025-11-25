@@ -71,6 +71,217 @@ mod tests {
         assert!(has_participant_id, "span must include participant_id field");
     }
 
+    /// Offer処理のspanにparticipant_idとroom_idの両方が含まれることを検証する（Red）。
+    #[tokio::test]
+    async fn offer_span_contains_participant_and_room() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
+        handler.room_id = Some(room_id.clone());
+
+        let layer = RecordingLayer::default();
+        let subscriber = Registry::default().with(layer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        handler
+            .handle_text_message(&format!(
+                r#"{{\"type\":\"Offer\",\"to\":\"{}\",\"sdp\":\"v=0 offer\"}}"#,
+                receiver
+            ))
+            .await;
+
+        drop(_guard);
+
+        let spans = layer.spans.lock().expect("span records should be collected");
+        assert!(!spans.is_empty(), "at least one span should be emitted");
+
+        let offer_span = spans
+            .iter()
+            .find(|s| {
+                s.fields
+                    .get("participant_id")
+                    .map(|v| v.contains(&sender.to_string()))
+                    .unwrap_or(false)
+            })
+            .expect("span with participant_id should exist");
+
+        let has_room = offer_span
+            .fields
+            .get("room_id")
+            .map(|v| v.contains(&room_id.to_string()))
+            .unwrap_or(false);
+
+        assert!(has_room, "span must include room_id field when handling offer");
+    }
+
+    /// Answer処理のspanにparticipant_idとroom_idが含まれることを検証する。
+    #[tokio::test]
+    async fn answer_span_contains_participant_and_room() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
+        handler.room_id = Some(room_id.clone());
+
+        let layer = RecordingLayer::default();
+        let subscriber = Registry::default().with(layer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        handler
+            .handle_text_message(&format!(
+                r#"{{\"type\":\"Answer\",\"to\":\"{}\",\"sdp\":\"v=0 answer\"}}"#,
+                receiver
+            ))
+            .await;
+
+        drop(_guard);
+
+        let spans = layer.spans.lock().expect("span records should be collected");
+        assert!(!spans.is_empty(), "at least one span should be emitted");
+
+        let span = spans
+            .iter()
+            .find(|s| {
+                s.fields
+                    .get("participant_id")
+                    .map(|v| v.contains(&sender.to_string()))
+                    .unwrap_or(false)
+            })
+            .expect("span with participant_id should exist");
+
+        let has_room = span
+            .fields
+            .get("room_id")
+            .map(|v| v.contains(&room_id.to_string()))
+            .unwrap_or(false);
+
+        assert!(has_room, "span must include room_id field when handling answer");
+    }
+
+    /// IceCandidate処理のspanにparticipant_idとroom_idが含まれることを検証する。
+    #[tokio::test]
+    async fn ice_span_contains_participant_and_room() {
+        let room_id = RoomId::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: sender.clone(),
+            participants: vec![sender.clone(), receiver.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
+        handler.room_id = Some(room_id.clone());
+
+        let layer = RecordingLayer::default();
+        let subscriber = Registry::default().with(layer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        handler
+            .handle_text_message(&format!(
+                r#"{{\"type\":\"IceCandidate\",\"to\":\"{}\",\"candidate\":\"cand1\"}}"#,
+                receiver
+            ))
+            .await;
+
+        drop(_guard);
+
+        let spans = layer.spans.lock().expect("span records should be collected");
+        assert!(!spans.is_empty(), "at least one span should be emitted");
+
+        let span = spans
+            .iter()
+            .find(|s| {
+                s.fields
+                    .get("participant_id")
+                    .map(|v| v.contains(&sender.to_string()))
+                    .unwrap_or(false)
+            })
+            .expect("span with participant_id should exist");
+
+        let has_room = span
+            .fields
+            .get("room_id")
+            .map(|v| v.contains(&room_id.to_string()))
+            .unwrap_or(false);
+
+        assert!(has_room, "span must include room_id field when handling ice");
+    }
+
+    /// LeaveRoom処理のspanにparticipant_idとroom_idが含まれることを検証する。
+    #[tokio::test]
+    async fn leave_span_contains_participant_and_room() {
+        let room_id = RoomId::new();
+        let self_id = ParticipantId::new();
+        let remaining = vec![ParticipantId::new()];
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: self_id.clone(),
+            participants: vec![self_id.clone()].into_iter().chain(remaining.clone()).collect(),
+        };
+
+        let core = MockCore::new(core_result).with_leave_result(Some(remaining.clone()));
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
+        handler.room_id = Some(room_id.clone());
+
+        let layer = RecordingLayer::default();
+        let subscriber = Registry::default().with(layer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        handler.handle_text_message(r#"{\"type\":\"LeaveRoom\"}"#).await;
+
+        drop(_guard);
+
+        let spans = layer.spans.lock().expect("span records should be collected");
+        assert!(!spans.is_empty(), "at least one span should be emitted");
+
+        let span = spans
+            .iter()
+            .find(|s| {
+                s.fields
+                    .get("participant_id")
+                    .map(|v| v.contains(&self_id.to_string()))
+                    .unwrap_or(false)
+            })
+            .expect("span with participant_id should exist");
+
+        let has_room = span
+            .fields
+            .get("room_id")
+            .map(|v| v.contains(&room_id.to_string()))
+            .unwrap_or(false);
+
+        assert!(has_room, "span must include room_id field when handling leave");
+    }
+
     /// Spanを記録するテスト用Layer。span生成時のフィールドを保持する。
     #[derive(Clone, Default)]
     struct RecordingLayer {
