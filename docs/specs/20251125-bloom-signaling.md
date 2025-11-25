@@ -56,6 +56,7 @@ Bloomはシグナリング専用の役割を担い、クライアント⇔Bloom�
   - roomに紐づく処理（Offer/Answer/Ice/Leaveなど）では、spanに`room_id`も必ず含める。
   - RateLimited時のwarnログは、構造化フィールド`participant_id`（文字列ID）を必須とする。
   - coreイベントフック（`broadcast_peer_connected` / `broadcast_peer_disconnected`）のspanにも`room_id`と`participant_id`を必須フィールドとして含める。
+  - InvalidPayloadなどエラーパスでも、当該接続のspanに`participant_id`フィールドが欠落しないこと。
 - セキュリティ: 機密情報をログ出力しない。将来の認証導入を阻害しないAPI設計（Authorizationヘッダやtokenフィールドを拡張可能に）。
 
 ## ネットワーク/フロー概要

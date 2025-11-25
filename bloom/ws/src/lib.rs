@@ -62,12 +62,7 @@ mod tests {
             .lock()
             .expect("span records should be collected");
         assert!(!spans.is_empty(), "handshake should emit at least one span");
-        let has_participant_id = spans.iter().any(|s| {
-            s.fields
-                .get("participant_id")
-                .map(|v| v.contains(&self_id.to_string()))
-                .unwrap_or(false)
-        });
+        let has_participant_id = spans_have_field(&spans, "participant_id", &self_id.to_string());
         assert!(has_participant_id, "span must include participant_id field");
     }
 
@@ -106,23 +101,14 @@ mod tests {
         let spans = layer.spans.lock().expect("span records should be collected");
         assert!(!spans.is_empty(), "at least one span should be emitted");
 
-        let offer_span = spans
-            .iter()
-            .find(|s| {
-                s.fields
-                    .get("participant_id")
-                    .map(|v| v.contains(&sender.to_string()))
-                    .unwrap_or(false)
-            })
-            .expect("span with participant_id should exist");
-
-        let has_room = offer_span
-            .fields
-            .get("room_id")
-            .map(|v| v.contains(&room_id.to_string()))
-            .unwrap_or(false);
-
-        assert!(has_room, "span must include room_id field when handling offer");
+        assert!(
+            spans_have_field(&spans, "participant_id", &sender.to_string()),
+            "span must include participant_id"
+        );
+        assert!(
+            spans_have_field(&spans, "room_id", &room_id.to_string()),
+            "span must include room_id field when handling offer"
+        );
     }
 
     /// Answer処理のspanにparticipant_idとroom_idが含まれることを検証する。
@@ -160,23 +146,14 @@ mod tests {
         let spans = layer.spans.lock().expect("span records should be collected");
         assert!(!spans.is_empty(), "at least one span should be emitted");
 
-        let span = spans
-            .iter()
-            .find(|s| {
-                s.fields
-                    .get("participant_id")
-                    .map(|v| v.contains(&sender.to_string()))
-                    .unwrap_or(false)
-            })
-            .expect("span with participant_id should exist");
-
-        let has_room = span
-            .fields
-            .get("room_id")
-            .map(|v| v.contains(&room_id.to_string()))
-            .unwrap_or(false);
-
-        assert!(has_room, "span must include room_id field when handling answer");
+        assert!(
+            spans_have_field(&spans, "participant_id", &sender.to_string()),
+            "span must include participant_id"
+        );
+        assert!(
+            spans_have_field(&spans, "room_id", &room_id.to_string()),
+            "span must include room_id field when handling answer"
+        );
     }
 
     /// IceCandidate処理のspanにparticipant_idとroom_idが含まれることを検証する。
@@ -214,23 +191,14 @@ mod tests {
         let spans = layer.spans.lock().expect("span records should be collected");
         assert!(!spans.is_empty(), "at least one span should be emitted");
 
-        let span = spans
-            .iter()
-            .find(|s| {
-                s.fields
-                    .get("participant_id")
-                    .map(|v| v.contains(&sender.to_string()))
-                    .unwrap_or(false)
-            })
-            .expect("span with participant_id should exist");
-
-        let has_room = span
-            .fields
-            .get("room_id")
-            .map(|v| v.contains(&room_id.to_string()))
-            .unwrap_or(false);
-
-        assert!(has_room, "span must include room_id field when handling ice");
+        assert!(
+            spans_have_field(&spans, "participant_id", &sender.to_string()),
+            "span must include participant_id"
+        );
+        assert!(
+            spans_have_field(&spans, "room_id", &room_id.to_string()),
+            "span must include room_id field when handling ice"
+        );
     }
 
     /// LeaveRoom処理のspanにparticipant_idとroom_idが含まれることを検証する。
@@ -263,23 +231,52 @@ mod tests {
         let spans = layer.spans.lock().expect("span records should be collected");
         assert!(!spans.is_empty(), "at least one span should be emitted");
 
-        let span = spans
-            .iter()
-            .find(|s| {
-                s.fields
-                    .get("participant_id")
-                    .map(|v| v.contains(&self_id.to_string()))
-                    .unwrap_or(false)
-            })
-            .expect("span with participant_id should exist");
+        assert!(
+            spans_have_field(&spans, "participant_id", &self_id.to_string()),
+            "span must include participant_id"
+        );
+        assert!(
+            spans_have_field(&spans, "room_id", &room_id.to_string()),
+            "span must include room_id field when handling leave"
+        );
+    }
 
-        let has_room = span
-            .fields
-            .get("room_id")
-            .map(|v| v.contains(&room_id.to_string()))
-            .unwrap_or(false);
+    /// InvalidPayloadエラーパスでもspanにparticipant_idが含まれることを確認する（Red）。
+    #[tokio::test]
+    async fn invalid_payload_span_keeps_participant_id() {
+        let (_room_id, self_id) = new_room();
 
-        assert!(has_room, "span must include room_id field when handling leave");
+        let core_result = CreateRoomResult {
+            room_id: RoomId::new(),
+            self_id: self_id.clone(),
+            participants: vec![self_id.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
+
+        let layer = RecordingLayer::default();
+        let subscriber = Registry::default().with(layer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        // room_id欠落のJoinRoomでInvalidPayloadを発生させる
+        handler.handle_text_message(r#"{\"type\":\"JoinRoom\"}"#).await;
+
+        drop(_guard);
+
+        let spans = layer.spans.lock().expect("span records should be collected");
+        assert!(!spans.is_empty(), "invalid payload handling should emit span");
+
+        let has_participant = spans.iter().any(|s| {
+            s.fields
+                .get("participant_id")
+                .map(|v| v.contains(&self_id.to_string()))
+                .unwrap_or(false)
+        });
+
+        assert!(has_participant, "span must include participant_id even on invalid payload");
     }
 
     /// coreイベントのPeerConnectedブロードキャストspanにroom_id/participant_idが含まれることを検証する（Red）。
@@ -316,23 +313,14 @@ mod tests {
         let spans = layer.spans.lock().expect("span records should be collected");
         assert!(!spans.is_empty(), "peer connected should emit span");
 
-        let span = spans
-            .iter()
-            .find(|s| {
-                s.fields
-                    .get("participant_id")
-                    .map(|v| v.contains(&p1.to_string()))
-                    .unwrap_or(false)
-            })
-            .expect("span with participant_id should exist");
-
-        let has_room = span
-            .fields
-            .get("room_id")
-            .map(|v| v.contains(&room_id.to_string()))
-            .unwrap_or(false);
-
-        assert!(has_room, "peer connected span must include room_id");
+        assert!(
+            spans_have_field(&spans, "participant_id", &p1.to_string()),
+            "span must include participant_id"
+        );
+        assert!(
+            spans_have_field(&spans, "room_id", &room_id.to_string()),
+            "peer connected span must include room_id"
+        );
     }
 
     /// coreイベントのPeerDisconnectedブロードキャストspanにroom_id/participant_idが含まれることを検証する（Red）。
@@ -369,27 +357,18 @@ mod tests {
         let spans = layer.spans.lock().expect("span records should be collected");
         assert!(!spans.is_empty(), "peer disconnected should emit span");
 
-        let span = spans
-            .iter()
-            .find(|s| {
-                s.fields
-                    .get("participant_id")
-                    .map(|v| v.contains(&p1.to_string()))
-                    .unwrap_or(false)
-            })
-            .expect("span with participant_id should exist");
-
-        let has_room = span
-            .fields
-            .get("room_id")
-            .map(|v| v.contains(&room_id.to_string()))
-            .unwrap_or(false);
-
-        assert!(has_room, "peer disconnected span must include room_id");
+        assert!(
+            spans_have_field(&spans, "participant_id", &p1.to_string()),
+            "span must include participant_id"
+        );
+        assert!(
+            spans_have_field(&spans, "room_id", &room_id.to_string()),
+            "peer disconnected span must include room_id"
+        );
     }
 
     /// RateLimited時のwarnログにparticipant_idフィールドが文字列IDで入っていることを検証する（Red）。
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn rate_limit_warn_contains_participant_id_field() {
         let room_id = RoomId::new();
         let sender = ParticipantId::new();
@@ -428,6 +407,10 @@ mod tests {
 
         drop(_guard);
 
+        // RateLimitedエラーが返っていることも確認しておく。
+        let last_err = handler.sink.sent.last();
+        assert!(matches!(last_err, Some(ServerToClient::Error { code: ErrorCode::RateLimited, .. })), "21st message should be rate limited");
+
         let events = layer.events.lock().expect("events should be recorded");
         let warn_with_participant = events.iter().find(|e| {
             e.level == tracing::Level::WARN
@@ -438,10 +421,12 @@ mod tests {
                     .unwrap_or(false)
         });
 
-        assert!(
-            warn_with_participant.is_some(),
-            "warn log must include participant_id field as string"
-        );
+        if warn_with_participant.is_none() {
+            panic!(
+                "warn log must include participant_id field as string. events={:?}",
+                *events
+            );
+        }
     }
 
     /// Spanを記録するテスト用Layer。span生成時のフィールドを保持する。
@@ -453,7 +438,6 @@ mod tests {
 
     #[derive(Debug, Clone, Default)]
     struct SpanRecord {
-        name: String,
         fields: HashMap<String, String>,
     }
 
@@ -489,7 +473,6 @@ mod tests {
             }
 
             let record = SpanRecord {
-                name: attrs.metadata().name().to_string(),
                 fields: visitor.fields,
             };
 
@@ -527,6 +510,16 @@ mod tests {
             self.fields
                 .insert(field.name().to_string(), format!("{value:?}"));
         }
+    }
+
+    /// 共通ヘルパ: spanが特定フィールド=値を持つかを確認。
+    fn spans_have_field(spans: &[SpanRecord], key: &str, value: &str) -> bool {
+        spans.iter().any(|s| {
+            s.fields
+                .get(key)
+                .map(|v| v.contains(value))
+                .unwrap_or(false)
+        })
     }
 
     /// WS接続確立→CreateRoom送信で RoomCreated(self_id, room_id) が返ることを検証する。
