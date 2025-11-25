@@ -7,8 +7,13 @@ mod sinks;
 pub use core_api::CoreApi;
 pub use handler::{HandshakeResponse, WsHandler};
 pub use mocks::MockCore;
-pub use rate_limit::{Clock, DynClock, RateLimitConfig, RateLimitDecision, RateLimiter, SystemClock};
-pub use sinks::{BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink, SharedBroadcastSink};
+pub use rate_limit::{
+    Clock, DynClock, RateLimitConfig, RateLimitDecision, RateLimiter, SystemClock,
+};
+pub use sinks::{
+    BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink,
+    SharedBroadcastSink,
+};
 
 #[cfg(test)]
 mod tests {
@@ -17,9 +22,118 @@ mod tests {
     use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+    use std::{collections::HashMap, fmt};
+    use tracing::Subscriber;
+    use tracing_subscriber::{
+        layer::{Context, Layer},
+        prelude::*,
+        registry::{LookupSpan, Registry},
+    };
 
     fn new_room() -> (RoomId, ParticipantId) {
         (RoomId::new(), ParticipantId::new())
+    }
+
+    /// handle_text_message前段のhandshakeでspanが生成され、participant_idフィールドを持つことを確認する（Red）。
+    #[tokio::test]
+    async fn handshake_emits_span_with_participant_id_field() {
+        let (room_id, self_id) = new_room();
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: self_id.clone(),
+            participants: vec![self_id.clone()],
+        };
+
+        let core = MockCore::new(core_result);
+        let sink = RecordingSink::default();
+        let broadcast = NoopBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
+
+        let layer = RecordingLayer::default();
+        let subscriber = Registry::default().with(layer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        handler.perform_handshake().await;
+
+        drop(_guard);
+
+        let spans = layer
+            .spans
+            .lock()
+            .expect("span records should be collected");
+        assert!(!spans.is_empty(), "handshake should emit at least one span");
+        let has_participant_id = spans.iter().any(|s| {
+            s.fields
+                .get("participant_id")
+                .map(|v| v.contains(&self_id.to_string()))
+                .unwrap_or(false)
+        });
+        assert!(has_participant_id, "span must include participant_id field");
+    }
+
+    /// Spanを記録するテスト用Layer。span生成時のフィールドを保持する。
+    #[derive(Clone, Default)]
+    struct RecordingLayer {
+        spans: Arc<Mutex<Vec<SpanRecord>>>,
+    }
+
+    #[derive(Debug, Clone, Default)]
+    struct SpanRecord {
+        name: String,
+        fields: HashMap<String, String>,
+    }
+
+    impl<S> Layer<S> for RecordingLayer
+    where
+        S: Subscriber + for<'a> LookupSpan<'a>,
+    {
+        fn on_new_span(
+            &self,
+            attrs: &tracing::span::Attributes<'_>,
+            id: &tracing::span::Id,
+            ctx: Context<'_, S>,
+        ) {
+            let mut visitor = FieldVisitor::default();
+            attrs.record(&mut visitor);
+
+            // span拡張に記録されたフィールド（親由来など）も収集する
+            if let Some(span) = ctx.span(id) {
+                span.extensions().get::<SpanFields>().map(|ext| {
+                    for (k, v) in &ext.fields {
+                        visitor.fields.entry(k.clone()).or_insert(v.clone());
+                    }
+                });
+                span.extensions_mut().insert(SpanFields {
+                    fields: visitor.fields.clone(),
+                });
+            }
+
+            let record = SpanRecord {
+                name: attrs.metadata().name().to_string(),
+                fields: visitor.fields,
+            };
+
+            if let Ok(mut guard) = self.spans.lock() {
+                guard.push(record);
+            }
+        }
+    }
+
+    #[derive(Default, Debug)]
+    struct SpanFields {
+        fields: HashMap<String, String>,
+    }
+
+    #[derive(Default, Debug)]
+    struct FieldVisitor {
+        fields: HashMap<String, String>,
+    }
+
+    impl tracing::field::Visit for FieldVisitor {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
+            self.fields
+                .insert(field.name().to_string(), format!("{value:?}"));
+        }
     }
 
     /// WS接続確立→CreateRoom送信で RoomCreated(self_id, room_id) が返ることを検証する。
@@ -44,7 +158,11 @@ mod tests {
             .handle_text_message(r#"{"type":"CreateRoom"}"#)
             .await;
 
-        assert_eq!(handler.sink.sent.len(), 1, "CreateRoomに対するレスポンスが1件送られる");
+        assert_eq!(
+            handler.sink.sent.len(),
+            1,
+            "CreateRoomに対するレスポンスが1件送られる"
+        );
         let sent = &handler.sink.sent[0];
         assert_eq!(
             sent,
@@ -55,7 +173,8 @@ mod tests {
         );
 
         let json = serde_json::to_string(sent).expect("serialize server message");
-        let roundtrip: ServerToClient = serde_json::from_str(&json).expect("deserialize server message");
+        let roundtrip: ServerToClient =
+            serde_json::from_str(&json).expect("deserialize server message");
         assert_eq!(roundtrip, *sent);
     }
 
@@ -124,7 +243,10 @@ mod tests {
         assert_eq!(handler.sink.sent.len(), 1);
         assert!(matches!(
             handler.sink.sent[0],
-            ServerToClient::Error { code: ErrorCode::RoomFull, .. }
+            ServerToClient::Error {
+                code: ErrorCode::RoomFull,
+                ..
+            }
         ));
         assert!(handler.broadcast.sent.is_empty());
     }
@@ -225,8 +347,8 @@ mod tests {
             participants: vec![sender.clone(), receiver.clone()],
         };
 
-        let core = MockCore::new(core_result)
-            .with_relay_offer_result(Err(ErrorCode::ParticipantNotFound));
+        let core =
+            MockCore::new(core_result).with_relay_offer_result(Err(ErrorCode::ParticipantNotFound));
         let sink = RecordingSink::default();
         let broadcast = RecordingBroadcastSink::default();
         let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
@@ -243,7 +365,10 @@ mod tests {
         assert_eq!(handler.sink.sent.len(), 1);
         assert!(matches!(
             handler.sink.sent[0],
-            ServerToClient::Error { code: ErrorCode::ParticipantNotFound, .. }
+            ServerToClient::Error {
+                code: ErrorCode::ParticipantNotFound,
+                ..
+            }
         ));
         assert!(handler.broadcast.messages_for(&missing).is_none());
         assert!(handler.broadcast.messages_for(&receiver).is_none());
@@ -281,7 +406,10 @@ mod tests {
         assert_eq!(handler.sink.sent.len(), 1);
         assert!(matches!(
             handler.sink.sent[0],
-            ServerToClient::Error { code: ErrorCode::ParticipantNotFound, .. }
+            ServerToClient::Error {
+                code: ErrorCode::ParticipantNotFound,
+                ..
+            }
         ));
         assert!(handler.broadcast.messages_for(&missing).is_none());
         assert!(handler.broadcast.messages_for(&receiver).is_none());
@@ -301,8 +429,8 @@ mod tests {
             participants: vec![sender.clone(), receiver.clone()],
         };
 
-        let core = MockCore::new(core_result)
-            .with_relay_ice_result(Err(ErrorCode::ParticipantNotFound));
+        let core =
+            MockCore::new(core_result).with_relay_ice_result(Err(ErrorCode::ParticipantNotFound));
         let sink = RecordingSink::default();
         let broadcast = RecordingBroadcastSink::default();
         let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
@@ -319,7 +447,10 @@ mod tests {
         assert_eq!(handler.sink.sent.len(), 1);
         assert!(matches!(
             handler.sink.sent[0],
-            ServerToClient::Error { code: ErrorCode::ParticipantNotFound, .. }
+            ServerToClient::Error {
+                code: ErrorCode::ParticipantNotFound,
+                ..
+            }
         ));
         assert!(handler.broadcast.messages_for(&missing).is_none());
         assert!(handler.broadcast.messages_for(&receiver).is_none());
@@ -344,7 +475,13 @@ mod tests {
         handler.handle_text_message(r#"{"type":"JoinRoom"}"#).await;
 
         assert_eq!(handler.sink.sent.len(), 1);
-        assert!(matches!(handler.sink.sent[0], ServerToClient::Error { code: ErrorCode::InvalidPayload, .. }));
+        assert!(matches!(
+            handler.sink.sent[0],
+            ServerToClient::Error {
+                code: ErrorCode::InvalidPayload,
+                ..
+            }
+        ));
         assert!(handler.core.join_room_calls.is_empty());
         assert!(handler.broadcast.sent.is_empty());
     }
@@ -377,15 +514,18 @@ mod tests {
             .await;
 
         assert_eq!(handler.sink.sent.len(), 1);
-        assert!(matches!(handler.sink.sent[0], ServerToClient::Error { code: ErrorCode::InvalidPayload, .. }));
+        assert!(matches!(
+            handler.sink.sent[0],
+            ServerToClient::Error {
+                code: ErrorCode::InvalidPayload,
+                ..
+            }
+        ));
         assert!(handler.core.join_room_calls.is_empty());
         assert!(handler.broadcast.sent.is_empty());
 
         handler
-            .handle_text_message(&format!(
-                r#"{{"type":"JoinRoom","room_id":"{}"}}"#,
-                room_id
-            ))
+            .handle_text_message(&format!(r#"{{"type":"JoinRoom","room_id":"{}"}}"#, room_id))
             .await;
 
         assert_eq!(handler.core.join_room_calls.len(), 1);
@@ -394,7 +534,9 @@ mod tests {
                 .broadcast
                 .messages_for(p)
                 .expect("participants should receive broadcast");
-            assert!(msgs.iter().any(|m| matches!(m, ServerToClient::RoomParticipants { .. })));
+            assert!(msgs
+                .iter()
+                .any(|m| matches!(m, ServerToClient::RoomParticipants { .. })));
         }
     }
 
@@ -419,9 +561,7 @@ mod tests {
         let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast.clone());
         handler.room_id = Some(room_id.clone());
 
-        handler
-            .handle_abnormal_close(&remaining)
-            .await;
+        handler.handle_abnormal_close(&remaining).await;
 
         assert_eq!(handler.core.leave_room_calls.len(), 1);
 
@@ -434,9 +574,7 @@ mod tests {
                 .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &self_id.to_string())));
         }
 
-        handler
-            .handle_abnormal_close(&remaining)
-            .await;
+        handler.handle_abnormal_close(&remaining).await;
         assert_eq!(handler.core.leave_room_calls.len(), 1);
     }
 
@@ -457,11 +595,21 @@ mod tests {
         let shared_broadcast = SharedBroadcastSink::default();
 
         let core1 = MockCore::new(core_result.clone());
-        let mut h1 = WsHandler::new(core1, p1.clone(), RecordingSink::default(), shared_broadcast.clone());
+        let mut h1 = WsHandler::new(
+            core1,
+            p1.clone(),
+            RecordingSink::default(),
+            shared_broadcast.clone(),
+        );
         h1.room_id = Some(room_id.clone());
 
         let core2 = MockCore::new(core_result);
-        let mut h2 = WsHandler::new(core2, p2.clone(), RecordingSink::default(), shared_broadcast.clone());
+        let mut h2 = WsHandler::new(
+            core2,
+            p2.clone(),
+            RecordingSink::default(),
+            shared_broadcast.clone(),
+        );
         h2.room_id = Some(room_id.clone());
 
         h1.broadcast_peer_connected(&[p1.clone(), p2.clone()], &newcomer)
@@ -520,7 +668,8 @@ mod tests {
         let dyn_clock: DynClock = clock.clone();
         let limiter = RateLimiter::from_config(dyn_clock, RateLimitConfig::default());
 
-        let mut handler = WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
+        let mut handler =
+            WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
         handler.perform_handshake().await;
         handler.room_id = Some(room_id.clone());
 
@@ -543,7 +692,13 @@ mod tests {
             "21st should not reach core"
         );
         let last = handler.sink.sent.last().expect("an error should be sent");
-        assert!(matches!(last, ServerToClient::Error { code: ErrorCode::RateLimited, .. }));
+        assert!(matches!(
+            last,
+            ServerToClient::Error {
+                code: ErrorCode::RateLimited,
+                ..
+            }
+        ));
     }
 
     /// レート超過後1秒経過すると再び許可され、coreへのforwardが再開されること。
@@ -567,7 +722,8 @@ mod tests {
         let dyn_clock: DynClock = clock.clone();
         let limiter = RateLimiter::from_config(dyn_clock.clone(), RateLimitConfig::default());
 
-        let mut handler = WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
+        let mut handler =
+            WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
         handler.perform_handshake().await;
         handler.room_id = Some(room_id.clone());
 
@@ -580,7 +736,11 @@ mod tests {
             handler.handle_text_message(&msg).await;
         }
 
-        assert_eq!(handler.core.relay_ice_calls.len(), 20, "21st should be blocked");
+        assert_eq!(
+            handler.core.relay_ice_calls.len(),
+            20,
+            "21st should be blocked"
+        );
 
         clock.advance(Duration::from_secs(1));
 
@@ -615,12 +775,10 @@ mod tests {
 
     impl Clock for TestClock {
         fn now(&self) -> Instant {
-            self
-                .now
+            self.now
                 .lock()
                 .map(|t| *t)
                 .unwrap_or_else(|_| Instant::now())
         }
     }
-
 }
