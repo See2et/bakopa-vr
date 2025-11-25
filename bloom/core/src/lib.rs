@@ -1,6 +1,10 @@
 //! Core domain types and room management skeleton for Bloom signaling.
 //! 現時点では仕様書 2-0 準備段階の骨組みのみを提供する。
 
+use std::collections::HashMap;
+
+use uuid::Uuid;
+
 /// ルームを一意に識別するID。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RoomId(String);
@@ -31,7 +35,13 @@ impl ParticipantId {
 
 /// ルーム・参加者管理を担うコンポーネントの骨組み。
 #[derive(Default)]
-pub struct RoomManager;
+pub struct RoomManager {
+    rooms: HashMap<RoomId, RoomState>,
+}
+
+struct RoomState {
+    participants: Vec<ParticipantId>,
+}
 
 impl RoomManager {
     pub fn new() -> Self {
@@ -40,8 +50,16 @@ impl RoomManager {
 
     /// 新規Roomを作成し、作成者自身を最初の参加者として登録する。
     /// TODO: 実装はこれから。現段階ではRedテストを発火させるためのスタブ。
-    pub fn create_room(&mut self) -> CreateRoomResult {
-        unimplemented!("create_room is not implemented yet");
+    pub fn create_room(&mut self, room_owner: ParticipantId) -> CreateRoomResult {
+        let room_id = RoomId(Uuid::new_v4().to_string());
+        let self_id = room_owner.clone(); // 便宜上生成しているが、実際には接続してきたクライアントから取得する想定。
+        let participants = vec![self_id.clone()];
+
+        CreateRoomResult {
+            room_id: room_id,
+            self_id: self_id,
+            participants: participants,
+        }
     }
 }
 
@@ -60,8 +78,9 @@ mod tests {
     #[test]
     fn create_room_returns_ids_and_self_is_only_participant() {
         let mut manager = RoomManager::new();
+        let room_owner_id = ParticipantId(Uuid::new_v4().to_string());
 
-        let result = manager.create_room();
+        let result = manager.create_room(room_owner_id);
 
         assert!(
             !result.room_id.as_str().is_empty(),
