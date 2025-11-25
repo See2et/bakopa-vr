@@ -103,8 +103,7 @@ mod tests {
 
     impl Clock for MockClock {
         fn now(&self) -> Instant {
-            self
-                .now
+            self.now
                 .lock()
                 .map(|t| *t)
                 .unwrap_or_else(|_| Instant::now())
