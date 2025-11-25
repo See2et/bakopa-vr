@@ -38,3 +38,9 @@ pub trait CoreApi {
     ) -> Result<(), bloom_api::ErrorCode>;
 }
 
+/// Coreからハンドラへ流れてくるイベントを受け取るためのフック。
+pub trait CoreEventReceiver {
+    fn on_peer_connected(&mut self, participants: &[ParticipantId], joined: &ParticipantId);
+    fn on_peer_disconnected(&mut self, participants: &[ParticipantId], left: &ParticipantId);
+    fn on_participants_updated(&mut self, room_id: &RoomId, participants: &[ParticipantId]);
+}
