@@ -285,4 +285,41 @@ mod tests {
             "送信者にも配送されない"
         );
     }
+
+    #[test]
+    fn relay_offer_does_not_leak_to_other_participants() {
+        let mut sink = MockDeliverySink::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+        let bystander = ParticipantId::new();
+
+        // AとBがRoom参加者、Cは別の参加者として用意（配送先には指定しない）
+        let participants = vec![sender.clone(), receiver.clone(), bystander.clone()];
+        let payload = RelaySdp {
+            sdp: "v=0 offer".into(),
+        };
+
+        // 宛先チェック付きでA→Bへ送る
+        relay_offer_checked(
+            &mut sink,
+            &participants,
+            &sender,
+            &receiver,
+            payload.clone(),
+        )
+        .expect("should deliver");
+
+        // Bには届く
+        let to_receiver = sink
+            .messages_for(&receiver)
+            .expect("receiver should get message");
+        assert_eq!(to_receiver.len(), 1);
+        assert!(matches!(to_receiver[0], ServerToClient::Offer { .. }));
+
+        // Cには届かない
+        assert!(
+            sink.messages_for(&bystander).is_none(),
+            "宛先以外の参加者に漏洩しない"
+        );
+    }
 }
