@@ -92,7 +92,10 @@ where
     }
 
     /// Handle a single incoming text message from the client.
-    #[instrument(skip(self, text), fields(participant_id=?self.participant_id))]
+    #[instrument(
+        skip(self, text),
+        fields(room_id=?self.room_id, participant_id=?self.participant_id)
+    )]
     pub async fn handle_text_message(&mut self, text: &str) {
         if self.is_rate_limited() {
             return;
@@ -199,7 +202,10 @@ where
         false
     }
 
-    #[instrument(skip(self, payload), fields(participant_id=?self.participant_id))]
+    #[instrument(
+        skip(self, payload),
+        fields(room_id=?self.room_id, participant_id=?self.participant_id)
+    )]
     async fn handle_signaling_offer(&mut self, to: String, payload: RelaySdp) {
         let Some(room_id) = self.room_id.clone() else {
             self.send_error(ErrorCode::InvalidPayload, "room_id not set");
@@ -230,7 +236,10 @@ where
         }
     }
 
-    #[instrument(skip(self, payload), fields(participant_id=?self.participant_id))]
+    #[instrument(
+        skip(self, payload),
+        fields(room_id=?self.room_id, participant_id=?self.participant_id)
+    )]
     async fn handle_signaling_answer(&mut self, to: String, payload: RelaySdp) {
         let Some(room_id) = self.room_id.clone() else {
             self.send_error(ErrorCode::InvalidPayload, "room_id not set");
@@ -261,7 +270,10 @@ where
         }
     }
 
-    #[instrument(skip(self, payload), fields(participant_id=?self.participant_id))]
+    #[instrument(
+        skip(self, payload),
+        fields(room_id=?self.room_id, participant_id=?self.participant_id)
+    )]
     async fn handle_signaling_ice(&mut self, to: String, payload: RelayIce) {
         let Some(room_id) = self.room_id.clone() else {
             self.send_error(ErrorCode::InvalidPayload, "room_id not set");

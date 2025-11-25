@@ -53,6 +53,7 @@ Bloomはシグナリング専用の役割を担い、クライアント⇔Bloom�
 - ロギング: `tracing`でspan単位にroom_id/participant_idを必須フィールドとして付与。subscriber初期化はbinary側。
 - ロギング: `tracing`でspan単位にroom_id/participant_idを必須フィールドとして付与。subscriber初期化はbinary側。
   - WSハンドラ（handshake含む）では、各spanに少なくとも`participant_id`フィールドを必ず載せる。
+  - roomに紐づく処理（Offer/Answer/Ice/Leaveなど）では、spanに`room_id`も必ず含める。
 - セキュリティ: 機密情報をログ出力しない。将来の認証導入を阻害しないAPI設計（Authorizationヘッダやtokenフィールドを拡張可能に）。
 
 ## ネットワーク/フロー概要
