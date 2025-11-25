@@ -194,7 +194,7 @@ where
         if let Some(limiter) = self.rate_limiter.as_mut() {
             let decision = limiter.check();
             if !decision.allowed {
-                tracing::warn!(participant_id=%self.participant_id, "rate limited");
+                tracing::warn!(target: "rate_limit", participant_id=%self.participant_id, "rate limited");
                 self.send_error(ErrorCode::RateLimited, "rate limited");
                 return decision.should_drop;
             }
@@ -341,6 +341,10 @@ where
     }
 
     /// Handle abnormal socket close (error path). Should trigger leave once and notify peers.
+    #[instrument(
+        skip(self, participants),
+        fields(room_id=?self.room_id, participant_id=?self.participant_id)
+    )]
     pub async fn handle_abnormal_close(&mut self, participants: &[ParticipantId]) {
         if let Some(room_id) = self.room_id.clone() {
             let remaining = self.core.leave_room(&room_id, &self.participant_id);
@@ -365,6 +369,10 @@ where
         }
     }
 
+    #[instrument(
+        skip(self, participants),
+        fields(room_id=%room_id_str, participant_id=?self.participant_id)
+    )]
     fn broadcast_room_participants(&mut self, room_id_str: &str, participants: &[ParticipantId]) {
         let participants_str: Vec<String> = participants.iter().map(ToString::to_string).collect();
         let event = ServerToClient::RoomParticipants {
