@@ -1,438 +1,299 @@
-//! Bloom signaling protocol types (WIP)
-//! フェーズ1: CreateRoom要求のラウンドトリップテストをRedで用意する。
+//! Bloom signaling protocol types.
 
-use serde::{Deserialize, Serialize};
+pub mod errors;
+pub mod events;
+pub mod payload;
+pub mod requests;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "PascalCase", deny_unknown_fields)]
-pub enum ClientToServer {
-    /// Roomを新規作成する要求（フィールドなし）。
-    CreateRoom,
-    /// 既存Roomに参加する要求（room_id必須）。
-    JoinRoom { room_id: String },
-    /// Roomから離脱する要求（フィールドなし）。
-    LeaveRoom,
-    /// WebRTC Offer を特定participantへ中継要求。
-    Offer {
-        to: String,
-        #[serde(flatten)]
-        payload: RelaySdp,
-    },
-    /// WebRTC Answer を特定participantへ中継要求。
-    Answer {
-        to: String,
-        #[serde(flatten)]
-        payload: RelaySdp,
-    },
-    /// ICE candidate を特定participantへ中継要求。
-    IceCandidate {
-        to: String,
-        #[serde(flatten)]
-        payload: RelayIce,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "PascalCase", deny_unknown_fields)]
-pub enum ServerToClient {
-    RoomCreated {
-        room_id: String,
-        self_id: String,
-    },
-    RoomParticipants {
-        room_id: String,
-        participants: Vec<String>,
-    },
-    PeerConnected {
-        participant_id: String,
-    },
-    PeerDisconnected {
-        participant_id: String,
-    },
-    Offer {
-        from: String,
-        #[serde(flatten)]
-        payload: RelaySdp,
-    },
-    Answer {
-        from: String,
-        #[serde(flatten)]
-        payload: RelaySdp,
-    },
-    IceCandidate {
-        from: String,
-        #[serde(flatten)]
-        payload: RelayIce,
-    },
-    Error {
-        code: ErrorCode,
-        message: String,
-    },
-}
-
-/// SDP を伴うシグナリング転送メッセージの共通ペイロード。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RelaySdp {
-    pub sdp: String,
-}
-
-/// ICE candidate を伴うシグナリング転送メッセージの共通ペイロード。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RelayIce {
-    pub candidate: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ErrorCode {
-    RoomFull,
-    InvalidPayload,
-    ParticipantNotFound,
-    RateLimited,
-    Internal,
-}
+pub use errors::ErrorCode;
+pub use events::ServerToClient;
+pub use payload::{RelayIce, RelaySdp};
+pub use requests::ClientToServer;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::de::DeserializeOwned;
+    use serde::Serialize;
 
-    #[test]
-    fn create_room_roundtrip_uses_type_tagged_json() {
-        // Arrange
-        let msg = ClientToServer::CreateRoom;
+    const ROOM_ID: &str = "room-1";
+    const SELF_ID: &str = "self-1";
+    const PEER_A: &str = "peer-a";
+    const PEER_B: &str = "peer-b";
+    const SDP_OFFER: &str = "v=0 offer";
+    const SDP_ANSWER: &str = "v=0 answer";
+    const CANDIDATE: &str = "cand1";
 
-        // Act
-        let json = serde_json::to_string(&msg).expect("should serialize");
-
-        // Assert: 仕様では {"type":"CreateRoom"} を期待する。
-        assert_eq!(json, r#"{"type":"CreateRoom"}"#);
-
-        let back: ClientToServer = serde_json::from_str(&json).expect("should deserialize");
-        assert_eq!(back, msg);
+    fn assert_roundtrip<T>(value: T, expected_json: &str)
+    where
+        T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
+    {
+        let json = serde_json::to_string(&value).expect("serialize");
+        assert_eq!(json, expected_json);
+        let back: T = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, value);
     }
 
-    #[test]
-    fn join_room_roundtrip_uses_type_tagged_json() {
-        // Arrange
-        let msg = ClientToServer::JoinRoom {
-            room_id: "room-1".into(),
-        };
+    mod client_to_server {
+        use super::*;
 
-        // Act
-        let json = serde_json::to_string(&msg).expect("should serialize");
-
-        // Assert: 仕様では {"type":"JoinRoom","room_id":"..."} を期待する。
-        assert_eq!(json, r#"{"type":"JoinRoom","room_id":"room-1"}"#);
-
-        let back: ClientToServer = serde_json::from_str(&json).expect("should deserialize");
-        assert_eq!(back, msg);
-    }
-
-    #[test]
-    fn join_room_missing_room_id_is_error() {
-        // Arrange: room_id欠落。
-        let json = r#"{"type":"JoinRoom"}"#;
-
-        // Act
-        let result: Result<ClientToServer, _> = serde_json::from_str(json);
-
-        // Assert
-        assert!(result.is_err(), "room_id欠落はエラーであるべき");
-    }
-
-    #[test]
-    fn leave_room_roundtrip_uses_type_tagged_json() {
-        // Arrange
-        let msg = ClientToServer::LeaveRoom;
-
-        // Act
-        let json = serde_json::to_string(&msg).expect("should serialize");
-
-        // Assert: 仕様では {"type":"LeaveRoom"} を期待する。
-        assert_eq!(json, r#"{"type":"LeaveRoom"}"#);
-
-        let back: ClientToServer = serde_json::from_str(&json).expect("should deserialize");
-        assert_eq!(back, msg);
-    }
-
-    #[test]
-    fn offer_roundtrip_and_rejects_unknown_field() {
-        let msg = ClientToServer::Offer {
-            to: "peer-b".into(),
-            payload: RelaySdp {
-                sdp: "v=0...".into(),
-            },
-        };
-
-        let json = serde_json::to_string(&msg).expect("serialize");
-        assert_eq!(json, r#"{"type":"Offer","to":"peer-b","sdp":"v=0..."}"#);
-
-        let back: ClientToServer = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, msg);
-
-        // unknown field should error
-        let with_extra = r#"{"type":"Offer","to":"peer-b","sdp":"v=0...","extra":1}"#;
-        assert!(serde_json::from_str::<ClientToServer>(with_extra).is_err());
-    }
-
-    #[test]
-    fn answer_roundtrip_and_rejects_unknown_field() {
-        let msg = ClientToServer::Answer {
-            to: "peer-a".into(),
-            payload: RelaySdp {
-                sdp: "v=0 ans".into(),
-            },
-        };
-
-        let json = serde_json::to_string(&msg).expect("serialize");
-        assert_eq!(json, r#"{"type":"Answer","to":"peer-a","sdp":"v=0 ans"}"#);
-
-        let back: ClientToServer = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, msg);
-
-        let with_extra = r#"{"type":"Answer","to":"peer-a","sdp":"v=0 ans","extra":true}"#;
-        assert!(serde_json::from_str::<ClientToServer>(with_extra).is_err());
-    }
-
-    #[test]
-    fn ice_candidate_roundtrip_and_missing_candidate_is_error() {
-        let msg = ClientToServer::IceCandidate {
-            to: "peer-c".into(),
-            payload: RelayIce {
-                candidate: "cand1".into(),
-            },
-        };
-
-        let json = serde_json::to_string(&msg).expect("serialize");
-        assert_eq!(
-            json,
-            r#"{"type":"IceCandidate","to":"peer-c","candidate":"cand1"}"#
-        );
-
-        let back: ClientToServer = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, msg);
-
-        let missing = r#"{"type":"IceCandidate","to":"peer-c"}"#;
-        assert!(serde_json::from_str::<ClientToServer>(missing).is_err());
-    }
-
-    #[test]
-    fn room_created_roundtrip() {
-        let msg = ServerToClient::RoomCreated {
-            room_id: "room-1".into(),
-            self_id: "self-1".into(),
-        };
-
-        let json = serde_json::to_string(&msg).expect("serialize");
-        assert_eq!(
-            json,
-            r#"{"type":"RoomCreated","room_id":"room-1","self_id":"self-1"}"#
-        );
-
-        let back: ServerToClient = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, msg);
-    }
-
-    #[test]
-    fn room_participants_roundtrip_with_empty_and_multiple() {
-        let msg_empty = ServerToClient::RoomParticipants {
-            room_id: "room-1".into(),
-            participants: vec![],
-        };
-        let json_empty = serde_json::to_string(&msg_empty).expect("serialize");
-        assert_eq!(
-            json_empty,
-            r#"{"type":"RoomParticipants","room_id":"room-1","participants":[]}"#
-        );
-        let back_empty: ServerToClient = serde_json::from_str(&json_empty).expect("deserialize");
-        assert_eq!(back_empty, msg_empty);
-
-        let msg_many = ServerToClient::RoomParticipants {
-            room_id: "room-1".into(),
-            participants: vec!["a".into(), "b".into()],
-        };
-        let json_many = serde_json::to_string(&msg_many).expect("serialize");
-        assert_eq!(
-            json_many,
-            r#"{"type":"RoomParticipants","room_id":"room-1","participants":["a","b"]}"#
-        );
-        let back_many: ServerToClient = serde_json::from_str(&json_many).expect("deserialize");
-        assert_eq!(back_many, msg_many);
-    }
-
-    #[test]
-    fn peer_connected_and_disconnected_roundtrip() {
-        let connected = ServerToClient::PeerConnected {
-            participant_id: "p1".into(),
-        };
-        let json_c = serde_json::to_string(&connected).expect("serialize");
-        assert_eq!(json_c, r#"{"type":"PeerConnected","participant_id":"p1"}"#);
-        let back_c: ServerToClient = serde_json::from_str(&json_c).expect("deserialize");
-        assert_eq!(back_c, connected);
-
-        let disconnected = ServerToClient::PeerDisconnected {
-            participant_id: "p1".into(),
-        };
-        let json_d = serde_json::to_string(&disconnected).expect("serialize");
-        assert_eq!(
-            json_d,
-            r#"{"type":"PeerDisconnected","participant_id":"p1"}"#
-        );
-        let back_d: ServerToClient = serde_json::from_str(&json_d).expect("deserialize");
-        assert_eq!(back_d, disconnected);
-    }
-
-    #[test]
-    fn server_offer_answer_ice_roundtrip() {
-        let offer = ServerToClient::Offer {
-            from: "p1".into(),
-            payload: RelaySdp {
-                sdp: "offer".into(),
-            },
-        };
-        let json_offer = serde_json::to_string(&offer).expect("serialize");
-        assert_eq!(json_offer, r#"{"type":"Offer","from":"p1","sdp":"offer"}"#);
-        let back_offer: ServerToClient = serde_json::from_str(&json_offer).expect("deserialize");
-        assert_eq!(back_offer, offer);
-
-        let answer = ServerToClient::Answer {
-            from: "p2".into(),
-            payload: RelaySdp {
-                sdp: "answer".into(),
-            },
-        };
-        let json_answer = serde_json::to_string(&answer).expect("serialize");
-        assert_eq!(
-            json_answer,
-            r#"{"type":"Answer","from":"p2","sdp":"answer"}"#
-        );
-        let back_answer: ServerToClient = serde_json::from_str(&json_answer).expect("deserialize");
-        assert_eq!(back_answer, answer);
-
-        let ice = ServerToClient::IceCandidate {
-            from: "p3".into(),
-            payload: RelayIce {
-                candidate: "cand".into(),
-            },
-        };
-        let json_ice = serde_json::to_string(&ice).expect("serialize");
-        assert_eq!(
-            json_ice,
-            r#"{"type":"IceCandidate","from":"p3","candidate":"cand"}"#
-        );
-        let back_ice: ServerToClient = serde_json::from_str(&json_ice).expect("deserialize");
-        assert_eq!(back_ice, ice);
-    }
-
-    #[test]
-    fn server_offer_answer_ice_rejects_unknown_fields() {
-        let extra_offer = r#"{"type":"Offer","from":"p1","sdp":"offer","x":1}"#;
-        assert!(serde_json::from_str::<ServerToClient>(extra_offer).is_err());
-
-        let extra_answer = r#"{"type":"Answer","from":"p2","sdp":"answer","unexpected":true}"#;
-        assert!(serde_json::from_str::<ServerToClient>(extra_answer).is_err());
-
-        let extra_ice = r#"{"type":"IceCandidate","from":"p3","candidate":"cand","foo":"bar"}"#;
-        assert!(serde_json::from_str::<ServerToClient>(extra_ice).is_err());
-    }
-
-    #[test]
-    fn error_event_roundtrip_and_unknown_code_fails() {
-        let msg = ServerToClient::Error {
-            code: ErrorCode::ParticipantNotFound,
-            message: "target missing".into(),
-        };
-
-        let json = serde_json::to_string(&msg).expect("serialize");
-        assert_eq!(json, r#"{"type":"Error","code":"ParticipantNotFound","message":"target missing"}"#);
-
-        let back: ServerToClient = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, msg);
-
-        // unknown code must be rejected
-        let unknown_code = r#"{"type":"Error","code":"TotallyUnknown","message":"oops"}"#;
-        assert!(serde_json::from_str::<ServerToClient>(unknown_code).is_err());
-    }
-
-    #[test]
-    fn smoke_roundtrip_all_messages() {
-        // pick one sample for each variant to ensure tag-based dispatch works end-to-end
-        let samples: Vec<ClientToServer> = vec![
-            ClientToServer::CreateRoom,
-            ClientToServer::JoinRoom {
-                room_id: "r".into(),
-            },
-            ClientToServer::LeaveRoom,
-            ClientToServer::Offer {
-                to: "p2".into(),
-                payload: RelaySdp {
-                    sdp: "offer".into(),
-                },
-            },
-            ClientToServer::Answer {
-                to: "p1".into(),
-                payload: RelaySdp {
-                    sdp: "answer".into(),
-                },
-            },
-            ClientToServer::IceCandidate {
-                to: "p3".into(),
-                payload: RelayIce {
-                    candidate: "cand".into(),
-                },
-            },
-        ];
-
-        for msg in samples {
-            let json = serde_json::to_string(&msg).expect("serialize");
-            let back: ClientToServer = serde_json::from_str(&json).expect("deserialize");
-            assert_eq!(back, msg);
+        #[test]
+        fn create_room_roundtrip() {
+            assert_roundtrip(ClientToServer::CreateRoom, r#"{"type":"CreateRoom"}"#);
         }
 
-        let events: Vec<ServerToClient> = vec![
-            ServerToClient::RoomCreated {
-                room_id: "r".into(),
-                self_id: "self".into(),
-            },
-            ServerToClient::RoomParticipants {
-                room_id: "r".into(),
-                participants: vec!["a".into(), "b".into()],
-            },
-            ServerToClient::PeerConnected {
-                participant_id: "a".into(),
-            },
-            ServerToClient::PeerDisconnected {
-                participant_id: "b".into(),
-            },
-            ServerToClient::Offer {
-                from: "a".into(),
-                payload: RelaySdp {
-                    sdp: "off".into(),
+        #[test]
+        fn join_room_roundtrip_and_missing_room_id_errors() {
+            assert_roundtrip(
+                ClientToServer::JoinRoom {
+                    room_id: ROOM_ID.into(),
                 },
-            },
-            ServerToClient::Answer {
-                from: "b".into(),
-                payload: RelaySdp {
-                    sdp: "ans".into(),
-                },
-            },
-            ServerToClient::IceCandidate {
-                from: "c".into(),
-                payload: RelayIce {
-                    candidate: "cand".into(),
-                },
-            },
-            ServerToClient::Error {
-                code: ErrorCode::RoomFull,
-                message: "full".into(),
-            },
-        ];
+                r#"{"type":"JoinRoom","room_id":"room-1"}"#,
+            );
 
-        for ev in events {
-            let json = serde_json::to_string(&ev).expect("serialize");
-            let back: ServerToClient = serde_json::from_str(&json).expect("deserialize");
-            assert_eq!(back, ev);
+            let json = r#"{"type":"JoinRoom"}"#;
+            let result: Result<ClientToServer, _> = serde_json::from_str(json);
+            assert!(result.is_err(), "room_id欠落はエラー");
+        }
+
+        #[test]
+        fn leave_room_roundtrip() {
+            assert_roundtrip(ClientToServer::LeaveRoom, r#"{"type":"LeaveRoom"}"#);
+        }
+
+        #[test]
+        fn offer_roundtrip_and_rejects_unknown() {
+            assert_roundtrip(
+                ClientToServer::Offer {
+                    to: PEER_B.into(),
+                    payload: RelaySdp {
+                        sdp: SDP_OFFER.into(),
+                    },
+                },
+                r#"{"type":"Offer","to":"peer-b","sdp":"v=0 offer"}"#,
+            );
+
+            let with_extra = r#"{"type":"Offer","to":"peer-b","sdp":"v=0 offer","extra":1}"#;
+            assert!(serde_json::from_str::<ClientToServer>(with_extra).is_err());
+        }
+
+        #[test]
+        fn answer_roundtrip_and_rejects_unknown() {
+            assert_roundtrip(
+                ClientToServer::Answer {
+                    to: PEER_A.into(),
+                    payload: RelaySdp {
+                        sdp: SDP_ANSWER.into(),
+                    },
+                },
+                r#"{"type":"Answer","to":"peer-a","sdp":"v=0 answer"}"#,
+            );
+
+            let with_extra = r#"{"type":"Answer","to":"peer-a","sdp":"v=0 answer","extra":true}"#;
+            assert!(serde_json::from_str::<ClientToServer>(with_extra).is_err());
+        }
+
+        #[test]
+        fn ice_candidate_roundtrip_and_missing_candidate_errors() {
+            assert_roundtrip(
+                ClientToServer::IceCandidate {
+                    to: PEER_B.into(),
+                    payload: RelayIce {
+                        candidate: CANDIDATE.into(),
+                    },
+                },
+                r#"{"type":"IceCandidate","to":"peer-b","candidate":"cand1"}"#,
+            );
+
+            let missing = r#"{"type":"IceCandidate","to":"peer-b"}"#;
+            assert!(serde_json::from_str::<ClientToServer>(missing).is_err());
+        }
+    }
+
+    mod server_to_client {
+        use super::*;
+
+        #[test]
+        fn room_created_roundtrip() {
+            assert_roundtrip(
+                ServerToClient::RoomCreated {
+                    room_id: ROOM_ID.into(),
+                    self_id: SELF_ID.into(),
+                },
+                r#"{"type":"RoomCreated","room_id":"room-1","self_id":"self-1"}"#,
+            );
+        }
+
+        #[test]
+        fn room_participants_roundtrip_empty_and_multi() {
+            assert_roundtrip(
+                ServerToClient::RoomParticipants {
+                    room_id: ROOM_ID.into(),
+                    participants: vec![],
+                },
+                r#"{"type":"RoomParticipants","room_id":"room-1","participants":[]}"#,
+            );
+
+            assert_roundtrip(
+                ServerToClient::RoomParticipants {
+                    room_id: ROOM_ID.into(),
+                    participants: vec!["a".into(), "b".into()],
+                },
+                r#"{"type":"RoomParticipants","room_id":"room-1","participants":["a","b"]}"#,
+            );
+        }
+
+        #[test]
+        fn peer_connected_and_disconnected_roundtrip() {
+            assert_roundtrip(
+                ServerToClient::PeerConnected {
+                    participant_id: "p1".into(),
+                },
+                r#"{"type":"PeerConnected","participant_id":"p1"}"#,
+            );
+
+            assert_roundtrip(
+                ServerToClient::PeerDisconnected {
+                    participant_id: "p1".into(),
+                },
+                r#"{"type":"PeerDisconnected","participant_id":"p1"}"#,
+            );
+        }
+
+        #[test]
+        fn offer_answer_ice_roundtrip_and_reject_unknown() {
+            assert_roundtrip(
+                ServerToClient::Offer {
+                    from: PEER_A.into(),
+                    payload: RelaySdp {
+                        sdp: SDP_OFFER.into(),
+                    },
+                },
+                r#"{"type":"Offer","from":"peer-a","sdp":"v=0 offer"}"#,
+            );
+            assert_roundtrip(
+                ServerToClient::Answer {
+                    from: PEER_B.into(),
+                    payload: RelaySdp {
+                        sdp: SDP_ANSWER.into(),
+                    },
+                },
+                r#"{"type":"Answer","from":"peer-b","sdp":"v=0 answer"}"#,
+            );
+            assert_roundtrip(
+                ServerToClient::IceCandidate {
+                    from: PEER_B.into(),
+                    payload: RelayIce {
+                        candidate: CANDIDATE.into(),
+                    },
+                },
+                r#"{"type":"IceCandidate","from":"peer-b","candidate":"cand1"}"#,
+            );
+
+            let extra_offer = r#"{"type":"Offer","from":"p1","sdp":"offer","x":1}"#;
+            assert!(serde_json::from_str::<ServerToClient>(extra_offer).is_err());
+            let extra_answer = r#"{"type":"Answer","from":"p2","sdp":"answer","unexpected":true}"#;
+            assert!(serde_json::from_str::<ServerToClient>(extra_answer).is_err());
+            let extra_ice = r#"{"type":"IceCandidate","from":"p3","candidate":"cand","foo":"bar"}"#;
+            assert!(serde_json::from_str::<ServerToClient>(extra_ice).is_err());
+        }
+
+        #[test]
+        fn error_event_roundtrip_and_unknown_code_fails() {
+            assert_roundtrip(
+                ServerToClient::Error {
+                    code: ErrorCode::ParticipantNotFound,
+                    message: "target missing".into(),
+                },
+                r#"{"type":"Error","code":"ParticipantNotFound","message":"target missing"}"#,
+            );
+
+            let unknown_code = r#"{"type":"Error","code":"TotallyUnknown","message":"oops"}"#;
+            assert!(serde_json::from_str::<ServerToClient>(unknown_code).is_err());
+        }
+    }
+
+    mod smoke {
+        use super::*;
+
+        #[test]
+        fn roundtrip_all_messages() {
+            let client_samples: Vec<ClientToServer> = vec![
+                ClientToServer::CreateRoom,
+                ClientToServer::JoinRoom {
+                    room_id: ROOM_ID.into(),
+                },
+                ClientToServer::LeaveRoom,
+                ClientToServer::Offer {
+                    to: PEER_B.into(),
+                    payload: RelaySdp {
+                        sdp: SDP_OFFER.into(),
+                    },
+                },
+                ClientToServer::Answer {
+                    to: PEER_A.into(),
+                    payload: RelaySdp {
+                        sdp: SDP_ANSWER.into(),
+                    },
+                },
+                ClientToServer::IceCandidate {
+                    to: PEER_B.into(),
+                    payload: RelayIce {
+                        candidate: CANDIDATE.into(),
+                    },
+                },
+            ];
+
+            for msg in client_samples {
+                let json = serde_json::to_string(&msg).expect("serialize");
+                let back: ClientToServer = serde_json::from_str(&json).expect("deserialize");
+                assert_eq!(back, msg);
+            }
+
+            let server_samples: Vec<ServerToClient> = vec![
+                ServerToClient::RoomCreated {
+                    room_id: ROOM_ID.into(),
+                    self_id: SELF_ID.into(),
+                },
+                ServerToClient::RoomParticipants {
+                    room_id: ROOM_ID.into(),
+                    participants: vec!["a".into(), "b".into()],
+                },
+                ServerToClient::PeerConnected {
+                    participant_id: "a".into(),
+                },
+                ServerToClient::PeerDisconnected {
+                    participant_id: "b".into(),
+                },
+                ServerToClient::Offer {
+                    from: PEER_A.into(),
+                    payload: RelaySdp {
+                        sdp: SDP_OFFER.into(),
+                    },
+                },
+                ServerToClient::Answer {
+                    from: PEER_B.into(),
+                    payload: RelaySdp {
+                        sdp: SDP_ANSWER.into(),
+                    },
+                },
+                ServerToClient::IceCandidate {
+                    from: PEER_B.into(),
+                    payload: RelayIce {
+                        candidate: CANDIDATE.into(),
+                    },
+                },
+                ServerToClient::Error {
+                    code: ErrorCode::RoomFull,
+                    message: "full".into(),
+                },
+            ];
+
+            for ev in server_samples {
+                let json = serde_json::to_string(&ev).expect("serialize");
+                let back: ServerToClient = serde_json::from_str(&json).expect("deserialize");
+                assert_eq!(back, ev);
+            }
         }
     }
 }
