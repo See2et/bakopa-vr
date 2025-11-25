@@ -6,6 +6,16 @@ pub trait Clock: Clone {
     fn now(&self) -> Instant;
 }
 
+/// System clock implementation for production use.
+#[derive(Clone, Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RateLimitDecision {
     pub allowed: bool,
