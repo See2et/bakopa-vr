@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use uuid::Uuid;
 
 /// ルームを一意に識別するID。
@@ -32,7 +34,14 @@ impl ParticipantId {
 
 /// ルーム・参加者管理を担うコンポーネントの骨組み。
 #[derive(Default)]
-pub struct RoomManager;
+pub struct RoomManager {
+    rooms: HashMap<RoomId, RoomState>,
+}
+
+#[derive(Clone, Debug)]
+struct RoomState {
+    participants: Vec<ParticipantId>,
+}
 
 impl RoomManager {
     pub fn new() -> Self {
@@ -45,10 +54,31 @@ impl RoomManager {
         let self_id = room_owner;
         let participants = vec![self_id.clone()];
 
+        let state = RoomState {
+            participants: participants.clone(),
+        };
+        self.rooms.insert(room_id.clone(), state);
+
         CreateRoomResult {
             room_id,
             self_id,
             participants,
+        }
+    }
+
+    /// 既存Roomに参加者を追加し、最新の参加者リストを返す。
+    pub fn join_room(
+        &mut self,
+        room_id: &RoomId,
+        participant: ParticipantId,
+    ) -> Option<Vec<ParticipantId>> {
+        if let Some(room) = self.rooms.get_mut(room_id) {
+            if !room.participants.contains(&participant) {
+                room.participants.push(participant);
+            }
+            Some(room.participants.clone())
+        } else {
+            None
         }
     }
 }
@@ -106,6 +136,39 @@ mod tests {
             result.participants,
             vec![result.self_id.clone()],
             "作成直後は作成者のみが参加者"
+        );
+    }
+
+    #[test]
+    fn join_room_adds_new_participant_and_returns_deduped_list() {
+        let mut manager = RoomManager::new();
+        let owner = ParticipantId::new();
+        let create = manager.create_room(owner.clone());
+        let room_id = create.room_id.clone();
+
+        let new_participant = ParticipantId::new();
+        let joined = manager
+            .join_room(&room_id, new_participant.clone())
+            .expect("room should exist");
+
+        assert_eq!(joined.len(), 2, "オーナーと新規参加者の2名になるはず");
+        assert!(
+            joined.contains(&owner),
+            "参加者リストにオーナーが残っていること"
+        );
+        assert!(
+            joined.contains(&new_participant),
+            "参加者リストに新規参加者が含まれること"
+        );
+
+        // 同じ参加者が再度joinしても重複しない
+        let joined_again = manager
+            .join_room(&room_id, new_participant.clone())
+            .expect("room should exist");
+        assert_eq!(
+            joined_again.len(),
+            2,
+            "同一参加者で二重に増えないこと（重複防止）"
         );
     }
 }
