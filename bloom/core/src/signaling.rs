@@ -46,6 +46,21 @@ pub fn relay_offer(
     delivery.send(to, message);
 }
 
+/// Answerを特定宛先へ1:1で配送する。
+/// 現在はフェーズ1（Red）用に中身は未実装。
+pub fn relay_answer(
+    delivery: &mut impl DeliverySink,
+    from: &ParticipantId,
+    to: &ParticipantId,
+    payload: RelaySdp,
+) {
+    let message = ServerToClient::Answer {
+        from: from.to_string(),
+        payload,
+    };
+    delivery.send(to, message);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +120,37 @@ mod tests {
         assert_eq!(
             to_receiver[0],
             ServerToClient::Offer {
+                from: sender.to_string(),
+                payload
+            }
+        );
+
+        // 送信者Aには配送されない
+        assert!(
+            sink.messages_for(&sender).is_none(),
+            "送信者自身にメッセージが返らないこと"
+        );
+    }
+
+    #[test]
+    fn relay_answer_sends_only_to_target_peer() {
+        let mut sink = MockDeliverySink::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+        let payload = RelaySdp {
+            sdp: "v=0 answer".into(),
+        };
+
+        relay_answer(&mut sink, &sender, &receiver, payload.clone());
+
+        // 宛先BにはAnswerが1件届く
+        let to_receiver = sink
+            .messages_for(&receiver)
+            .expect("receiver should get message");
+        assert_eq!(to_receiver.len(), 1, "Bには1件だけ届く");
+        assert_eq!(
+            to_receiver[0],
+            ServerToClient::Answer {
                 from: sender.to_string(),
                 payload
             }
