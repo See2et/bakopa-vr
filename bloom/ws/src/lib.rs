@@ -7,7 +7,7 @@ mod sinks;
 pub use core_api::CoreApi;
 pub use handler::{HandshakeResponse, WsHandler};
 pub use mocks::MockCore;
-pub use rate_limit::{Clock, RateLimitDecision, RateLimiter, SystemClock};
+pub use rate_limit::{Clock, DynClock, RateLimitConfig, RateLimitDecision, RateLimiter, SystemClock};
 pub use sinks::{BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink, SharedBroadcastSink};
 
 #[cfg(test)]
@@ -15,7 +15,8 @@ mod tests {
     use super::*;
     use bloom_api::{ErrorCode, ServerToClient};
     use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
-    use std::time::Duration;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
 
     fn new_room() -> (RoomId, ParticipantId) {
         (RoomId::new(), ParticipantId::new())
@@ -515,7 +516,9 @@ mod tests {
         let sink = RecordingSink::default();
         let broadcast = RecordingBroadcastSink::default();
 
-        let limiter = RateLimiter::new(SystemClock::default(), 20, Duration::from_secs(1));
+        let clock = Arc::new(TestClock::start_at(Instant::now()));
+        let dyn_clock: DynClock = clock.clone();
+        let limiter = RateLimiter::from_config(dyn_clock, RateLimitConfig::default());
 
         let mut handler = WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
         handler.perform_handshake().await;
@@ -560,7 +563,9 @@ mod tests {
         let sink = RecordingSink::default();
         let broadcast = RecordingBroadcastSink::default();
 
-        let limiter = RateLimiter::new(SystemClock::default(), 20, Duration::from_secs(1));
+        let clock = Arc::new(TestClock::start_at(Instant::now()));
+        let dyn_clock: DynClock = clock.clone();
+        let limiter = RateLimiter::from_config(dyn_clock.clone(), RateLimitConfig::default());
 
         let mut handler = WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
         handler.perform_handshake().await;
@@ -577,7 +582,7 @@ mod tests {
 
         assert_eq!(handler.core.relay_ice_calls.len(), 20, "21st should be blocked");
 
-        std::thread::sleep(Duration::from_millis(1100));
+        clock.advance(Duration::from_secs(1));
 
         handler.handle_text_message(&msg).await;
 
@@ -586,6 +591,36 @@ mod tests {
             21,
             "after cooldown, forwarding resumes"
         );
+    }
+
+    /// テスト用クロック（手動で進められる）。
+    #[derive(Clone)]
+    struct TestClock {
+        now: Arc<Mutex<Instant>>,
+    }
+
+    impl TestClock {
+        fn start_at(now: Instant) -> Self {
+            Self {
+                now: Arc::new(Mutex::new(now)),
+            }
+        }
+
+        fn advance(&self, duration: Duration) {
+            if let Ok(mut guard) = self.now.lock() {
+                *guard = *guard + duration;
+            }
+        }
+    }
+
+    impl Clock for TestClock {
+        fn now(&self) -> Instant {
+            self
+                .now
+                .lock()
+                .map(|t| *t)
+                .unwrap_or_else(|_| Instant::now())
+        }
     }
 
 }

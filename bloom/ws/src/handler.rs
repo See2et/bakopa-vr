@@ -1,11 +1,11 @@
 use std::str::FromStr;
-use std::time::Duration;
+use std::sync::Arc;
 
 use bloom_api::{ClientToServer, ErrorCode, RelayIce, RelaySdp, ServerToClient};
 use bloom_core::{JoinRoomError, ParticipantId, RoomId};
 
 use crate::core_api::CoreApi;
-use crate::rate_limit::{RateLimiter, SystemClock};
+use crate::rate_limit::{DynClock, RateLimitConfig, RateLimiter, SystemClock};
 use crate::sinks::{BroadcastSink, OutSink};
 use tracing::instrument;
 
@@ -23,7 +23,7 @@ pub struct WsHandler<C, S, B> {
     pub(crate) room_id: Option<RoomId>,
     pub(crate) sink: S,
     pub(crate) broadcast: B,
-    pub(crate) rate_limiter: Option<RateLimiter<SystemClock>>,
+    pub(crate) rate_limiter: Option<RateLimiter<DynClock>>,
 }
 
 impl<C, S, B> WsHandler<C, S, B> {
@@ -34,10 +34,9 @@ impl<C, S, B> WsHandler<C, S, B> {
             room_id: None,
             sink,
             broadcast,
-            rate_limiter: Some(RateLimiter::new(
-                SystemClock::default(),
-                20,
-                Duration::from_secs(1),
+            rate_limiter: Some(RateLimiter::from_config(
+                Arc::new(SystemClock::default()),
+                RateLimitConfig::default(),
             )),
         }
     }
@@ -48,7 +47,7 @@ impl<C, S, B> WsHandler<C, S, B> {
         participant_id: ParticipantId,
         sink: S,
         broadcast: B,
-        rate_limiter: RateLimiter<SystemClock>,
+        rate_limiter: RateLimiter<DynClock>,
     ) -> Self {
         Self {
             core,
@@ -57,6 +56,25 @@ impl<C, S, B> WsHandler<C, S, B> {
             sink,
             broadcast,
             rate_limiter: Some(rate_limiter),
+        }
+    }
+
+    /// Constructor with custom rate limit設定（主にテスト・ベンチ用）。
+    pub fn with_rate_limit_config(
+        core: C,
+        participant_id: ParticipantId,
+        sink: S,
+        broadcast: B,
+        config: RateLimitConfig,
+        clock: DynClock,
+    ) -> Self {
+        Self {
+            core,
+            participant_id,
+            room_id: None,
+            sink,
+            broadcast,
+            rate_limiter: Some(RateLimiter::from_config(clock, config)),
         }
     }
 }
@@ -117,9 +135,6 @@ where
                     Some(Err(JoinRoomError::RoomFull)) => {
                         self.send_error(ErrorCode::RoomFull, "room is full");
                     }
-                    Some(Err(_)) => {
-                        self.send_error(ErrorCode::Internal, "join_room failed");
-                    }
                     None => {
                         self.send_error(ErrorCode::Internal, "room not found");
                     }
@@ -176,6 +191,7 @@ where
         if let Some(limiter) = self.rate_limiter.as_mut() {
             let decision = limiter.check();
             if !decision.allowed {
+                tracing::warn!(participant_id=?self.participant_id, "rate limited");
                 self.send_error(ErrorCode::RateLimited, "rate limited");
                 return decision.should_drop;
             }

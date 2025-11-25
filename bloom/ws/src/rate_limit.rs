@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Clock abstraction to allow deterministic tests.
-pub trait Clock: Clone {
+/// 抽象クロック（テストで差し替え可能）。
+pub trait Clock: Send + Sync {
     fn now(&self) -> Instant;
 }
 
@@ -13,6 +15,18 @@ pub struct SystemClock;
 impl Clock for SystemClock {
     fn now(&self) -> Instant {
         Instant::now()
+    }
+}
+
+/// 動的クロック用エイリアス。
+pub type DynClock = Arc<dyn Clock + Send + Sync>;
+
+impl<T> Clock for Arc<T>
+where
+    T: Clock + ?Sized,
+{
+    fn now(&self) -> Instant {
+        (**self).now()
     }
 }
 
@@ -32,6 +46,21 @@ pub struct RateLimiter<C: Clock> {
     cooldown_until: Option<Instant>,
 }
 
+#[derive(Clone, Debug)]
+pub struct RateLimitConfig {
+    pub limit_per_window: u32,
+    pub window: Duration,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            limit_per_window: 20,
+            window: Duration::from_secs(1),
+        }
+    }
+}
+
 impl<C: Clock> RateLimiter<C> {
     pub fn new(clock: C, limit_per_window: u32, window: Duration) -> Self {
         Self {
@@ -41,6 +70,10 @@ impl<C: Clock> RateLimiter<C> {
             timestamps: VecDeque::new(),
             cooldown_until: None,
         }
+    }
+
+    pub fn from_config(clock: C, config: RateLimitConfig) -> Self {
+        Self::new(clock, config.limit_per_window, config.window)
     }
 
     pub fn check(&mut self) -> RateLimitDecision {

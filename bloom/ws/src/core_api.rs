@@ -39,6 +39,7 @@ pub trait CoreApi {
 }
 
 /// Coreからハンドラへ流れてくるイベントを受け取るためのフック。
+#[allow(dead_code)]
 pub trait CoreEventReceiver {
     fn on_peer_connected(&mut self, participants: &[ParticipantId], joined: &ParticipantId);
     fn on_peer_disconnected(&mut self, participants: &[ParticipantId], left: &ParticipantId);
