@@ -5,6 +5,7 @@ use bloom_core::{JoinRoomError, ParticipantId, RoomId};
 
 use crate::core_api::CoreApi;
 use crate::sinks::{BroadcastSink, OutSink};
+use tracing::instrument;
 
 /// Minimal handshake response used by tests.
 #[derive(Debug, PartialEq, Eq)]
@@ -41,11 +42,13 @@ where
     B: BroadcastSink,
 {
     /// Perform WebSocket handshake (HTTP 101 expected).
+    #[instrument(skip(self))]
     pub async fn perform_handshake(&mut self) -> HandshakeResponse {
         HandshakeResponse { status: 101 }
     }
 
     /// Handle a single incoming text message from the client.
+    #[instrument(skip(self, text), fields(participant_id=?self.participant_id))]
     pub async fn handle_text_message(&mut self, text: &str) {
         let message: ClientToServer = match serde_json::from_str(text) {
             Ok(m) => m,
@@ -66,8 +69,13 @@ where
                 self.sink.send(response);
             }
             ClientToServer::JoinRoom { room_id } => {
-                let room_id_parsed =
-                    RoomId::from_str(&room_id).expect("room_id should be UUID string");
+                let room_id_parsed = match RoomId::from_str(&room_id) {
+                    Ok(id) => id,
+                    Err(_) => {
+                        self.send_error(ErrorCode::InvalidPayload, "invalid room_id");
+                        return;
+                    }
+                };
                 self.room_id = Some(room_id_parsed.clone());
                 match self
                     .core
@@ -79,16 +87,19 @@ where
                     Some(Err(JoinRoomError::RoomFull)) => {
                         self.send_error(ErrorCode::RoomFull, "room is full");
                     }
-                    other => {
-                        todo!("JoinRoom not handled yet: {:?}", other);
+                    Some(Err(_)) => {
+                        self.send_error(ErrorCode::Internal, "join_room failed");
+                    }
+                    None => {
+                        self.send_error(ErrorCode::Internal, "room not found");
                     }
                 }
             }
             ClientToServer::LeaveRoom => {
-                let room_id = self
-                    .room_id
-                    .clone()
-                    .expect("room_id must be set before LeaveRoom");
+                let Some(room_id) = self.room_id.clone() else {
+                    self.send_error(ErrorCode::InvalidPayload, "room_id not set");
+                    return;
+                };
 
                 match self.core.leave_room(&room_id, &self.participant_id) {
                     Some(remaining) => {
@@ -115,7 +126,7 @@ where
                         // 3) 接続側のroom_idをクリア
                         self.room_id = None;
                     }
-                    None => panic!("leave_room returned None (room not found)"),
+                    None => self.send_error(ErrorCode::Internal, "room not found"),
                 }
             }
             ClientToServer::Offer { to, payload } => {
@@ -130,12 +141,19 @@ where
         }
     }
 
+    #[instrument(skip(self, payload), fields(participant_id=?self.participant_id))]
     async fn handle_signaling_offer(&mut self, to: String, payload: RelaySdp) {
-        let room_id = self
-            .room_id
-            .clone()
-            .expect("room must be set before signaling");
-        let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
+        let Some(room_id) = self.room_id.clone() else {
+            self.send_error(ErrorCode::InvalidPayload, "room_id not set");
+            return;
+        };
+        let to_id = match ParticipantId::from_str(&to) {
+            Ok(id) => id,
+            Err(_) => {
+                self.send_error(ErrorCode::InvalidPayload, "invalid to id");
+                return;
+            }
+        };
 
         match self
             .core
@@ -154,12 +172,19 @@ where
         }
     }
 
+    #[instrument(skip(self, payload), fields(participant_id=?self.participant_id))]
     async fn handle_signaling_answer(&mut self, to: String, payload: RelaySdp) {
-        let room_id = self
-            .room_id
-            .clone()
-            .expect("room must be set before signaling");
-        let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
+        let Some(room_id) = self.room_id.clone() else {
+            self.send_error(ErrorCode::InvalidPayload, "room_id not set");
+            return;
+        };
+        let to_id = match ParticipantId::from_str(&to) {
+            Ok(id) => id,
+            Err(_) => {
+                self.send_error(ErrorCode::InvalidPayload, "invalid to id");
+                return;
+            }
+        };
 
         match self
             .core
@@ -178,12 +203,19 @@ where
         }
     }
 
+    #[instrument(skip(self, payload), fields(participant_id=?self.participant_id))]
     async fn handle_signaling_ice(&mut self, to: String, payload: RelayIce) {
-        let room_id = self
-            .room_id
-            .clone()
-            .expect("room must be set before signaling");
-        let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
+        let Some(room_id) = self.room_id.clone() else {
+            self.send_error(ErrorCode::InvalidPayload, "room_id not set");
+            return;
+        };
+        let to_id = match ParticipantId::from_str(&to) {
+            Ok(id) => id,
+            Err(_) => {
+                self.send_error(ErrorCode::InvalidPayload, "invalid to id");
+                return;
+            }
+        };
 
         match self.core.relay_ice_candidate(
             &room_id,
@@ -275,4 +307,3 @@ where
         });
     }
 }
-
