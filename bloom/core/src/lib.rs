@@ -328,4 +328,45 @@ mod tests {
             .expect("join p4 ok");
         assert_eq!(after_p4, vec![owner, p3, p4]);
     }
+
+    #[test]
+    fn create_join_leave_smoke_sequence_produces_expected_participants() {
+        let mut manager = RoomManager::new();
+        let owner = ParticipantId::new();
+        let create = manager.create_room(owner.clone());
+        let room_id = create.room_id.clone();
+
+        let p2 = ParticipantId::new();
+        let p3 = ParticipantId::new();
+        let p4 = ParticipantId::new();
+
+        // join two participants
+        let after_p2 = manager
+            .join_room(&room_id, p2.clone())
+            .expect("room exists")
+            .expect("join p2 ok");
+        let after_p3 = manager
+            .join_room(&room_id, p3.clone())
+            .expect("room exists")
+            .expect("join p3 ok");
+        assert_eq!(after_p3, vec![owner.clone(), p2.clone(), p3.clone()]);
+
+        // leave one participant (p2)
+        let after_leave_p2 = manager
+            .leave_room(&room_id, &p2)
+            .expect("room exists after leave");
+        assert_eq!(after_leave_p2, vec![owner.clone(), p3.clone()]);
+
+        // another join (p4) and then owner leaves
+        let after_p4 = manager
+            .join_room(&room_id, p4.clone())
+            .expect("room exists")
+            .expect("join p4 ok");
+        assert_eq!(after_p4, vec![owner.clone(), p3.clone(), p4.clone()]);
+
+        let final_list = manager
+            .leave_room(&room_id, &owner)
+            .expect("room exists after owner leaves");
+        assert_eq!(final_list, vec![p3.clone(), p4.clone()]);
+    }
 }
