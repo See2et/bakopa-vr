@@ -333,6 +333,32 @@ where
             self.broadcast.send_to(p, event.clone());
         }
     }
+
+    /// Handle abnormal socket close (error path). Should trigger leave once and notify peers.
+    pub async fn handle_abnormal_close(&mut self, participants: &[ParticipantId]) {
+        if let Some(room_id) = self.room_id.clone() {
+            let remaining = self.core.leave_room(&room_id, &self.participant_id);
+
+            if let Some(rem) = remaining {
+                let disconnect_evt = ServerToClient::PeerDisconnected {
+                    participant_id: self.participant_id.to_string(),
+                };
+                for p in participants {
+                    self.broadcast.send_to(p, disconnect_evt.clone());
+                }
+                // Optionally: broadcast updated participant list if available
+                let participants_evt = ServerToClient::RoomParticipants {
+                    room_id: room_id.to_string(),
+                    participants: rem.iter().map(ToString::to_string).collect(),
+                };
+                for p in participants {
+                    self.broadcast.send_to(p, participants_evt.clone());
+                }
+            }
+
+            self.room_id = None;
+        }
+    }
 }
 
 /// Test helper sink that records messages.
@@ -1081,5 +1107,48 @@ mod tests {
                 .iter()
                 .any(|m| matches!(m, ServerToClient::RoomParticipants { .. })));
         }
+    }
+
+    /// 異常終了時もleaveが1回だけ呼ばれ、残存参加者にPeerDisconnectedが届くことを確認（RED）。
+    #[tokio::test]
+    async fn abnormal_close_triggers_single_leave_and_disconnect_broadcast() {
+        let room_id = RoomId::new();
+        let self_id = ParticipantId::new();
+        let remain_a = ParticipantId::new();
+        let remain_b = ParticipantId::new();
+        let remaining = vec![remain_a.clone(), remain_b.clone()];
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: self_id.clone(),
+            participants: vec![self_id.clone(), remain_a.clone(), remain_b.clone()],
+        };
+
+        let core = MockCore::new(core_result).with_leave_result(Some(remaining.clone()));
+        let sink = RecordingSink::default();
+        let broadcast = SharedBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast.clone());
+        handler.room_id = Some(room_id.clone());
+
+        handler
+            .handle_abnormal_close(&remaining)
+            .await;
+
+        // leave_roomが1回だけ呼ばれる
+        assert_eq!(handler.core.leave_room_calls.len(), 1);
+
+        // 残存参加者にPeerDisconnectedが届く
+        for p in &remaining {
+            let msgs = broadcast
+                .messages_for(p)
+                .expect("peer should receive disconnect");
+            assert!(msgs.iter().any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &self_id.to_string())));
+        }
+
+        // room_idはクリアされ、二度目の呼び出しでleaveが増えない（冪等性）
+        handler
+            .handle_abnormal_close(&remaining)
+            .await;
+        assert_eq!(handler.core.leave_room_calls.len(), 1);
     }
 }
