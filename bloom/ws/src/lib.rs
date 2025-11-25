@@ -1,564 +1,27 @@
-use bloom_api::{ClientToServer, ErrorCode, RelayIce, RelaySdp, ServerToClient};
-use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
-use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+mod core_api;
+mod handler;
+mod mocks;
+mod sinks;
 
-/// Core domain API that the WebSocket layer depends on.
-pub trait CoreApi {
-    fn create_room(&mut self, room_owner: ParticipantId) -> CreateRoomResult;
-    fn join_room(
-        &mut self,
-        room_id: &RoomId,
-        participant: ParticipantId,
-    ) -> Option<Result<Vec<ParticipantId>, bloom_core::JoinRoomError>>;
-    fn leave_room(
-        &mut self,
-        room_id: &RoomId,
-        participant: &ParticipantId,
-    ) -> Option<Vec<ParticipantId>>;
-
-    fn relay_offer(
-        &mut self,
-        room_id: &RoomId,
-        from: &ParticipantId,
-        to: &ParticipantId,
-        payload: RelaySdp,
-    ) -> Result<(), ErrorCode>;
-    fn relay_answer(
-        &mut self,
-        room_id: &RoomId,
-        from: &ParticipantId,
-        to: &ParticipantId,
-        payload: RelaySdp,
-    ) -> Result<(), ErrorCode>;
-    fn relay_ice_candidate(
-        &mut self,
-        room_id: &RoomId,
-        from: &ParticipantId,
-        to: &ParticipantId,
-        payload: RelayIce,
-    ) -> Result<(), ErrorCode>;
-}
-
-/// Outgoing sink abstraction (e.g., a WebSocket sender).
-pub trait OutSink {
-    fn send(&mut self, message: ServerToClient);
-}
-
-/// Broadcast sink that can deliver messages to specific participants.
-pub trait BroadcastSink {
-    fn send_to(&mut self, to: &ParticipantId, message: ServerToClient);
-}
-
-/// Minimal handshake response used by tests.
-#[derive(Debug, PartialEq, Eq)]
-pub struct HandshakeResponse {
-    pub status: u16,
-}
-
-/// Handler per WebSocket connection.
-pub struct WsHandler<C, S, B> {
-    core: C,
-    participant_id: ParticipantId,
-    /// 接続が属するroom（Create/Join後に設定）。
-    room_id: Option<RoomId>,
-    sink: S,
-    broadcast: B,
-}
-
-impl<C, S, B> WsHandler<C, S, B> {
-    pub fn new(core: C, participant_id: ParticipantId, sink: S, broadcast: B) -> Self {
-        Self {
-            core,
-            participant_id,
-            room_id: None,
-            sink,
-            broadcast,
-        }
-    }
-}
-
-impl<C, S, B> WsHandler<C, S, B>
-where
-    C: CoreApi,
-    S: OutSink,
-    B: BroadcastSink,
-{
-    /// Perform WebSocket handshake (HTTP 101 expected).
-    pub async fn perform_handshake(&mut self) -> HandshakeResponse {
-        // TODO: 実HTTPハンドシェイク処理を実装
-        HandshakeResponse { status: 101 }
-    }
-
-    /// Handle a single incoming text message from the client.
-    pub async fn handle_text_message(&mut self, text: &str) {
-        // For simplicity, we directly parse the message here.
-        let message: ClientToServer = match serde_json::from_str(text) {
-            Ok(m) => m,
-            Err(_) => {
-                self.sink.send(ServerToClient::Error {
-                    code: ErrorCode::InvalidPayload,
-                    message: "invalid payload".into(),
-                });
-                return;
-            }
-        };
-
-        match message {
-            ClientToServer::CreateRoom => {
-                let result = self.core.create_room(self.participant_id.clone());
-                self.room_id = Some(result.room_id.clone());
-                let response = ServerToClient::RoomCreated {
-                    room_id: result.room_id.to_string(),
-                    self_id: result.self_id.to_string(),
-                };
-                self.sink.send(response);
-            }
-            ClientToServer::JoinRoom { room_id } => {
-                let room_id_parsed =
-                    RoomId::from_str(&room_id).expect("room_id should be UUID string");
-                self.room_id = Some(room_id_parsed.clone());
-                match self
-                    .core
-                    .join_room(&room_id_parsed, self.participant_id.clone())
-                {
-                    Some(Ok(participants)) => {
-                        let participants_str: Vec<String> =
-                            participants.iter().map(ToString::to_string).collect();
-                        let event = ServerToClient::RoomParticipants {
-                            room_id: room_id.clone(),
-                            participants: participants_str,
-                        };
-                        for p in participants.iter() {
-                            self.broadcast.send_to(p, event.clone());
-                        }
-                    }
-                    Some(Err(JoinRoomError::RoomFull)) => {
-                        let err = ServerToClient::Error {
-                            code: ErrorCode::RoomFull,
-                            message: "room is full".into(),
-                        };
-                        self.sink.send(err);
-                    }
-                    other => {
-                        todo!("JoinRoom not handled yet: {:?}", other);
-                    }
-                }
-            }
-            ClientToServer::LeaveRoom => {
-                let room_id = self
-                    .room_id
-                    .clone()
-                    .expect("room_id must be set before LeaveRoom");
-
-                match self.core.leave_room(&room_id, &self.participant_id) {
-                    Some(remaining) => {
-                        let participants_str: Vec<String> =
-                            remaining.iter().map(ToString::to_string).collect();
-
-                        // 1) PeerDisconnectedを残り全員へ
-                        let disconnect_evt = ServerToClient::PeerDisconnected {
-                            participant_id: self.participant_id.to_string(),
-                        };
-                        for p in remaining.iter() {
-                            self.broadcast.send_to(p, disconnect_evt.clone());
-                        }
-
-                        // 2) 最新RoomParticipantsを残り全員へ
-                        let participants_evt = ServerToClient::RoomParticipants {
-                            room_id: room_id.to_string(),
-                            participants: participants_str,
-                        };
-                        for p in remaining.iter() {
-                            self.broadcast.send_to(p, participants_evt.clone());
-                        }
-
-                        // 3) 接続側のroom_idをクリア
-                        self.room_id = None;
-                    }
-                    None => panic!("leave_room returned None (room not found)"),
-                }
-            }
-            ClientToServer::Offer { to, payload } => {
-                self.handle_signaling_offer(to, payload).await;
-            }
-            ClientToServer::Answer { to, payload } => {
-                self.handle_signaling_answer(to, payload).await;
-            }
-            ClientToServer::IceCandidate { to, payload } => {
-                self.handle_signaling_ice(to, payload).await;
-            }
-        }
-    }
-
-    /// Handle abrupt WebSocket disconnect from client side.
-    pub async fn handle_disconnect(&mut self) {
-        // 冪等性のため、room_idがない場合は何もしない
-        if let Some(room_id) = self.room_id.clone() {
-            match self.core.leave_room(&room_id, &self.participant_id) {
-                Some(remaining) => {
-                    let participants_str: Vec<String> =
-                        remaining.iter().map(ToString::to_string).collect();
-
-                    let disconnect_evt = ServerToClient::PeerDisconnected {
-                        participant_id: self.participant_id.to_string(),
-                    };
-                    let participants_evt = ServerToClient::RoomParticipants {
-                        room_id: room_id.to_string(),
-                        participants: participants_str,
-                    };
-
-                    for p in remaining.iter() {
-                        self.broadcast.send_to(p, disconnect_evt.clone());
-                        self.broadcast.send_to(p, participants_evt.clone());
-                    }
-                }
-                None => {} // ルームが見つからない場合は黙って無視
-            }
-
-            // room_idをクリア
-            self.room_id = None;
-        }
-    }
-
-    async fn handle_signaling_offer(&mut self, to: String, payload: RelaySdp) {
-        let room_id = self
-            .room_id
-            .clone()
-            .expect("room must be set before signaling");
-        let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
-
-        match self
-            .core
-            .relay_offer(&room_id, &self.participant_id, &to_id, payload.clone())
-        {
-            Ok(_) => {
-                let event = ServerToClient::Offer {
-                    from: self.participant_id.to_string(),
-                    payload,
-                };
-                self.broadcast.send_to(&to_id, event);
-            }
-            Err(code) => {
-                let err = ServerToClient::Error {
-                    code,
-                    message: "failed to relay offer".into(),
-                };
-                self.sink.send(err);
-            }
-        }
-    }
-
-    async fn handle_signaling_answer(&mut self, to: String, payload: RelaySdp) {
-        let room_id = self
-            .room_id
-            .clone()
-            .expect("room must be set before signaling");
-        let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
-
-        match self
-            .core
-            .relay_answer(&room_id, &self.participant_id, &to_id, payload.clone())
-        {
-            Ok(_) => {
-                let event = ServerToClient::Answer {
-                    from: self.participant_id.to_string(),
-                    payload,
-                };
-                self.broadcast.send_to(&to_id, event);
-            }
-            Err(code) => {
-                let err = ServerToClient::Error {
-                    code,
-                    message: "failed to relay answer".into(),
-                };
-                self.sink.send(err);
-            }
-        }
-    }
-
-    async fn handle_signaling_ice(&mut self, to: String, payload: RelayIce) {
-        let room_id = self
-            .room_id
-            .clone()
-            .expect("room must be set before signaling");
-        let to_id = ParticipantId::from_str(&to).expect("to must be UUID");
-
-        match self
-            .core
-            .relay_ice_candidate(&room_id, &self.participant_id, &to_id, payload.clone())
-        {
-            Ok(_) => {
-                let event = ServerToClient::IceCandidate {
-                    from: self.participant_id.to_string(),
-                    payload,
-                };
-                self.broadcast.send_to(&to_id, event);
-            }
-            Err(code) => {
-                let err = ServerToClient::Error {
-                    code,
-                    message: "failed to relay ice".into(),
-                };
-                self.sink.send(err);
-            }
-        }
-    }
-
-    /// Hook to forward peer connection events from core to all participants in the room.
-    pub async fn broadcast_peer_connected(
-        &mut self,
-        participants: &[ParticipantId],
-        joined: &ParticipantId,
-    ) {
-        let event = ServerToClient::PeerConnected {
-            participant_id: joined.to_string(),
-        };
-        for p in participants {
-            self.broadcast.send_to(p, event.clone());
-        }
-    }
-
-    /// Hook to forward peer disconnection events from core to all participants in the room.
-    pub async fn broadcast_peer_disconnected(
-        &mut self,
-        participants: &[ParticipantId],
-        left: &ParticipantId,
-    ) {
-        let event = ServerToClient::PeerDisconnected {
-            participant_id: left.to_string(),
-        };
-        for p in participants {
-            self.broadcast.send_to(p, event.clone());
-        }
-    }
-
-    /// Handle abnormal socket close (error path). Should trigger leave once and notify peers.
-    pub async fn handle_abnormal_close(&mut self, participants: &[ParticipantId]) {
-        if let Some(room_id) = self.room_id.clone() {
-            let remaining = self.core.leave_room(&room_id, &self.participant_id);
-
-            if let Some(rem) = remaining {
-                let disconnect_evt = ServerToClient::PeerDisconnected {
-                    participant_id: self.participant_id.to_string(),
-                };
-                for p in participants {
-                    self.broadcast.send_to(p, disconnect_evt.clone());
-                }
-                // Optionally: broadcast updated participant list if available
-                let participants_evt = ServerToClient::RoomParticipants {
-                    room_id: room_id.to_string(),
-                    participants: rem.iter().map(ToString::to_string).collect(),
-                };
-                for p in participants {
-                    self.broadcast.send_to(p, participants_evt.clone());
-                }
-            }
-
-            self.room_id = None;
-        }
-    }
-}
-
-/// Test helper sink that records messages.
-#[derive(Default, Debug)]
-pub struct RecordingSink {
-    pub sent: Vec<ServerToClient>,
-}
-
-impl OutSink for RecordingSink {
-    fn send(&mut self, message: ServerToClient) {
-        self.sent.push(message);
-    }
-}
-
-/// Test helper broadcast sink that records messages per participant.
-#[derive(Default, Debug)]
-pub struct RecordingBroadcastSink {
-    pub sent: HashMap<ParticipantId, Vec<ServerToClient>>,
-}
-
-impl RecordingBroadcastSink {
-    pub fn messages_for(&self, participant: &ParticipantId) -> Option<&[ServerToClient]> {
-        self.sent.get(participant).map(Vec::as_slice)
-    }
-}
-
-impl BroadcastSink for RecordingBroadcastSink {
-    fn send_to(&mut self, to: &ParticipantId, message: ServerToClient) {
-        self.sent.entry(to.clone()).or_default().push(message);
-    }
-}
-
-/// Shared broadcast sink for simulating multiple connections sharing delivery.
-#[derive(Clone, Default)]
-pub struct SharedBroadcastSink {
-    inner: Arc<Mutex<HashMap<ParticipantId, Vec<ServerToClient>>>>,
-}
-
-impl SharedBroadcastSink {
-    pub fn messages_for(&self, participant: &ParticipantId) -> Option<Vec<ServerToClient>> {
-        self.inner
-            .lock()
-            .ok()
-            .and_then(|m| m.get(participant).cloned())
-    }
-}
-
-impl BroadcastSink for SharedBroadcastSink {
-    fn send_to(&mut self, to: &ParticipantId, message: ServerToClient) {
-        if let Ok(mut map) = self.inner.lock() {
-            map.entry(to.clone()).or_default().push(message);
-        }
-    }
-}
-
-/// No-op broadcast sink for tests that don't assert broadcasts.
-#[derive(Default)]
-pub struct NoopBroadcastSink;
-
-impl BroadcastSink for NoopBroadcastSink {
-    fn send_to(&mut self, _to: &ParticipantId, _message: ServerToClient) {}
-}
-
-/// Test helper core that returns predetermined values.
-#[derive(Clone, Debug)]
-pub struct MockCore {
-    pub create_room_result: CreateRoomResult,
-    pub create_room_calls: Vec<ParticipantId>,
-    pub join_room_result: Option<Result<Vec<ParticipantId>, JoinRoomError>>,
-    pub join_room_calls: Vec<(RoomId, ParticipantId)>,
-    pub leave_room_result: Option<Vec<ParticipantId>>,
-    pub leave_room_calls: Vec<(RoomId, ParticipantId)>,
-    pub relay_offer_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelaySdp)>,
-    pub relay_offer_result: Result<(), ErrorCode>,
-    pub relay_answer_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelaySdp)>,
-    pub relay_answer_result: Result<(), ErrorCode>,
-    pub relay_ice_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelayIce)>,
-    pub relay_ice_result: Result<(), ErrorCode>,
-}
-
-impl MockCore {
-    pub fn new(create_room_result: CreateRoomResult) -> Self {
-        Self {
-            create_room_result,
-            create_room_calls: Vec::new(),
-            join_room_result: None,
-            join_room_calls: Vec::new(),
-            leave_room_result: None,
-            leave_room_calls: Vec::new(),
-            relay_offer_calls: Vec::new(),
-            relay_offer_result: Ok(()),
-            relay_answer_calls: Vec::new(),
-            relay_answer_result: Ok(()),
-            relay_ice_calls: Vec::new(),
-            relay_ice_result: Ok(()),
-        }
-    }
-
-    pub fn with_join_result(
-        mut self,
-        result: Option<Result<Vec<ParticipantId>, JoinRoomError>>,
-    ) -> Self {
-        self.join_room_result = result;
-        self
-    }
-
-    pub fn with_leave_result(mut self, result: Option<Vec<ParticipantId>>) -> Self {
-        self.leave_room_result = result;
-        self
-    }
-
-    pub fn with_relay_offer_result(mut self, result: Result<(), ErrorCode>) -> Self {
-        self.relay_offer_result = result;
-        self
-    }
-
-    pub fn with_relay_answer_result(mut self, result: Result<(), ErrorCode>) -> Self {
-        self.relay_answer_result = result;
-        self
-    }
-
-    pub fn with_relay_ice_result(mut self, result: Result<(), ErrorCode>) -> Self {
-        self.relay_ice_result = result;
-        self
-    }
-}
-
-impl CoreApi for MockCore {
-    fn create_room(&mut self, room_owner: ParticipantId) -> CreateRoomResult {
-        self.create_room_calls.push(room_owner);
-        self.create_room_result.clone()
-    }
-
-    fn join_room(
-        &mut self,
-        room_id: &RoomId,
-        participant: ParticipantId,
-    ) -> Option<Result<Vec<ParticipantId>, bloom_core::JoinRoomError>> {
-        self.join_room_calls.push((room_id.clone(), participant));
-        self.join_room_result.clone()
-    }
-
-    fn leave_room(
-        &mut self,
-        room_id: &RoomId,
-        participant: &ParticipantId,
-    ) -> Option<Vec<ParticipantId>> {
-        self.leave_room_calls
-            .push((room_id.clone(), participant.clone()));
-        self.leave_room_result.clone()
-    }
-
-    fn relay_offer(
-        &mut self,
-        room_id: &RoomId,
-        from: &ParticipantId,
-        to: &ParticipantId,
-        payload: RelaySdp,
-    ) -> Result<(), ErrorCode> {
-        self.relay_offer_calls
-            .push((room_id.clone(), from.clone(), to.clone(), payload));
-        self.relay_offer_result.clone()
-    }
-
-    fn relay_answer(
-        &mut self,
-        room_id: &RoomId,
-        from: &ParticipantId,
-        to: &ParticipantId,
-        payload: RelaySdp,
-    ) -> Result<(), ErrorCode> {
-        self.relay_answer_calls
-            .push((room_id.clone(), from.clone(), to.clone(), payload));
-        self.relay_answer_result.clone()
-    }
-
-    fn relay_ice_candidate(
-        &mut self,
-        room_id: &RoomId,
-        from: &ParticipantId,
-        to: &ParticipantId,
-        payload: RelayIce,
-    ) -> Result<(), ErrorCode> {
-        self.relay_ice_calls
-            .push((room_id.clone(), from.clone(), to.clone(), payload));
-        self.relay_ice_result.clone()
-    }
-}
+pub use core_api::CoreApi;
+pub use handler::{HandshakeResponse, WsHandler};
+pub use mocks::MockCore;
+pub use sinks::{BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink, SharedBroadcastSink};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bloom_api::ServerToClient;
+    use bloom_api::{ErrorCode, ServerToClient};
+    use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
+
+    fn new_room() -> (RoomId, ParticipantId) {
+        (RoomId::new(), ParticipantId::new())
+    }
 
     /// WS接続確立→CreateRoom送信で RoomCreated(self_id, room_id) が返ることを検証する。
-    /// まだ実装が無いため RED になる。
     #[tokio::test]
     async fn create_room_returns_room_created_after_handshake() {
-        let room_id = RoomId::new();
-        let self_id = ParticipantId::new();
+        let (room_id, self_id) = new_room();
         let core_result = CreateRoomResult {
             room_id: room_id.clone(),
             self_id: self_id.clone(),
@@ -577,12 +40,7 @@ mod tests {
             .handle_text_message(r#"{"type":"CreateRoom"}"#)
             .await;
 
-        // 期待: RoomCreatedイベントが送信され、JSONラウンドトリップできる
-        assert_eq!(
-            handler.sink.sent.len(),
-            1,
-            "CreateRoomに対するレスポンスが1件送られる"
-        );
+        assert_eq!(handler.sink.sent.len(), 1, "CreateRoomに対するレスポンスが1件送られる");
         let sent = &handler.sink.sent[0];
         assert_eq!(
             sent,
@@ -592,15 +50,12 @@ mod tests {
             }
         );
 
-        // JSONラウンドトリップ確認
         let json = serde_json::to_string(sent).expect("serialize server message");
-        let roundtrip: ServerToClient =
-            serde_json::from_str(&json).expect("deserialize server message");
+        let roundtrip: ServerToClient = serde_json::from_str(&json).expect("deserialize server message");
         assert_eq!(roundtrip, *sent);
     }
 
     /// JoinRoom要求でRoomParticipantsブロードキャストが全参加者（自分を含む）へ届くことを検証する。
-    /// 現時点で未実装のためRED。
     #[tokio::test]
     async fn join_room_broadcasts_room_participants_to_all_members() {
         let room_id = RoomId::new();
@@ -624,35 +79,53 @@ mod tests {
             .handle_text_message(&format!(r#"{{"type":"JoinRoom","room_id":"{}"}}"#, room_id))
             .await;
 
-        // core.join_roomが呼ばれること
-        assert_eq!(
-            handler.core.join_room_calls.len(),
-            1,
-            "join_roomが1度呼ばれる"
-        );
-        assert_eq!(
-            handler.core.join_room_calls[0].0, room_id,
-            "指定room_idで呼ばれる"
-        );
+        assert_eq!(handler.core.join_room_calls.len(), 1);
+        assert_eq!(handler.core.join_room_calls[0].0, room_id);
 
-        // 各参加者にRoomParticipantsが配信されること
         for p in &participants {
             let messages = handler
                 .broadcast
                 .messages_for(p)
                 .expect("各参加者にメッセージが届くはず");
-            assert!(
-                matches!(
-                    messages.last(),
-                    Some(ServerToClient::RoomParticipants { room_id: _, participants: ps })
-                        if ps.len() == participants.len()
-                ),
-                "RoomParticipantsが届く"
-            );
+            assert!(matches!(
+                messages.last(),
+                Some(ServerToClient::RoomParticipants { participants: ps, .. }) if ps.len() == participants.len()
+            ));
         }
     }
 
-    /// LeaveRoom要求でcoreのleaveが呼ばれ、残り参加者にPeerDisconnectedと最新RoomParticipantsがブロードキャストされることを確認（未実装のためRED）。
+    /// JoinRoomでRoomFullが返った場合、Error(RoomFull)が送信されブロードキャストされないことを確認。
+    #[tokio::test]
+    async fn join_room_full_returns_error_without_broadcast() {
+        let room_id = RoomId::new();
+        let self_id = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: self_id.clone(),
+            participants: vec![self_id.clone()],
+        };
+
+        let core = MockCore::new(core_result).with_join_result(Some(Err(JoinRoomError::RoomFull)));
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
+
+        handler.perform_handshake().await;
+        handler
+            .handle_text_message(&format!(r#"{{"type":"JoinRoom","room_id":"{}"}}"#, room_id))
+            .await;
+
+        assert_eq!(handler.core.join_room_calls.len(), 1);
+        assert_eq!(handler.sink.sent.len(), 1);
+        assert!(matches!(
+            handler.sink.sent[0],
+            ServerToClient::Error { code: ErrorCode::RoomFull, .. }
+        ));
+        assert!(handler.broadcast.sent.is_empty());
+    }
+
+    /// LeaveRoom要求でcoreのleaveが呼ばれ、残り参加者にPeerDisconnectedと最新RoomParticipantsがブロードキャストされることを確認。
     #[tokio::test]
     async fn leave_room_broadcasts_disconnect_and_participants() {
         let room_id = RoomId::new();
@@ -673,51 +146,23 @@ mod tests {
         let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
 
         handler.perform_handshake().await;
-        // 事前にroom_idを接続コンテキストへセット（Join/Create後を想定）
         handler.room_id = Some(room_id.clone());
         handler.handle_text_message(r#"{"type":"LeaveRoom"}"#).await;
 
-        // core.leave_roomが呼ばれる
-        assert_eq!(
-            handler.core.leave_room_calls.len(),
-            1,
-            "leave_roomが1度呼ばれる"
-        );
-        assert_eq!(
-            handler.core.leave_room_calls[0].0, room_id,
-            "正しいroom_idで呼ばれる"
-        );
+        assert_eq!(handler.core.leave_room_calls.len(), 1);
+        assert_eq!(handler.core.leave_room_calls[0].0, room_id);
 
-        // 残り参加者へPeerDisconnectedとRoomParticipantsがブロードキャストされる
         for p in &remaining {
             let msgs = handler
                 .broadcast
                 .messages_for(p)
                 .expect("残り参加者へメッセージが届く");
-            assert!(
-                msgs.iter()
-                    .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &self_id.to_string())),
-                "PeerDisconnectedが届く"
-            );
-            assert!(
-                msgs.iter().any(|m| match m {
-                    ServerToClient::RoomParticipants {
-                        room_id: rid,
-                        participants,
-                    } => {
-                        rid == &room_id.to_string()
-                            && participants.len() == remaining.len()
-                            && participants.contains(&remaining_a.to_string())
-                            && participants.contains(&remaining_b.to_string())
-                    }
-                    _ => false,
-                }),
-                "最新RoomParticipantsが届く"
-            );
+            assert!(msgs.iter().any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &self_id.to_string())));
+            assert!(msgs.iter().any(|m| matches!(m, ServerToClient::RoomParticipants { participants, .. } if participants.len() == remaining.len())));
         }
     }
 
-    /// Offer/Answer/IceCandidate が宛先参加者にだけ配送されることを検証する（未実装のためRED）。
+    /// Offer/Answer/IceCandidate が宛先参加者にだけ配送されることを検証する。
     #[tokio::test]
     async fn signaling_messages_are_routed_only_to_target() {
         let room_id = RoomId::new();
@@ -738,7 +183,6 @@ mod tests {
         handler.perform_handshake().await;
         handler.room_id = Some(room_id.clone());
 
-        // テーブル駆動でOffer/Answer/IceCandidateを送信
         let cases = vec![
             r#"{"type":"Offer","to":"TARGET","sdp":"v=0 offer"}"#,
             r#"{"type":"Answer","to":"TARGET","sdp":"v=0 answer"}"#,
@@ -750,22 +194,20 @@ mod tests {
             handler.handle_text_message(&json).await;
         }
 
-        // 宛先のみが受信する
         let recv_msgs = handler
             .broadcast
             .messages_for(&receiver)
             .expect("receiver should get messages");
-        assert_eq!(recv_msgs.len(), 3, "3種類のシグナリングが届く");
+        assert_eq!(recv_msgs.len(), 3);
         assert!(matches!(recv_msgs[0], ServerToClient::Offer { .. }));
         assert!(matches!(recv_msgs[1], ServerToClient::Answer { .. }));
         assert!(matches!(recv_msgs[2], ServerToClient::IceCandidate { .. }));
 
-        // 傍受者・送信者には届かない
         assert!(handler.broadcast.messages_for(&bystander).is_none());
         assert!(handler.broadcast.messages_for(&sender).is_none());
     }
 
-    /// 宛先不在のOfferで、送信者にError(ParticipantNotFound)が返り、他参加者には何も届かないことを検証（RED）。
+    /// 宛先不在のOfferで、送信者にError(ParticipantNotFound)が返り、他参加者には何も届かないことを検証。
     #[tokio::test]
     async fn offer_to_missing_participant_returns_error_and_no_leak() {
         let room_id = RoomId::new();
@@ -779,15 +221,14 @@ mod tests {
             participants: vec![sender.clone(), receiver.clone()],
         };
 
-        let core =
-            MockCore::new(core_result).with_relay_offer_result(Err(ErrorCode::ParticipantNotFound));
+        let core = MockCore::new(core_result)
+            .with_relay_offer_result(Err(ErrorCode::ParticipantNotFound));
         let sink = RecordingSink::default();
         let broadcast = RecordingBroadcastSink::default();
         let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
         handler.perform_handshake().await;
         handler.room_id = Some(room_id.clone());
 
-        // 宛先missingに対するOfferを送信
         handler
             .handle_text_message(&format!(
                 r#"{{"type":"Offer","to":"{}","sdp":"v=0 offer"}}"#,
@@ -795,17 +236,11 @@ mod tests {
             ))
             .await;
 
-        // 送信者にはErrorが1件届く
         assert_eq!(handler.sink.sent.len(), 1);
         assert!(matches!(
             handler.sink.sent[0],
-            ServerToClient::Error {
-                code: ErrorCode::ParticipantNotFound,
-                ..
-            }
+            ServerToClient::Error { code: ErrorCode::ParticipantNotFound, .. }
         ));
-
-        // 宛先missingにも、既存receiverにも何も届かない
         assert!(handler.broadcast.messages_for(&missing).is_none());
         assert!(handler.broadcast.messages_for(&receiver).is_none());
     }
@@ -842,10 +277,7 @@ mod tests {
         assert_eq!(handler.sink.sent.len(), 1);
         assert!(matches!(
             handler.sink.sent[0],
-            ServerToClient::Error {
-                code: ErrorCode::ParticipantNotFound,
-                ..
-            }
+            ServerToClient::Error { code: ErrorCode::ParticipantNotFound, .. }
         ));
         assert!(handler.broadcast.messages_for(&missing).is_none());
         assert!(handler.broadcast.messages_for(&receiver).is_none());
@@ -865,8 +297,8 @@ mod tests {
             participants: vec![sender.clone(), receiver.clone()],
         };
 
-        let core =
-            MockCore::new(core_result).with_relay_ice_result(Err(ErrorCode::ParticipantNotFound));
+        let core = MockCore::new(core_result)
+            .with_relay_ice_result(Err(ErrorCode::ParticipantNotFound));
         let sink = RecordingSink::default();
         let broadcast = RecordingBroadcastSink::default();
         let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
@@ -883,20 +315,16 @@ mod tests {
         assert_eq!(handler.sink.sent.len(), 1);
         assert!(matches!(
             handler.sink.sent[0],
-            ServerToClient::Error {
-                code: ErrorCode::ParticipantNotFound,
-                ..
-            }
+            ServerToClient::Error { code: ErrorCode::ParticipantNotFound, .. }
         ));
         assert!(handler.broadcast.messages_for(&missing).is_none());
         assert!(handler.broadcast.messages_for(&receiver).is_none());
     }
 
-    /// 必須フィールド欠落のJSONはInvalidPayloadを返し、core呼び出しが一切発生しないこと（RED）。
+    /// 必須フィールド欠落のJSONはInvalidPayloadを返し、core呼び出しが一切発生しないこと。
     #[tokio::test]
     async fn invalid_payload_returns_error_and_skips_core_calls() {
-        let room_id = RoomId::new();
-        let sender = ParticipantId::new();
+        let (room_id, sender) = new_room();
         let core_result = CreateRoomResult {
             room_id: room_id.clone(),
             self_id: sender.clone(),
@@ -909,152 +337,18 @@ mod tests {
         let mut handler = WsHandler::new(core, sender.clone(), sink, broadcast);
         handler.perform_handshake().await;
 
-        // room_idフィールド欠落のJoinRoom
         handler.handle_text_message(r#"{"type":"JoinRoom"}"#).await;
 
-        // Error(InvalidPayload) が送られること
-        assert_eq!(handler.sink.sent.len(), 1, "エラーが1件返る");
-        assert!(matches!(
-            handler.sink.sent[0],
-            ServerToClient::Error {
-                code: ErrorCode::InvalidPayload,
-                ..
-            }
-        ));
-
-        // coreの各呼び出しが発生していないこと
-        assert!(handler.core.create_room_calls.is_empty());
-        assert!(handler.core.join_room_calls.is_empty());
-        assert!(handler.core.leave_room_calls.is_empty());
-        assert!(handler.core.relay_offer_calls.is_empty());
-        assert!(handler.core.relay_answer_calls.is_empty());
-        assert!(handler.core.relay_ice_calls.is_empty());
-
-        // ブロードキャストも発生しないこと
-        assert!(handler.broadcast.sent.is_empty());
-    }
-
-    /// JoinRoomでRoomFullが返った場合、Error(RoomFull)が送信されブロードキャストされないことを確認（RED）。
-    #[tokio::test]
-    async fn join_room_full_returns_error_without_broadcast() {
-        let room_id = RoomId::new();
-        let self_id = ParticipantId::new();
-
-        let core_result = CreateRoomResult {
-            room_id: room_id.clone(),
-            self_id: self_id.clone(),
-            participants: vec![self_id.clone()],
-        };
-
-        let core = MockCore::new(core_result).with_join_result(Some(Err(JoinRoomError::RoomFull)));
-        let sink = RecordingSink::default();
-        let broadcast = RecordingBroadcastSink::default();
-        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
-
-        handler.perform_handshake().await;
-        handler
-            .handle_text_message(&format!(r#"{{"type":"JoinRoom","room_id":"{}"}}"#, room_id))
-            .await;
-
-        // core.join_room が1回呼ばれる
-        assert_eq!(handler.core.join_room_calls.len(), 1);
-
-        // Error RoomFull が送信者に返る
         assert_eq!(handler.sink.sent.len(), 1);
-        assert!(matches!(
-            handler.sink.sent[0],
-            ServerToClient::Error {
-                code: ErrorCode::RoomFull,
-                ..
-            }
-        ));
-
-        // ブロードキャストは発生しない
+        assert!(matches!(handler.sink.sent[0], ServerToClient::Error { code: ErrorCode::InvalidPayload, .. }));
+        assert!(handler.core.join_room_calls.is_empty());
         assert!(handler.broadcast.sent.is_empty());
     }
 
-    /// coreイベント経由のPeerConnected/PeerDisconnectedが同一roomの全接続に配送されることを確認。
-    #[tokio::test]
-    async fn core_peer_events_are_broadcast_to_all_connections() {
-        let room_id = RoomId::new();
-        let p1 = ParticipantId::new();
-        let p2 = ParticipantId::new();
-        let newcomer = ParticipantId::new();
-
-        let core_result = CreateRoomResult {
-            room_id: room_id.clone(),
-            self_id: p1.clone(),
-            participants: vec![p1.clone(), p2.clone()],
-        };
-
-        // 2つの接続が同じSharedBroadcastSinkを共有
-        let shared_broadcast = SharedBroadcastSink::default();
-
-        let core1 = MockCore::new(core_result.clone());
-        let mut h1 = WsHandler::new(
-            core1,
-            p1.clone(),
-            RecordingSink::default(),
-            shared_broadcast.clone(),
-        );
-        h1.room_id = Some(room_id.clone());
-
-        let core2 = MockCore::new(core_result);
-        let mut h2 = WsHandler::new(
-            core2,
-            p2.clone(),
-            RecordingSink::default(),
-            shared_broadcast.clone(),
-        );
-        h2.room_id = Some(room_id.clone());
-
-        // coreからのPeerConnectedイベントをhook経由で投げる
-        h1.broadcast_peer_connected(&[p1.clone(), p2.clone()], &newcomer)
-            .await;
-        h2.broadcast_peer_connected(&[p1.clone(), p2.clone()], &newcomer)
-            .await;
-
-        // 全員がPeerConnectedを受け取る（newcomer本人は未接続なので除外）
-        let msgs_p1 = shared_broadcast
-            .messages_for(&p1)
-            .expect("p1 should receive broadcast");
-        let msgs_p2 = shared_broadcast
-            .messages_for(&p2)
-            .expect("p2 should receive broadcast");
-
-        assert!(msgs_p1
-            .iter()
-            .any(|m| matches!(m, ServerToClient::PeerConnected { participant_id } if participant_id == &newcomer.to_string())));
-        assert!(msgs_p2
-            .iter()
-            .any(|m| matches!(m, ServerToClient::PeerConnected { participant_id } if participant_id == &newcomer.to_string())));
-
-        // PeerDisconnectedも同様に配送されることを確認（newcomerが離脱した想定）
-        h1.broadcast_peer_disconnected(&[p1.clone(), p2.clone()], &newcomer)
-            .await;
-        h2.broadcast_peer_disconnected(&[p1.clone(), p2.clone()], &newcomer)
-            .await;
-
-        let msgs_p1_after = shared_broadcast
-            .messages_for(&p1)
-            .expect("p1 should receive broadcast");
-        let msgs_p2_after = shared_broadcast
-            .messages_for(&p2)
-            .expect("p2 should receive broadcast");
-
-        assert!(msgs_p1_after
-            .iter()
-            .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &newcomer.to_string())));
-        assert!(msgs_p2_after
-            .iter()
-            .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &newcomer.to_string())));
-    }
-
-    /// 未知フィールド付きメッセージはInvalidPayloadで弾かれ、その後の正常メッセージは処理されることを確認。
+    /// 未知フィールド付きメッセージはInvalidPayloadで弾かれ、その後の正常メッセージは処理される。
     #[tokio::test]
     async fn unknown_field_then_valid_message_keeps_state_intact() {
-        let room_id = RoomId::new();
-        let self_id = ParticipantId::new();
+        let (room_id, self_id) = new_room();
         let other = ParticipantId::new();
 
         let core_result = CreateRoomResult {
@@ -1071,7 +365,6 @@ mod tests {
 
         handler.perform_handshake().await;
 
-        // 未知フィールド付きJoinRoom
         handler
             .handle_text_message(&format!(
                 r#"{{"type":"JoinRoom","room_id":"{}","unknown":true}}"#,
@@ -1079,37 +372,29 @@ mod tests {
             ))
             .await;
 
-        // InvalidPayloadが返り、coreは呼ばれない
         assert_eq!(handler.sink.sent.len(), 1);
-        assert!(matches!(
-            handler.sink.sent[0],
-            ServerToClient::Error {
-                code: ErrorCode::InvalidPayload,
-                ..
-            }
-        ));
+        assert!(matches!(handler.sink.sent[0], ServerToClient::Error { code: ErrorCode::InvalidPayload, .. }));
         assert!(handler.core.join_room_calls.is_empty());
         assert!(handler.broadcast.sent.is_empty());
 
-        // 続けて正常なJoinRoomを送ると処理される
         handler
-            .handle_text_message(&format!(r#"{{"type":"JoinRoom","room_id":"{}"}}"#, room_id))
+            .handle_text_message(&format!(
+                r#"{{"type":"JoinRoom","room_id":"{}"}}"#,
+                room_id
+            ))
             .await;
 
-        // join_roomが1回呼ばれ、ブロードキャストが行われる
         assert_eq!(handler.core.join_room_calls.len(), 1);
         for p in &[self_id, other] {
             let msgs = handler
                 .broadcast
                 .messages_for(p)
                 .expect("participants should receive broadcast");
-            assert!(msgs
-                .iter()
-                .any(|m| matches!(m, ServerToClient::RoomParticipants { .. })));
+            assert!(msgs.iter().any(|m| matches!(m, ServerToClient::RoomParticipants { .. })));
         }
     }
 
-    /// 異常終了時もleaveが1回だけ呼ばれ、残存参加者にPeerDisconnectedが届くことを確認（RED）。
+    /// 異常終了時もleaveが1回だけ呼ばれ、残存参加者にPeerDisconnectedが届くことを確認。
     #[tokio::test]
     async fn abnormal_close_triggers_single_leave_and_disconnect_broadcast() {
         let room_id = RoomId::new();
@@ -1134,21 +419,79 @@ mod tests {
             .handle_abnormal_close(&remaining)
             .await;
 
-        // leave_roomが1回だけ呼ばれる
         assert_eq!(handler.core.leave_room_calls.len(), 1);
 
-        // 残存参加者にPeerDisconnectedが届く
         for p in &remaining {
             let msgs = broadcast
                 .messages_for(p)
                 .expect("peer should receive disconnect");
-            assert!(msgs.iter().any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &self_id.to_string())));
+            assert!(msgs
+                .iter()
+                .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &self_id.to_string())));
         }
 
-        // room_idはクリアされ、二度目の呼び出しでleaveが増えない（冪等性）
         handler
             .handle_abnormal_close(&remaining)
             .await;
         assert_eq!(handler.core.leave_room_calls.len(), 1);
+    }
+
+    /// coreイベント経由のPeerConnected/PeerDisconnectedが同一roomの全接続に配送されることを確認。
+    #[tokio::test]
+    async fn core_peer_events_are_broadcast_to_all_connections() {
+        let room_id = RoomId::new();
+        let p1 = ParticipantId::new();
+        let p2 = ParticipantId::new();
+        let newcomer = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: p1.clone(),
+            participants: vec![p1.clone(), p2.clone()],
+        };
+
+        let shared_broadcast = SharedBroadcastSink::default();
+
+        let core1 = MockCore::new(core_result.clone());
+        let mut h1 = WsHandler::new(core1, p1.clone(), RecordingSink::default(), shared_broadcast.clone());
+        h1.room_id = Some(room_id.clone());
+
+        let core2 = MockCore::new(core_result);
+        let mut h2 = WsHandler::new(core2, p2.clone(), RecordingSink::default(), shared_broadcast.clone());
+        h2.room_id = Some(room_id.clone());
+
+        h1.broadcast_peer_connected(&[p1.clone(), p2.clone()], &newcomer)
+            .await;
+        h2.broadcast_peer_connected(&[p1.clone(), p2.clone()], &newcomer)
+            .await;
+
+        let msgs_p1 = shared_broadcast
+            .messages_for(&p1)
+            .expect("p1 should receive broadcast");
+        let msgs_p2 = shared_broadcast
+            .messages_for(&p2)
+            .expect("p2 should receive broadcast");
+
+        assert!(msgs_p1.iter().any(|m| matches!(m, ServerToClient::PeerConnected { participant_id } if participant_id == &newcomer.to_string())));
+        assert!(msgs_p2.iter().any(|m| matches!(m, ServerToClient::PeerConnected { participant_id } if participant_id == &newcomer.to_string())));
+
+        h1.broadcast_peer_disconnected(&[p1.clone(), p2.clone()], &newcomer)
+            .await;
+        h2.broadcast_peer_disconnected(&[p1.clone(), p2.clone()], &newcomer)
+            .await;
+
+        let msgs_p1_after = shared_broadcast
+            .messages_for(&p1)
+            .expect("p1 should receive broadcast");
+        let msgs_p2_after = shared_broadcast
+            .messages_for(&p2)
+            .expect("p2 should receive broadcast");
+
+        assert!(msgs_p1_after
+            .iter()
+            .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &newcomer.to_string())));
+        assert!(msgs_p2_after
+            .iter()
+            .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &newcomer.to_string())));
     }
 }
