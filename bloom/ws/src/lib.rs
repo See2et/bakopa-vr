@@ -38,6 +38,8 @@ pub struct HandshakeResponse {
 pub struct WsHandler<C, S, B> {
     core: C,
     participant_id: ParticipantId,
+    /// 接続が属するroom（Create/Join後に設定）。
+    room_id: Option<RoomId>,
     sink: S,
     broadcast: B,
 }
@@ -47,6 +49,7 @@ impl<C, S, B> WsHandler<C, S, B> {
         Self {
             core,
             participant_id,
+            room_id: None,
             sink,
             broadcast,
         }
@@ -74,6 +77,7 @@ where
         match message {
             ClientToServer::CreateRoom => {
                 let result = self.core.create_room(self.participant_id.clone());
+                self.room_id = Some(result.room_id.clone());
                 let response = ServerToClient::RoomCreated {
                     room_id: result.room_id.to_string(),
                     self_id: result.self_id.to_string(),
@@ -83,6 +87,7 @@ where
             ClientToServer::JoinRoom { room_id } => {
                 let room_id_parsed =
                     RoomId::from_str(&room_id).expect("room_id should be UUID string");
+                self.room_id = Some(room_id_parsed.clone());
                 match self
                     .core
                     .join_room(&room_id_parsed, self.participant_id.clone())
@@ -103,9 +108,73 @@ where
                     }
                 }
             }
+            ClientToServer::LeaveRoom => {
+                let room_id = self
+                    .room_id
+                    .clone()
+                    .expect("room_id must be set before LeaveRoom");
+
+                match self.core.leave_room(&room_id, &self.participant_id) {
+                    Some(remaining) => {
+                        let participants_str: Vec<String> =
+                            remaining.iter().map(ToString::to_string).collect();
+
+                        // 1) PeerDisconnectedを残り全員へ
+                        let disconnect_evt = ServerToClient::PeerDisconnected {
+                            participant_id: self.participant_id.to_string(),
+                        };
+                        for p in remaining.iter() {
+                            self.broadcast.send_to(p, disconnect_evt.clone());
+                        }
+
+                        // 2) 最新RoomParticipantsを残り全員へ
+                        let participants_evt = ServerToClient::RoomParticipants {
+                            room_id: room_id.to_string(),
+                            participants: participants_str,
+                        };
+                        for p in remaining.iter() {
+                            self.broadcast.send_to(p, participants_evt.clone());
+                        }
+
+                        // 3) 接続側のroom_idをクリア
+                        self.room_id = None;
+                    }
+                    None => panic!("leave_room returned None (room not found)"),
+                }
+            }
             other => {
                 unimplemented!("Handler for {other:?} not implemented");
             }
+        }
+    }
+
+    /// Handle abrupt WebSocket disconnect from client side.
+    pub async fn handle_disconnect(&mut self) {
+        // 冪等性のため、room_idがない場合は何もしない
+        if let Some(room_id) = self.room_id.clone() {
+            match self.core.leave_room(&room_id, &self.participant_id) {
+                Some(remaining) => {
+                    let participants_str: Vec<String> =
+                        remaining.iter().map(ToString::to_string).collect();
+
+                    let disconnect_evt = ServerToClient::PeerDisconnected {
+                        participant_id: self.participant_id.to_string(),
+                    };
+                    let participants_evt = ServerToClient::RoomParticipants {
+                        room_id: room_id.to_string(),
+                        participants: participants_str,
+                    };
+
+                    for p in remaining.iter() {
+                        self.broadcast.send_to(p, disconnect_evt.clone());
+                        self.broadcast.send_to(p, participants_evt.clone());
+                    }
+                }
+                None => {} // ルームが見つからない場合は黙って無視
+            }
+
+            // room_idをクリア
+            self.room_id = None;
         }
     }
 }
@@ -155,6 +224,8 @@ pub struct MockCore {
     pub create_room_calls: Vec<ParticipantId>,
     pub join_room_result: Option<Result<Vec<ParticipantId>, JoinRoomError>>,
     pub join_room_calls: Vec<(RoomId, ParticipantId)>,
+    pub leave_room_result: Option<Vec<ParticipantId>>,
+    pub leave_room_calls: Vec<(RoomId, ParticipantId)>,
 }
 
 impl MockCore {
@@ -164,6 +235,8 @@ impl MockCore {
             create_room_calls: Vec::new(),
             join_room_result: None,
             join_room_calls: Vec::new(),
+            leave_room_result: None,
+            leave_room_calls: Vec::new(),
         }
     }
 
@@ -172,6 +245,11 @@ impl MockCore {
         result: Option<Result<Vec<ParticipantId>, JoinRoomError>>,
     ) -> Self {
         self.join_room_result = result;
+        self
+    }
+
+    pub fn with_leave_result(mut self, result: Option<Vec<ParticipantId>>) -> Self {
+        self.leave_room_result = result;
         self
     }
 }
@@ -193,10 +271,12 @@ impl CoreApi for MockCore {
 
     fn leave_room(
         &mut self,
-        _room_id: &RoomId,
-        _participant: &ParticipantId,
+        room_id: &RoomId,
+        participant: &ParticipantId,
     ) -> Option<Vec<ParticipantId>> {
-        unimplemented!("leave_room not needed for this test yet")
+        self.leave_room_calls
+            .push((room_id.clone(), participant.clone()));
+        self.leave_room_result.clone()
     }
 }
 
@@ -300,6 +380,71 @@ mod tests {
                         if ps.len() == participants.len()
                 ),
                 "RoomParticipantsが届く"
+            );
+        }
+    }
+
+    /// LeaveRoom要求でcoreのleaveが呼ばれ、残り参加者にPeerDisconnectedと最新RoomParticipantsがブロードキャストされることを確認（未実装のためRED）。
+    #[tokio::test]
+    async fn leave_room_broadcasts_disconnect_and_participants() {
+        let room_id = RoomId::new();
+        let self_id = ParticipantId::new();
+        let remaining_a = ParticipantId::new();
+        let remaining_b = ParticipantId::new();
+        let remaining = vec![remaining_a.clone(), remaining_b.clone()];
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: self_id.clone(),
+            participants: vec![self_id.clone(), remaining_a.clone(), remaining_b.clone()],
+        };
+
+        let core = MockCore::new(core_result).with_leave_result(Some(remaining.clone()));
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
+
+        handler.perform_handshake().await;
+        // 事前にroom_idを接続コンテキストへセット（Join/Create後を想定）
+        handler.room_id = Some(room_id.clone());
+        handler.handle_text_message(r#"{"type":"LeaveRoom"}"#).await;
+
+        // core.leave_roomが呼ばれる
+        assert_eq!(
+            handler.core.leave_room_calls.len(),
+            1,
+            "leave_roomが1度呼ばれる"
+        );
+        assert_eq!(
+            handler.core.leave_room_calls[0].0, room_id,
+            "正しいroom_idで呼ばれる"
+        );
+
+        // 残り参加者へPeerDisconnectedとRoomParticipantsがブロードキャストされる
+        for p in &remaining {
+            let msgs = handler
+                .broadcast
+                .messages_for(p)
+                .expect("残り参加者へメッセージが届く");
+            assert!(
+                msgs.iter()
+                    .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &self_id.to_string())),
+                "PeerDisconnectedが届く"
+            );
+            assert!(
+                msgs.iter().any(|m| match m {
+                    ServerToClient::RoomParticipants {
+                        room_id: rid,
+                        participants,
+                    } => {
+                        rid == &room_id.to_string()
+                            && participants.len() == remaining.len()
+                            && participants.contains(&remaining_a.to_string())
+                            && participants.contains(&remaining_b.to_string())
+                    }
+                    _ => false,
+                }),
+                "最新RoomParticipantsが届く"
             );
         }
     }
