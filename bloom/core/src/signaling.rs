@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bloom_api::ServerToClient;
+use bloom_api::{RelaySdp, ServerToClient};
 
 use crate::ParticipantId;
 
@@ -29,6 +29,21 @@ impl DeliverySink for MockDeliverySink {
     fn send(&mut self, to: &ParticipantId, message: ServerToClient) {
         self.sent.entry(to.clone()).or_default().push(message);
     }
+}
+
+/// Offerを特定宛先へ1:1で配送する。
+/// 現在はフェーズ1（Red）用に中身は未実装。
+pub fn relay_offer(
+    delivery: &mut impl DeliverySink,
+    from: &ParticipantId,
+    to: &ParticipantId,
+    payload: RelaySdp,
+) {
+    let message = ServerToClient::Offer {
+        from: from.to_string(),
+        payload,
+    };
+    delivery.send(to, message);
 }
 
 #[cfg(test)]
@@ -69,5 +84,36 @@ mod tests {
         let to_p2 = sink.messages_for(&p2).expect("p2 should have messages");
         assert_eq!(to_p2.len(), 1, "p2への送信が1件ある");
         assert!(matches!(to_p2[0], ServerToClient::PeerConnected { .. }));
+    }
+
+    #[test]
+    fn relay_offer_sends_only_to_target_peer() {
+        let mut sink = MockDeliverySink::new();
+        let sender = ParticipantId::new();
+        let receiver = ParticipantId::new();
+        let payload = RelaySdp {
+            sdp: "v=0 offer".into(),
+        };
+
+        relay_offer(&mut sink, &sender, &receiver, payload.clone());
+
+        // 宛先BにはOfferが1件届く
+        let to_receiver = sink
+            .messages_for(&receiver)
+            .expect("receiver should get message");
+        assert_eq!(to_receiver.len(), 1, "Bには1件だけ届く");
+        assert_eq!(
+            to_receiver[0],
+            ServerToClient::Offer {
+                from: sender.to_string(),
+                payload
+            }
+        );
+
+        // 送信者Aには配送されない
+        assert!(
+            sink.messages_for(&sender).is_none(),
+            "送信者自身にメッセージが返らないこと"
+        );
     }
 }
