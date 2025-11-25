@@ -1,5 +1,6 @@
 pub mod id;
 pub mod room;
+pub mod signaling;
 
 pub use id::{ParticipantId, RoomId};
 pub use room::{CreateRoomResult, JoinRoomError, ParticipantList, RoomManager};
