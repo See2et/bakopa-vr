@@ -1,0 +1,3 @@
+[workspace]
+members = ["bloom/api"]
+resolver = "2"
