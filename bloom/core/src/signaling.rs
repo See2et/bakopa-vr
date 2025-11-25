@@ -38,10 +38,7 @@ pub fn relay_offer(
     to: &ParticipantId,
     payload: RelaySdp,
 ) {
-    let message = ServerToClient::Offer {
-        from: from.to_string(),
-        payload,
-    };
+    let message = shape_offer_event(from, payload);
     delivery.send(to, message);
 }
 
@@ -73,6 +70,15 @@ pub fn relay_offer_checked(
     }
     relay_offer(delivery, from, to, payload);
     Ok(())
+}
+
+/// Offerイベントの出力整形を一元化する。
+/// 仕様: `from`フィールドを付与し、`to`は含めない。
+pub fn shape_offer_event(from: &ParticipantId, payload: RelaySdp) -> ServerToClient {
+    ServerToClient::Offer {
+        from: from.to_string(),
+        payload,
+    }
 }
 
 /// ICE candidate を特定宛先へ1:1で配送する。
@@ -158,6 +164,32 @@ mod tests {
             sink.messages_for(&sender).is_none(),
             "送信者自身にメッセージが返らないこと"
         );
+    }
+
+    #[test]
+    fn shaped_offer_event_has_from_and_no_to() {
+        let from_id = ParticipantId::new();
+        let payload = RelaySdp {
+            sdp: "v=0 offer".into(),
+        };
+
+        let shaped = shape_offer_event(&from_id, payload.clone());
+
+        // fromが付与されていることを確認
+        match shaped {
+            ServerToClient::Offer {
+                ref from,
+                payload: ref p,
+            } => {
+                assert_eq!(from, &from_id.to_string());
+                assert_eq!(p, &payload);
+            }
+            other => panic!("Offerイベントが生成されるはずが {:?} だった", other),
+        }
+
+        // JSONにシリアライズしても`to`フィールドが含まれないことを確認
+        let json = serde_json::to_string(&shaped).expect("serialize shaped offer");
+        assert!(!json.contains("\"to\""), "toフィールドは除去されているべき");
     }
 
     #[test]

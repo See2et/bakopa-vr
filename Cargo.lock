@@ -15,6 +15,7 @@ name = "bloom-core"
 version = "0.1.0"
 dependencies = [
  "bloom-api",
+ "serde_json",
  "uuid",
 ]
 
