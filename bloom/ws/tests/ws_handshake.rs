@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::str::FromStr;
 
-use bloom_api::ServerToClient;
+use bloom_api::{ErrorCode, ServerToClient};
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
 use bloom_ws::{start_ws_server, MockCore, SharedCore, WsServerHandle};
 use futures_util::{SinkExt, StreamExt};
@@ -230,6 +230,81 @@ async fn abnormal_close_triggers_single_leave_and_broadcasts() {
     let core = core_arc.lock().expect("lock core");
     assert_eq!(core.leave_room_calls.len(), 1);
 
+    drop(_guard);
+}
+
+/// レート制御: 1秒間に21件送信で21件目がRateLimitedになることを検証する（Red）。
+#[tokio::test]
+async fn rate_limit_drops_21st_message_and_returns_error() {
+    let layer = RecordingLayer::default();
+    let subscriber = Registry::default().with(layer.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let core = SharedCore::new(MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    }));
+    let (server_url, handle) = spawn_bloom_ws_server_with_core(core).await;
+
+    let (mut ws, _) = connect_async(&server_url).await.expect("connect client");
+    ws.send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+        .await
+        .expect("send create room");
+    let room_created = recv_server_msg(&mut ws).await;
+    let (room_id, self_id) = match room_created {
+        ServerToClient::RoomCreated { room_id, self_id } => (room_id, self_id),
+        other => panic!("expected RoomCreated, got {:?}", other),
+    };
+
+    // 21連続送信（Offer宛先は自分自身）
+    for _ in 0..21 {
+        ws.send(Message::Text(
+            format!(
+                r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer","room_id":"{room_id}"}}"#,
+                to = self_id,
+                room_id = room_id
+            )
+            .into(),
+        ))
+        .await
+        .expect("send offer");
+    }
+
+    // RateLimitedエラーを受信するまで待つ（Offer等は先に届く可能性あり）
+    let mut got_rate_limited = false;
+    for _ in 0..30 {
+        match tokio::time::timeout(Duration::from_millis(200), ws.next()).await {
+            Ok(Some(Ok(Message::Text(txt)))) => {
+                if let Ok(msg) = serde_json::from_str::<ServerToClient>(&txt) {
+                    if let ServerToClient::Error { code, .. } = msg {
+                        if code == ErrorCode::RateLimited {
+                            got_rate_limited = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    assert!(got_rate_limited, "21st message should return RateLimited");
+
+    // ソケットが開いたままかを軽く確認（追加送信ができる）
+    tokio::time::sleep(Duration::from_millis(1100)).await; // 窓リセット待ち
+    ws.send(Message::Text(
+        format!(
+            r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer","room_id":"{room_id}"}}"#,
+            to = self_id,
+            room_id = room_id
+        )
+        .into(),
+    ))
+    .await
+    .expect("send after cooldown");
+
+    handle.shutdown().await;
     drop(_guard);
 }
 
