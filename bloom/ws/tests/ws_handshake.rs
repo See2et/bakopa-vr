@@ -7,7 +7,6 @@ use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 /// WSハンドシェイクがHTTP 101で確立され、participant_id付きのspanが出ることを検証する
-/// まだサーバ起動実装がないため、テストは todo! で失敗させておく。
 #[tokio::test]
 async fn handshake_returns_switching_protocols_and_sets_participant_span() {
     // Arrange: Bloom WSサーバを起動（未実装）
