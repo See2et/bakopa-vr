@@ -432,6 +432,62 @@ fn spans_have_field(spans: &[SpanRecord], key: &str) -> bool {
     spans.iter().any(|s| s.fields.contains_key(key))
 }
 
+fn spans_have_field_value(spans: &[SpanRecord], key: &str, expected: &str) -> bool {
+    spans
+        .iter()
+        .any(|s| s.fields.get(key).map(|v| v.contains(expected)).unwrap_or(false))
+}
+
+/// tracingにparticipant_idとroom_idが載ることを統合経路で確認する（Red）。
+#[tokio::test]
+async fn offer_span_includes_participant_and_room_over_ws() {
+    let layer = RecordingLayer::default();
+    let subscriber = Registry::default().with(layer.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let core = SharedCore::new(MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    }));
+    let (server_url, handle) = spawn_bloom_ws_server_with_core(core).await;
+
+    let (mut ws, _) = connect_async(&server_url).await.expect("connect client");
+    ws.send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+        .await
+        .expect("send create room");
+    let room_created = recv_server_msg(&mut ws).await;
+    let (room_id, self_id) = match room_created {
+        ServerToClient::RoomCreated { room_id, self_id } => (room_id, self_id),
+        other => panic!("expected RoomCreated, got {:?}", other),
+    };
+
+    // Offerを送信
+    let offer_json = format!(
+        r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer","room_id":"{room_id}"}}"#,
+        to = self_id,
+        room_id = room_id
+    );
+    ws.send(Message::Text(offer_json.into()))
+        .await
+        .expect("send offer");
+
+    // spanフィールド検証
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let spans = layer.spans.lock().expect("collect spans");
+    assert!(
+        spans_have_field_value(&spans, "participant_id", &self_id),
+        "span must include participant_id"
+    );
+    assert!(
+        spans_have_field_value(&spans, "room_id", &room_id),
+        "span must include room_id"
+    );
+
+    let _ = handle.shutdown().await;
+    drop(_guard);
+}
+
 async fn recv_server_msg(ws: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>) -> ServerToClient {
     loop {
         if let Some(msg) = ws.next().await {
