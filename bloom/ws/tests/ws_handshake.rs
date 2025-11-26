@@ -6,7 +6,7 @@ use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-/// WSハンドシェイクがHTTP 101で確立され、participant_id付きのspanが出ることを検証する（Red）。
+/// WSハンドシェイクがHTTP 101で確立され、participant_id付きのspanが出ることを検証する
 /// まだサーバ起動実装がないため、テストは todo! で失敗させておく。
 #[tokio::test]
 async fn handshake_returns_switching_protocols_and_sets_participant_span() {
@@ -25,7 +25,7 @@ async fn handshake_returns_switching_protocols_and_sets_participant_span() {
     // （サーバ実装後に有効化する）
 }
 
-/// Bloom WSサーバを起動して接続用URLを返す。未実装のため Red で落とす。
+/// Bloom WSサーバを起動して接続用URLを返す。
 async fn spawn_bloom_ws_server() -> String {
     // 0番ポートでバインドし、実際のポートを取得
     let listener = TcpListener::bind("127.0.0.1:0")
