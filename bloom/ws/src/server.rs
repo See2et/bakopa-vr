@@ -19,6 +19,7 @@ use crate::handler::WsHandler;
 use crate::sinks::{BroadcastSink, OutSink};
 
 type WsSink = futures_util::stream::SplitSink<WebSocketStream<TcpStream>, Message>;
+type WsStream = futures_util::stream::SplitStream<WebSocketStream<TcpStream>>;
 type SharedSink = Arc<Mutex<WsSink>>;
 type PeerMap = Arc<Mutex<HashMap<ParticipantId, SharedSink>>>;
 
@@ -264,6 +265,7 @@ where
         }
     };
 
+    // WS handshake (only /ws is allowed)
     let ws_stream = accept_hdr_async(stream, callback).await?;
     let (sink, mut stream) = ws_stream.split();
     let sink = Arc::new(Mutex::new(sink));
@@ -272,11 +274,23 @@ where
     let broadcast = WebSocketBroadcast::new(peers.clone());
     broadcast.insert(participant_id.clone(), sink.clone()).await;
 
+    // room_id は CreateRoom/JoinRoom で設定される前提
     let mut handler = WsHandler::new(core, participant_id.clone(), out_sink, broadcast.clone());
-    // Emit handshake span
     handler.perform_handshake().await;
 
-    // TODO: route incoming messages to handler in follow-up steps.
+    process_messages(&mut handler, sink.clone(), &mut stream).await;
+    handle_disconnect(&mut handler, &peers, &broadcast, &participant_id).await;
+
+    Ok(())
+}
+
+async fn process_messages<C>(
+    handler: &mut WsHandler<SharedCore<C>, WebSocketOutSink, WebSocketBroadcast>,
+    sink: SharedSink,
+    stream: &mut WsStream,
+) where
+    C: CoreApi + Send + 'static,
+{
     while let Some(msg) = stream.next().await {
         match msg {
             Ok(Message::Close(_)) => break,
@@ -284,11 +298,9 @@ where
                 handler.handle_text_message(&text).await;
             }
             Ok(Message::Ping(payload)) => {
-                // Echo pong
                 let _ = sink.lock().await.send(Message::Pong(payload)).await;
             }
             _ => {
-                // Unsupported data
                 let _ = sink
                     .lock()
                     .await
@@ -303,17 +315,22 @@ where
             }
         }
     }
+}
 
-    // 異常切断扱い: 残存参加者一覧をpeersから取得（離脱者は除外）
-    let remaining: Vec<ParticipantId> = {
-        let map = peers.lock().await;
-        map.keys()
-            .filter(|pid| *pid != &participant_id)
-            .cloned()
-            .collect()
-    };
+async fn handle_disconnect<C>(
+    handler: &mut WsHandler<SharedCore<C>, WebSocketOutSink, WebSocketBroadcast>,
+    peers: &PeerMap,
+    broadcast: &WebSocketBroadcast,
+    participant_id: &ParticipantId,
+) where
+    C: CoreApi + Send + 'static,
+{
+    let remaining = remaining_peers(peers, participant_id).await;
     handler.handle_abnormal_close(&remaining).await;
+    broadcast.remove(participant_id).await;
+}
 
-    broadcast.remove(&participant_id).await;
-    Ok(())
+async fn remaining_peers(peers: &PeerMap, exclude: &ParticipantId) -> Vec<ParticipantId> {
+    let map = peers.lock().await;
+    map.keys().filter(|pid| *pid != exclude).cloned().collect()
 }

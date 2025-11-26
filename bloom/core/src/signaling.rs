@@ -150,7 +150,11 @@ mod tests {
     use bloom_api::ServerToClient;
 
     fn three_participants() -> (ParticipantId, ParticipantId, ParticipantId) {
-        (ParticipantId::new(), ParticipantId::new(), ParticipantId::new())
+        (
+            ParticipantId::new(),
+            ParticipantId::new(),
+            ParticipantId::new(),
+        )
     }
 
     #[test]
@@ -285,13 +289,8 @@ mod tests {
             sdp: "v=0 answer".into(),
         };
 
-        let result = relay_answer_checked(
-            &mut sink,
-            &participants,
-            &sender,
-            &missing,
-            payload.clone(),
-        );
+        let result =
+            relay_answer_checked(&mut sink, &participants, &sender, &missing, payload.clone());
 
         assert_eq!(result, Err(ErrorCode::ParticipantNotFound));
         assert!(sink.messages_for(&receiver).is_none());

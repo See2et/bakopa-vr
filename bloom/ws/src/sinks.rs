@@ -74,4 +74,3 @@ pub struct NoopBroadcastSink;
 impl BroadcastSink for NoopBroadcastSink {
     fn send_to(&mut self, _to: &ParticipantId, _message: ServerToClient) {}
 }
-
