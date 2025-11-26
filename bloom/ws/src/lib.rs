@@ -2,8 +2,8 @@ mod core_api;
 mod handler;
 mod mocks;
 mod rate_limit;
-mod sinks;
 mod server;
+mod sinks;
 
 pub use core_api::CoreApi;
 pub use handler::{HandshakeResponse, WsHandler};
@@ -11,12 +11,12 @@ pub use mocks::MockCore;
 pub use rate_limit::{
     Clock, DynClock, RateLimitConfig, RateLimitDecision, RateLimiter, SystemClock,
 };
+pub use server::{
+    start_ws_server, SharedCore, WebSocketBroadcast, WebSocketOutSink, WsServerHandle,
+};
 pub use sinks::{
     BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink,
     SharedBroadcastSink,
-};
-pub use server::{
-    start_ws_server, SharedCore, WebSocketBroadcast, WebSocketOutSink, WsServerHandle,
 };
 
 #[cfg(test)]
@@ -116,7 +116,10 @@ mod tests {
 
         drop(_guard);
 
-        let spans = layer.spans.lock().expect("span records should be collected");
+        let spans = layer
+            .spans
+            .lock()
+            .expect("span records should be collected");
         assert!(!spans.is_empty(), "at least one span should be emitted");
 
         assert!(
@@ -161,7 +164,10 @@ mod tests {
 
         drop(_guard);
 
-        let spans = layer.spans.lock().expect("span records should be collected");
+        let spans = layer
+            .spans
+            .lock()
+            .expect("span records should be collected");
         assert!(!spans.is_empty(), "at least one span should be emitted");
 
         assert!(
@@ -206,7 +212,10 @@ mod tests {
 
         drop(_guard);
 
-        let spans = layer.spans.lock().expect("span records should be collected");
+        let spans = layer
+            .spans
+            .lock()
+            .expect("span records should be collected");
         assert!(!spans.is_empty(), "at least one span should be emitted");
 
         assert!(
@@ -229,7 +238,10 @@ mod tests {
         let core_result = CreateRoomResult {
             room_id: room_id.clone(),
             self_id: self_id.clone(),
-            participants: vec![self_id.clone()].into_iter().chain(remaining.clone()).collect(),
+            participants: vec![self_id.clone()]
+                .into_iter()
+                .chain(remaining.clone())
+                .collect(),
         };
 
         let core = MockCore::new(core_result).with_leave_result(Some(remaining.clone()));
@@ -242,11 +254,16 @@ mod tests {
         let subscriber = Registry::default().with(layer.clone());
         let _guard = tracing::subscriber::set_default(subscriber);
 
-        handler.handle_text_message(r#"{\"type\":\"LeaveRoom\"}"#).await;
+        handler
+            .handle_text_message(r#"{\"type\":\"LeaveRoom\"}"#)
+            .await;
 
         drop(_guard);
 
-        let spans = layer.spans.lock().expect("span records should be collected");
+        let spans = layer
+            .spans
+            .lock()
+            .expect("span records should be collected");
         assert!(!spans.is_empty(), "at least one span should be emitted");
 
         assert!(
@@ -280,12 +297,20 @@ mod tests {
         let _guard = tracing::subscriber::set_default(subscriber);
 
         // room_id欠落のJoinRoomでInvalidPayloadを発生させる
-        handler.handle_text_message(r#"{\"type\":\"JoinRoom\"}"#).await;
+        handler
+            .handle_text_message(r#"{\"type\":\"JoinRoom\"}"#)
+            .await;
 
         drop(_guard);
 
-        let spans = layer.spans.lock().expect("span records should be collected");
-        assert!(!spans.is_empty(), "invalid payload handling should emit span");
+        let spans = layer
+            .spans
+            .lock()
+            .expect("span records should be collected");
+        assert!(
+            !spans.is_empty(),
+            "invalid payload handling should emit span"
+        );
 
         let has_participant = spans.iter().any(|s| {
             s.fields
@@ -294,7 +319,10 @@ mod tests {
                 .unwrap_or(false)
         });
 
-        assert!(has_participant, "span must include participant_id even on invalid payload");
+        assert!(
+            has_participant,
+            "span must include participant_id even on invalid payload"
+        );
     }
 
     /// coreイベントのPeerConnectedブロードキャストspanにroom_id/participant_idが含まれることを検証する。
@@ -328,7 +356,10 @@ mod tests {
 
         drop(_guard);
 
-        let spans = layer.spans.lock().expect("span records should be collected");
+        let spans = layer
+            .spans
+            .lock()
+            .expect("span records should be collected");
         assert!(!spans.is_empty(), "peer connected should emit span");
 
         assert!(
@@ -372,7 +403,10 @@ mod tests {
 
         drop(_guard);
 
-        let spans = layer.spans.lock().expect("span records should be collected");
+        let spans = layer
+            .spans
+            .lock()
+            .expect("span records should be collected");
         assert!(!spans.is_empty(), "peer disconnected should emit span");
 
         assert!(
@@ -406,7 +440,8 @@ mod tests {
         let dyn_clock: DynClock = clock.clone();
         let limiter = RateLimiter::from_config(dyn_clock, RateLimitConfig::default());
 
-        let mut handler = WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
+        let mut handler =
+            WsHandler::with_rate_limiter(core, sender.clone(), sink, broadcast, limiter);
         handler.room_id = Some(room_id.clone());
 
         let layer = ensure_global_tracing();
@@ -439,13 +474,21 @@ mod tests {
 
         // RateLimitedエラーが返っていることも確認しておく。
         let last_err = handler.sink.sent.last();
-        assert!(matches!(last_err, Some(ServerToClient::Error { code: ErrorCode::RateLimited, .. })), "21st message should be rate limited");
+        assert!(
+            matches!(
+                last_err,
+                Some(ServerToClient::Error {
+                    code: ErrorCode::RateLimited,
+                    ..
+                })
+            ),
+            "21st message should be rate limited"
+        );
 
         let events = layer.events.lock().expect("events should be recorded");
         let warn_with_participant = events.iter().find(|e| {
             e.level == tracing::Level::WARN
-                && e
-                    .fields
+                && e.fields
                     .get("participant_id")
                     .map(|v| v == &sender.to_string())
                     .unwrap_or(false)

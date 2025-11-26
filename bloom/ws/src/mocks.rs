@@ -4,6 +4,7 @@ use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
 use crate::core_api::CoreApi;
 
 /// Test helper core that returns predetermined values.
+/// テストで参加者IDを動的に扱えるよう、create_room/join_room時に呼び出しごとのIDを反映する。
 #[derive(Clone, Debug)]
 pub struct MockCore {
     pub create_room_result: CreateRoomResult,
@@ -71,7 +72,7 @@ impl CoreApi for MockCore {
     fn create_room(&mut self, room_owner: ParticipantId) -> CreateRoomResult {
         self.create_room_calls.push(room_owner.clone());
         let mut res = self.create_room_result.clone();
-        // 上書きしてownerをself_idにする（テストでparticipant_idと揃えるため）
+        // owner を self_id に反映し、participants にも含める
         res.self_id = room_owner.clone();
         if res.participants.is_empty() {
             res.participants.push(room_owner);
@@ -86,9 +87,10 @@ impl CoreApi for MockCore {
         room_id: &RoomId,
         participant: ParticipantId,
     ) -> Option<Result<Vec<ParticipantId>, JoinRoomError>> {
-        self.join_room_calls.push((room_id.clone(), participant.clone()));
+        self.join_room_calls
+            .push((room_id.clone(), participant.clone()));
         match self.join_room_result.clone() {
-            Some(Ok(mut v)) if v.is_empty() => {
+            Some(Ok(v)) if v.is_empty() => {
                 // デフォルト: 既存self_idと参加者を返す
                 let mut participants = self.create_room_result.participants.clone();
                 if participants.is_empty() {
