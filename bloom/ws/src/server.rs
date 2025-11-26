@@ -6,7 +6,7 @@ use bloom_api::ServerToClient;
 use bloom_core::ParticipantId;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::accept_hdr_async;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
@@ -156,7 +156,6 @@ impl WebSocketBroadcast {
         let mut map = self.peers.lock().await;
         map.remove(participant);
     }
-
 }
 
 impl BroadcastSink for WebSocketBroadcast {
