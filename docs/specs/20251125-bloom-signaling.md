@@ -87,6 +87,16 @@ Bloomはシグナリング専用の役割を担い、クライアント⇔Bloom�
 { "type": "Error", "code": "RoomFull" | "InvalidPayload" | "ParticipantNotFound" | "RateLimited" | "Internal", "message": "..." }
 ```
 
+## WebSocket接続仕様（Handshake/Transport）
+- **接続URI**: MVPでは固定 `/ws`。他パスへのリクエストは 426 Upgrade Required を返す（Upgradeヘッダ要求を明示し、接続は確立しない）。
+- **必須ヘッダ**: MVPでは追加ヘッダなし（標準の `Upgrade: websocket` / `Connection: Upgrade` / `Sec-WebSocket-Key` / `Sec-WebSocket-Version` のみ）。
+- **participant_id の発行**: TCP接続受理直後（HTTP Upgrade前）に UUID v4 を生成し、この接続専用のparticipant_idとして以降のspan/メッセージで利用する。クライアント持ち込みIDは不可。
+- **正常クローズ**: クライアントがCloseフレームを送信したら即時 `leave_room` を呼び、残存参加者へ `PeerDisconnected` と最新 `RoomParticipants` を通知する。
+- **異常クローズ（切断・Ping/Pong途絶など）**: 検知時点から猶予5秒を与え、復帰がなければ `leave_room` を1回だけ実行し、残存参加者へ通知する。
+- **Ping/Pongポリシー**: サーバ側から30秒間隔でPing送信。連続2回Pong欠落（≈60秒）で異常クローズ扱いに移行。
+- **JSON以外のフレーム**: バイナリや不正テキストを受信した場合は理由コード1003 (Unsupported Data) で即Closeし、状態変化は行わない。
+- **同一participantの多重接続**: 同一participant_id（サーバ払い出し）が既に接続中に新規接続が確立した場合、旧接続を優先的に切断する（新しい接続を有効化）。
+
 ## ディレクトリ構造（モノレポ前提の提案）
 - `Cargo.toml` : Rustワークスペースルート
 - `bloom/`：Bloomのディレクトリ
