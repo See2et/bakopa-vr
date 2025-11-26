@@ -13,8 +13,6 @@ use common::*;
 /// Offerが宛先のみに届くことを検証する。
 #[tokio::test]
 async fn offer_is_delivered_only_to_target_participant() {
-    let (_layer, _guard) = setup_tracing();
-
     let mock_core = MockCore::new(CreateRoomResult {
         room_id: RoomId::new(),
         self_id: ParticipantId::new(),
