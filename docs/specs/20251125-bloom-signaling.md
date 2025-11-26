@@ -117,7 +117,7 @@ Bloomはシグナリング専用の役割を担い、クライアント⇔Bloom�
 4. WebSocketサーバのハンドラ統合テスト（メッセージ受信→core呼び出し→応答送信）。
 5. レート制御のテスト（1接続あたりメッセージ数カウント）。
 6. ログ付与のテスト（instrument付きハンドラでroom_id/participant_idがspanに載る）。
-7. WebSocketの最低限の実装（handshakeとメッセージループ、core呼び出しの配線）を追加し、上記テスト群が通る形にする。
+7. WebSocketのスタブを実際の実装（handshakeとメッセージループ、core呼び出しの配線）に置き換え、上記テスト群が通る形にする。
 8. WebRTCフロー整合テスト（モックSTUN/TURN設定でOffer/Answer/ICE交換後にBloomがメディアを中継しないことを確認）。
 
 ## 未決事項 / オープンクエスチョン
