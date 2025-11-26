@@ -69,8 +69,16 @@ impl MockCore {
 
 impl CoreApi for MockCore {
     fn create_room(&mut self, room_owner: ParticipantId) -> CreateRoomResult {
-        self.create_room_calls.push(room_owner);
-        self.create_room_result.clone()
+        self.create_room_calls.push(room_owner.clone());
+        let mut res = self.create_room_result.clone();
+        // 上書きしてownerをself_idにする（テストでparticipant_idと揃えるため）
+        res.self_id = room_owner.clone();
+        if res.participants.is_empty() {
+            res.participants.push(room_owner);
+        }
+        // 次回以降も同じ内容を返すように更新
+        self.create_room_result = res.clone();
+        res
     }
 
     fn join_room(
@@ -78,8 +86,19 @@ impl CoreApi for MockCore {
         room_id: &RoomId,
         participant: ParticipantId,
     ) -> Option<Result<Vec<ParticipantId>, JoinRoomError>> {
-        self.join_room_calls.push((room_id.clone(), participant));
-        self.join_room_result.clone()
+        self.join_room_calls.push((room_id.clone(), participant.clone()));
+        match self.join_room_result.clone() {
+            Some(Ok(mut v)) if v.is_empty() => {
+                // デフォルト: 既存self_idと参加者を返す
+                let mut participants = self.create_room_result.participants.clone();
+                if participants.is_empty() {
+                    participants.push(self.create_room_result.self_id.clone());
+                }
+                participants.push(participant);
+                Some(Ok(participants))
+            }
+            other => other,
+        }
     }
 
     fn leave_room(
@@ -128,4 +147,3 @@ impl CoreApi for MockCore {
         self.relay_ice_result.clone()
     }
 }
-
