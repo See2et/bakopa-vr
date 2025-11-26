@@ -8,10 +8,13 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
+use tokio::time::{interval, Duration, Instant};
 use tokio_tungstenite::accept_hdr_async;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
-use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::tungstenite::protocol::{
+    frame::coding::CloseCode, CloseFrame, Message,
+};
 use tokio_tungstenite::WebSocketStream;
 
 use crate::core_api::CoreApi;
@@ -22,6 +25,21 @@ type WsSink = futures_util::stream::SplitSink<WebSocketStream<TcpStream>, Messag
 type WsStream = futures_util::stream::SplitStream<WebSocketStream<TcpStream>>;
 type SharedSink = Arc<Mutex<WsSink>>;
 type PeerMap = Arc<Mutex<HashMap<ParticipantId, SharedSink>>>;
+
+#[derive(Clone, Debug)]
+struct PingConfig {
+    interval: Duration,
+    miss_allowed: u32,
+}
+
+impl Default for PingConfig {
+    fn default() -> Self {
+        Self {
+            interval: Duration::from_secs(30),
+            miss_allowed: 2,
+        }
+    }
+}
 
 /// Shared CoreApi wrapper using a blocking mutex so that CoreApi remains synchronous.
 pub struct SharedCore<C> {
@@ -278,7 +296,7 @@ where
     let mut handler = WsHandler::new(core, participant_id.clone(), out_sink, broadcast.clone());
     handler.perform_handshake().await;
 
-    process_messages(&mut handler, sink.clone(), &mut stream).await;
+    process_messages(&mut handler, sink.clone(), &mut stream, PingConfig::default()).await;
     handle_disconnect(&mut handler, &peers, &broadcast, &participant_id).await;
 
     Ok(())
@@ -288,30 +306,55 @@ async fn process_messages<C>(
     handler: &mut WsHandler<SharedCore<C>, WebSocketOutSink, WebSocketBroadcast>,
     sink: SharedSink,
     stream: &mut WsStream,
+    ping_cfg: PingConfig,
 ) where
     C: CoreApi + Send + 'static,
 {
-    while let Some(msg) = stream.next().await {
-        match msg {
-            Ok(Message::Close(_)) => break,
-            Ok(Message::Text(text)) => {
-                handler.handle_text_message(&text).await;
+    let mut last_pong = Instant::now();
+    let mut ping_timer = interval(ping_cfg.interval);
+    ping_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        tokio::select! {
+            maybe_msg = stream.next() => {
+                match maybe_msg {
+                    Some(Ok(Message::Close(_))) => break,
+                    Some(Ok(Message::Text(text))) => {
+                        handler.handle_text_message(&text).await;
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        last_pong = Instant::now();
+                    }
+                    Some(Ok(Message::Ping(payload))) => {
+                        let _ = sink.lock().await.send(Message::Pong(payload)).await;
+                    }
+                    Some(Ok(_)) => {
+                        let _ = sink
+                            .lock()
+                            .await
+                            .send(Message::Close(Some(
+                                tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                                    code: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Unsupported,
+                                    reason: "unsupported data".into(),
+                                },
+                            )))
+                            .await;
+                        break;
+                    }
+                    Some(Err(_)) => break,
+                    None => break,
+                }
             }
-            Ok(Message::Ping(payload)) => {
-                let _ = sink.lock().await.send(Message::Pong(payload)).await;
-            }
-            _ => {
-                let _ = sink
-                    .lock()
-                    .await
-                    .send(Message::Close(Some(
-                        tokio_tungstenite::tungstenite::protocol::CloseFrame {
-                            code: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Unsupported,
-                            reason: "unsupported data".into(),
-                        },
-                    )))
+            _ = ping_timer.tick() => {
+                let _ = sink.lock().await.send(Message::Ping(Vec::new())).await;
+                if last_pong.elapsed() >= ping_cfg.interval * ping_cfg.miss_allowed {
+                    let _ = sink.lock().await.send(Message::Close(Some(CloseFrame {
+                        code: CloseCode::Abnormal,
+                        reason: "ping timeout".into(),
+                    })))
                     .await;
-                break;
+                    break;
+                }
             }
         }
     }
