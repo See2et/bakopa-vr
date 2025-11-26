@@ -304,6 +304,16 @@ where
         }
     }
 
+    // 異常切断扱い: 残存参加者一覧をpeersから取得（離脱者は除外）
+    let remaining: Vec<ParticipantId> = {
+        let map = peers.lock().await;
+        map.keys()
+            .filter(|pid| *pid != &participant_id)
+            .cloned()
+            .collect()
+    };
+    handler.handle_abnormal_close(&remaining).await;
+
     broadcast.remove(&participant_id).await;
     Ok(())
 }
