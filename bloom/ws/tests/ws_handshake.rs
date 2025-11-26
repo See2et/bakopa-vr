@@ -3,14 +3,16 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
-use bloom_ws::{start_ws_server, MockCore, WsServerHandle};
+use bloom_ws::{start_ws_server, MockCore, SharedCore, WsServerHandle};
+use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::Subscriber;
+use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 use tracing_subscriber::{
     layer::{Context, Layer},
     registry::{LookupSpan, Registry},
 };
-use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 
 /// WSハンドシェイクがHTTP 101で確立され、participant_id付きのspanが出ることを検証する。
 #[tokio::test]
@@ -39,13 +41,25 @@ async fn handshake_returns_switching_protocols_and_sets_participant_span() {
 }
 
 /// Bloom WSサーバを起動して接続用URLとspan記録レイヤを返す。
+async fn spawn_bloom_ws_server_with_core(core: SharedCore<MockCore>) -> (String, WsServerHandle) {
+    let (room_id, self_id) = (RoomId::new(), ParticipantId::new());
+    let core = core;
+
+    let handle = start_ws_server("127.0.0.1:0".parse().unwrap(), core)
+        .await
+        .expect("start ws server");
+    let url = format!("ws://{}/ws", handle.addr);
+    (url, handle)
+}
+
+/// 元のシンプル版（handshake用）
 async fn spawn_bloom_ws_server() -> (String, WsServerHandle) {
     let (room_id, self_id) = (RoomId::new(), ParticipantId::new());
-    let core = MockCore::new(CreateRoomResult {
+    let core = SharedCore::new(MockCore::new(CreateRoomResult {
         room_id,
         self_id,
         participants: vec![],
-    });
+    }));
 
     let handle = start_ws_server("127.0.0.1:0".parse().unwrap(), core)
         .await
@@ -80,7 +94,12 @@ impl<S> Layer<S> for RecordingLayer
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
-    fn on_new_span(&self, attrs: &tracing::span::Attributes<'_>, _id: &tracing::Id, _ctx: Context<'_, S>) {
+    fn on_new_span(
+        &self,
+        attrs: &tracing::span::Attributes<'_>,
+        _id: &tracing::Id,
+        _ctx: Context<'_, S>,
+    ) {
         let mut visitor = FieldVisitor::default();
         attrs.record(&mut visitor);
 
@@ -95,4 +114,56 @@ where
 /// 共通ヘルパ: spanが特定フィールドを持つか確認。
 fn spans_have_field(spans: &[SpanRecord], key: &str) -> bool {
     spans.iter().any(|s| s.fields.contains_key(key))
+}
+
+/// CreateRoomを送信するとRoomCreatedが返ることを検証する
+#[tokio::test]
+async fn create_room_returns_room_created_and_calls_core_once() {
+    let layer = RecordingLayer::default();
+    let subscriber = Registry::default().with(layer.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    // テスト用に core を共有して後から call log を検査できるようにする
+    let mock_core = MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    });
+    let core_arc = Arc::new(std::sync::Mutex::new(mock_core));
+    let shared_core = SharedCore::from_arc(core_arc.clone());
+
+    let (server_url, handle) = spawn_bloom_ws_server_with_core(shared_core).await;
+
+    let (mut ws_stream, _response) = connect_async(&server_url)
+        .await
+        .expect("connect to bloom ws server");
+
+    ws_stream
+        .send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+        .await
+        .expect("send create room");
+
+    let msg = ws_stream
+        .next()
+        .await
+        .expect("expect one response")
+        .expect("ws message ok");
+
+    let text = match msg {
+        Message::Text(t) => t,
+        other => panic!("expected text message, got {:?}", other),
+    };
+
+    let server_msg: bloom_api::ServerToClient =
+        serde_json::from_str(&text).expect("parse server message");
+    match server_msg {
+        bloom_api::ServerToClient::RoomCreated { .. } => {}
+        _ => panic!("expected RoomCreated, got {:?}", server_msg),
+    }
+
+    let core_calls = core_arc.lock().expect("lock core").create_room_calls.len();
+    assert_eq!(core_calls, 1, "create_room should be called once");
+
+    handle.shutdown().await;
+    drop(_guard);
 }

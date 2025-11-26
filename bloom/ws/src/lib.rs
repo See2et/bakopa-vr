@@ -15,7 +15,9 @@ pub use sinks::{
     BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink,
     SharedBroadcastSink,
 };
-pub use server::{start_ws_server, SharedCore, WebSocketBroadcast, WebSocketOutSink, WsServerHandle};
+pub use server::{
+    start_ws_server, SharedCore, WebSocketBroadcast, WebSocketOutSink, WsServerHandle,
+};
 
 #[cfg(test)]
 mod tests {
