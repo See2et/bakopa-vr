@@ -33,6 +33,15 @@ impl<C> SharedCore<C> {
             inner: Arc::new(StdMutex::new(inner)),
         }
     }
+
+    /// Construct from an existing Arc<Mutex<C>> (mainly for tests to inspect state).
+    pub fn from_arc(inner: Arc<StdMutex<C>>) -> Self {
+        Self { inner }
+    }
+
+    pub fn inner_arc(&self) -> Arc<StdMutex<C>> {
+        self.inner.clone()
+    }
 }
 
 impl<C> Clone for SharedCore<C> {
@@ -187,7 +196,10 @@ impl WsServerHandle {
 }
 
 /// Start a WebSocket server bound to the given address. Returns the bound address and a handle for shutdown.
-pub async fn start_ws_server<C>(bind_addr: SocketAddr, core: C) -> anyhow::Result<WsServerHandle>
+pub async fn start_ws_server<C>(
+    bind_addr: SocketAddr,
+    core: SharedCore<C>,
+) -> anyhow::Result<WsServerHandle>
 where
     C: CoreApi + Send + 'static,
 {
@@ -195,7 +207,7 @@ where
     let local_addr = listener.local_addr()?;
 
     let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
-    let shared_core = SharedCore::new(core);
+    let shared_core = core;
     let peers: PeerMap = Arc::new(Mutex::new(HashMap::new()));
 
     let join_handle = tokio::spawn(async move {
