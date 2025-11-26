@@ -3,6 +3,7 @@ mod handler;
 mod mocks;
 mod rate_limit;
 mod sinks;
+mod server;
 
 pub use core_api::CoreApi;
 pub use handler::{HandshakeResponse, WsHandler};
@@ -14,6 +15,7 @@ pub use sinks::{
     BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink,
     SharedBroadcastSink,
 };
+pub use server::{start_ws_server, SharedCore, WebSocketBroadcast, WebSocketOutSink, WsServerHandle};
 
 #[cfg(test)]
 mod tests {
