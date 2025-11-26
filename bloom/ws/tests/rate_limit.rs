@@ -13,8 +13,6 @@ use common::*;
 /// レート制御: 1秒間に21件送信で21件目がRateLimitedになることを検証する。
 #[tokio::test]
 async fn rate_limit_drops_21st_message_and_returns_error() {
-    let (_layer, _guard) = setup_tracing();
-
     let core = SharedCore::new(bloom_ws::MockCore::new(CreateRoomResult {
         room_id: RoomId::new(),
         self_id: ParticipantId::new(),

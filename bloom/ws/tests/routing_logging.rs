@@ -1,5 +1,7 @@
 #[path = "common.rs"]
 mod common;
+#[path = "logging_common.rs"]
+mod logging_common;
 
 use bloom_api::ServerToClient;
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
@@ -9,12 +11,21 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use common::*;
+use logging_common::*;
 
 /// ログ目的のハンドシェイクspan（participant_idフィールド）を再確認する。
 #[tokio::test]
 async fn handshake_emits_span_with_participant_id_field_over_ws() {
     let (layer, _guard) = setup_tracing();
-    let (server_url, handle) = spawn_bloom_ws_server().await;
+    let (server_url, handle) =
+        spawn_bloom_ws_server_with_core(bloom_ws::SharedCore::new(bloom_ws::MockCore::new(
+            bloom_core::CreateRoomResult {
+                room_id: bloom_core::RoomId::new(),
+                self_id: bloom_core::ParticipantId::new(),
+                participants: vec![],
+            },
+        )))
+        .await;
 
     let (_ws_stream, _response) = connect_async(&server_url)
         .await
@@ -22,7 +33,7 @@ async fn handshake_emits_span_with_participant_id_field_over_ws() {
 
     tokio::time::sleep(std::time::Duration::from_millis(30)).await;
     let spans = layer.spans.lock().expect("collect spans");
-    assert!(spans_have_field(&spans, "participant_id"));
+    assert!(spans_have_field_value(&spans, "participant_id", ""));
 
     handle.shutdown().await;
 }

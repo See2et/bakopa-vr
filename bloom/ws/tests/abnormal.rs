@@ -15,8 +15,6 @@ use common::*;
 /// 異常切断でleaveが1回だけ呼ばれ、残存参加者へPeerDisconnected/RoomParticipantsが送られることを検証する。
 #[tokio::test]
 async fn abnormal_close_triggers_single_leave_and_broadcasts() {
-    let (_layer, _guard) = setup_tracing();
-
     let mock_core = MockCore::new(CreateRoomResult {
         room_id: RoomId::new(),
         self_id: ParticipantId::new(),
