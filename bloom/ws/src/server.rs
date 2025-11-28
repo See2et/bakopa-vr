@@ -12,9 +12,7 @@ use tokio::time::{interval, Duration, Instant};
 use tokio_tungstenite::accept_hdr_async;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
-use tokio_tungstenite::tungstenite::protocol::{
-    frame::coding::CloseCode, CloseFrame, Message,
-};
+use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Message};
 use tokio_tungstenite::WebSocketStream;
 
 use crate::core_api::CoreApi;
@@ -296,7 +294,13 @@ where
     let mut handler = WsHandler::new(core, participant_id.clone(), out_sink, broadcast.clone());
     handler.perform_handshake().await;
 
-    process_messages(&mut handler, sink.clone(), &mut stream, PingConfig::default()).await;
+    process_messages(
+        &mut handler,
+        sink.clone(),
+        &mut stream,
+        PingConfig::default(),
+    )
+    .await;
     handle_disconnect(&mut handler, &peers, &broadcast, &participant_id).await;
 
     Ok(())
