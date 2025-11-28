@@ -127,12 +127,12 @@ where
                         return;
                     }
                 };
-                self.room_id = Some(room_id_parsed.clone());
                 match self
                     .core
                     .join_room(&room_id_parsed, self.participant_id.clone())
                 {
                     Some(Ok(participants)) => {
+                        self.room_id = Some(room_id_parsed.clone());
                         let participants_clone = participants.clone();
 
                         // PeerConnected: joinしたparticipantをroom内全員へ通知
