@@ -29,6 +29,14 @@ async fn ice_candidate_is_forwarded_without_mutation() {
     let (mut ws_a, mut ws_b, _room_id_str, a_id, b_id) =
         setup_room_with_two_clients(&server_url, &core_arc).await;
 
+    // join時のPeerConnected/RoomParticipantsをB側で捨てておく
+    for _ in 0..3 {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), ws_b.next()).await {
+            Ok(Some(Ok(Message::Text(_)))) => {}
+            _ => break,
+        }
+    }
+
     // A -> B へ TURN候補を含む IceCandidate
     let candidate =
         "candidate:842163049 1 udp 1677729535 192.0.2.3 54400 typ relay raddr 0.0.0.0 rport 0";
@@ -80,6 +88,12 @@ async fn binary_frame_is_rejected_without_room_participants_change() {
     // A側に溜まっている（Joinによる）RoomParticipantsを捨てておく
     while let Ok(Some(Ok(Message::Text(_)))) =
         tokio::time::timeout(std::time::Duration::from_millis(50), ws_a.next()).await
+    {
+        // drain
+    }
+    // B側もJoin時の通知を捨てる
+    while let Ok(Some(Ok(Message::Text(_)))) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), ws_b.next()).await
     {
         // drain
     }

@@ -133,7 +133,17 @@ where
                     .join_room(&room_id_parsed, self.participant_id.clone())
                 {
                     Some(Ok(participants)) => {
-                        self.broadcast_room_participants(&room_id, &participants);
+                        let participants_clone = participants.clone();
+
+                        // PeerConnected: joinしたparticipantをroom内全員へ通知
+                        let event = ServerToClient::PeerConnected {
+                            participant_id: self.participant_id.to_string(),
+                        };
+                        for p in participants_clone.iter() {
+                            self.broadcast.send_to(p, event.clone());
+                        }
+
+                        self.broadcast_room_participants(&room_id, &participants_clone);
                     }
                     Some(Err(JoinRoomError::RoomFull)) => {
                         self.send_error(ErrorCode::RoomFull, "room is full");

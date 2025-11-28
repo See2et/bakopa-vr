@@ -43,8 +43,15 @@ async fn offer_is_delivered_only_to_target_participant() {
     )))
     .await
     .expect("send join room");
-    // join処理完了を待つ
-    let _ = recv_server_msg(&mut ws_b).await;
+    // join時に流れるPeerConnected/RoomParticipantsを捨てておく
+    for _ in 0..3 {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), ws_b.next()).await {
+            Ok(Some(Ok(Message::Text(t)))) => {
+                let _parsed: ServerToClient = serde_json::from_str(&t).expect("parse server msg");
+            }
+            _ => break,
+        }
+    }
 
     // 参加者IDをコア呼び出しから取得
     let b_id = {
