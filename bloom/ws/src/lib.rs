@@ -13,6 +13,7 @@ pub use rate_limit::{
 };
 pub use server::{
     start_ws_server, SharedCore, WebSocketBroadcast, WebSocketOutSink, WsServerHandle,
+    ABNORMAL_DISCONNECT_GRACE,
 };
 pub use sinks::{
     BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink,

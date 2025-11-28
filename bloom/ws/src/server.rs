@@ -24,6 +24,8 @@ type WsStream = futures_util::stream::SplitStream<WebSocketStream<TcpStream>>;
 type SharedSink = Arc<Mutex<WsSink>>;
 type PeerMap = Arc<Mutex<HashMap<ParticipantId, SharedSink>>>;
 
+pub const ABNORMAL_DISCONNECT_GRACE: Duration = Duration::from_secs(5);
+
 #[derive(Clone, Debug)]
 struct PingConfig {
     interval: Duration,
@@ -294,14 +296,14 @@ where
     let mut handler = WsHandler::new(core, participant_id.clone(), out_sink, broadcast.clone());
     handler.perform_handshake().await;
 
-    process_messages(
+    let reason = process_messages(
         &mut handler,
         sink.clone(),
         &mut stream,
         PingConfig::default(),
     )
     .await;
-    handle_disconnect(&mut handler, &peers, &broadcast, &participant_id).await;
+    handle_disconnect(&mut handler, &peers, &broadcast, &participant_id, reason).await;
 
     Ok(())
 }
@@ -311,18 +313,23 @@ async fn process_messages<C>(
     sink: SharedSink,
     stream: &mut WsStream,
     ping_cfg: PingConfig,
-) where
+) -> DisconnectReason
+where
     C: CoreApi + Send + 'static,
 {
     let mut last_pong = Instant::now();
     let mut ping_timer = interval(ping_cfg.interval);
     ping_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    let mut reason = DisconnectReason::Abnormal;
     loop {
         tokio::select! {
             maybe_msg = stream.next() => {
                 match maybe_msg {
-                    Some(Ok(Message::Close(_))) => break,
+                    Some(Ok(Message::Close(_))) => {
+                        reason = DisconnectReason::Abnormal;
+                        break;
+                    }
                     Some(Ok(Message::Text(text))) => {
                         handler.handle_text_message(&text).await;
                     }
@@ -346,10 +353,17 @@ async fn process_messages<C>(
                                 },
                             )))
                             .await;
+                        reason = DisconnectReason::Abnormal;
                         break;
                     }
-                    Some(Err(_)) => break,
-                    None => break,
+                    Some(Err(_)) => {
+                        reason = DisconnectReason::Abnormal;
+                        break;
+                    }
+                    None => {
+                        reason = DisconnectReason::Abnormal;
+                        break;
+                    }
                 }
             }
             _ = ping_timer.tick() => {
@@ -360,11 +374,13 @@ async fn process_messages<C>(
                         reason: "ping timeout".into(),
                     })))
                     .await;
+                    reason = DisconnectReason::Abnormal;
                     break;
                 }
             }
         }
     }
+    reason
 }
 
 async fn handle_disconnect<C>(
@@ -372,9 +388,13 @@ async fn handle_disconnect<C>(
     peers: &PeerMap,
     broadcast: &WebSocketBroadcast,
     participant_id: &ParticipantId,
+    reason: DisconnectReason,
 ) where
     C: CoreApi + Send + 'static,
 {
+    if matches!(reason, DisconnectReason::Abnormal) {
+        tokio::time::sleep(ABNORMAL_DISCONNECT_GRACE).await;
+    }
     let remaining = remaining_peers(peers, participant_id).await;
     handler.handle_abnormal_close(&remaining).await;
     broadcast.remove(participant_id).await;
@@ -383,4 +403,10 @@ async fn handle_disconnect<C>(
 async fn remaining_peers(peers: &PeerMap, exclude: &ParticipantId) -> Vec<ParticipantId> {
     let map = peers.lock().await;
     map.keys().filter(|pid| *pid != exclude).cloned().collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DisconnectReason {
+    Normal,
+    Abnormal,
 }

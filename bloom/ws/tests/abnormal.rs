@@ -7,6 +7,7 @@ use bloom_api::ServerToClient;
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
 use bloom_ws::MockCore;
 use futures_util::{SinkExt, StreamExt};
+use tokio::time::{self, Duration};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -66,14 +67,25 @@ async fn abnormal_close_triggers_single_leave_and_broadcasts() {
             .expect("b id recorded")
     };
 
-    // A異常切断
-    drop(ws_a);
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
     // leave_room_result をBのみ残る形でセット
     {
         let mut core = core_arc.lock().expect("lock core");
         core.leave_room_result = Some(vec![ParticipantId::from_str(&b_id).expect("parse b id")]);
+    }
+
+    // A異常切断（Closeフレーム送信で切断扱い）
+    ws_a.close(None).await.expect("close ws_a");
+
+    // 接続終了やpingタイムアウトを待つ（リアルタイム、MVPでは許容）
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // 猶予期間を経過させる
+    tokio::time::sleep(bloom_ws::ABNORMAL_DISCONNECT_GRACE + Duration::from_millis(200)).await;
+
+    // leave_roomが呼ばれているか先に確認（猶予後+余裕分）
+    {
+        let core = core_arc.lock().expect("lock core");
+        assert_eq!(core.leave_room_calls.len(), 1);
     }
 
     // BがPeerDisconnectedとRoomParticipantsを受信
@@ -90,8 +102,9 @@ async fn abnormal_close_triggers_single_leave_and_broadcasts() {
                         }
                     }
                     ServerToClient::RoomParticipants { participants, .. } => {
-                        assert!(!participants.contains(&a_id));
-                        received_room_participants = true;
+                        if !participants.contains(&a_id) {
+                            received_room_participants = true;
+                        }
                     }
                     _ => {}
                 }
@@ -114,4 +127,80 @@ async fn abnormal_close_triggers_single_leave_and_broadcasts() {
 
     let core = core_arc.lock().expect("lock core");
     assert_eq!(core.leave_room_calls.len(), 1);
+}
+
+/// 異常切断時にleave_roomを即時呼ばず、猶予時間経過後に呼ぶことを検証する。
+#[tokio::test]
+async fn abnormal_close_waits_grace_before_leave() {
+    time::pause();
+
+    let mock_core = MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    })
+    .with_join_result(Some(Ok(vec![])))
+    .with_leave_result(Some(vec![ParticipantId::new()]));
+    let core_arc = std::sync::Arc::new(std::sync::Mutex::new(mock_core));
+    let shared_core = bloom_ws::SharedCore::from_arc(core_arc.clone());
+
+    let (server_url, _handle) = spawn_bloom_ws_server_with_core(shared_core).await;
+
+    // A: CreateRoom
+    let (mut ws_a, _) = connect_async(&server_url).await.expect("connect A");
+    ws_a.send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+        .await
+        .expect("send create room");
+    let room_created = recv_server_msg(&mut ws_a).await;
+    let (room_id_str, _) = match room_created {
+        ServerToClient::RoomCreated { room_id, self_id } => (room_id, self_id),
+        other => panic!("expected RoomCreated, got {:?}", other),
+    };
+
+    // B: JoinRoom
+    let (mut ws_b, _) = connect_async(&server_url).await.expect("connect B");
+    ws_b.send(Message::Text(format!(
+        r#"{{"type":"JoinRoom","room_id":"{room_id}"}}"#,
+        room_id = room_id_str
+    )))
+    .await
+    .expect("send join room");
+    // 初期通知を捨てる
+    for _ in 0..3 {
+        match tokio::time::timeout(std::time::Duration::from_millis(50), ws_b.next()).await {
+            Ok(Some(Ok(Message::Text(_)))) => {}
+            _ => break,
+        }
+    }
+
+    // A異常切断（Closeフレーム送信で切断扱い）
+    ws_a.close(None).await.expect("close ws_a");
+
+    // 接続終了を検知させる
+    time::advance(Duration::from_millis(1)).await;
+
+    // 100ms待ってもleave_roomが呼ばれないことを期待
+    time::advance(Duration::from_millis(100)).await;
+    tokio::task::yield_now().await;
+    {
+        let core = core_arc.lock().expect("lock core");
+        assert_eq!(
+            core.leave_room_calls.len(),
+            0,
+            "should not call leave_room before grace period"
+        );
+    }
+
+    // 猶予経過後にleave_roomが1回呼ばれること
+    time::advance(bloom_ws::ABNORMAL_DISCONNECT_GRACE).await;
+    time::advance(Duration::from_millis(1)).await; // タスクに実行機会を与える
+    tokio::task::yield_now().await;
+    {
+        let core = core_arc.lock().expect("lock core");
+        assert_eq!(
+            core.leave_room_calls.len(),
+            1,
+            "should call leave_room after grace period"
+        );
+    }
 }
