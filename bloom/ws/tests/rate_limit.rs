@@ -3,21 +3,14 @@ mod common;
 
 use bloom_api::{ErrorCode, ServerToClient};
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
-use bloom_ws::SharedCore;
+use bloom_ws::{SharedCore, CoreApi, MockCore, RealCore};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use common::*;
 
-/// レート制御: 1秒間に21件送信で21件目がRateLimitedになることを検証する。
-#[tokio::test]
-async fn rate_limit_drops_21st_message_and_returns_error() {
-    let core = SharedCore::new(bloom_ws::MockCore::new(CreateRoomResult {
-        room_id: RoomId::new(),
-        self_id: ParticipantId::new(),
-        participants: vec![],
-    }));
+async fn run_rate_limit_test<C: CoreApi + Send + 'static>(core: SharedCore<C>) {
     let (server_url, handle) = spawn_bloom_ws_server_with_core(core).await;
 
     let (mut ws, _) = connect_async(&server_url).await.expect("connect client");
@@ -75,4 +68,22 @@ async fn rate_limit_drops_21st_message_and_returns_error() {
     .expect("send after cooldown");
 
     handle.shutdown().await;
+}
+
+/// レート制御: MockCoreで検証
+#[tokio::test]
+async fn rate_limit_drops_21st_message_mock_core() {
+    let core = SharedCore::new(MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    }));
+    run_rate_limit_test(core).await;
+}
+
+/// レート制御: RealCoreでも同じ挙動になることを検証
+#[tokio::test]
+async fn rate_limit_drops_21st_message_real_core() {
+    let core = SharedCore::new(RealCore::new());
+    run_rate_limit_test(core).await;
 }
