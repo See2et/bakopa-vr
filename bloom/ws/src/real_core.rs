@@ -1,5 +1,6 @@
 use bloom_api::{ErrorCode, RelayIce, RelaySdp};
 use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId, RoomManager};
+use bloom_core::signaling;
 
 use crate::core_api::CoreApi;
 
@@ -45,31 +46,52 @@ impl CoreApi for RealCore {
 
     fn relay_offer(
         &mut self,
-        _room_id: &RoomId,
-        _from: &ParticipantId,
-        _to: &ParticipantId,
-        _payload: RelaySdp,
+        room_id: &RoomId,
+        from: &ParticipantId,
+        to: &ParticipantId,
+        payload: RelaySdp,
     ) -> Result<(), ErrorCode> {
-        Err(ErrorCode::ParticipantNotFound)
+        let participants = self
+            .rooms
+            .join_room(room_id, from.clone())
+            .and_then(Result::ok)
+            .unwrap_or_default();
+        signaling::relay_offer_checked(&mut signaling::MockDeliverySink::default(), &participants, from, to, payload)
     }
 
     fn relay_answer(
         &mut self,
-        _room_id: &RoomId,
-        _from: &ParticipantId,
-        _to: &ParticipantId,
-        _payload: RelaySdp,
+        room_id: &RoomId,
+        from: &ParticipantId,
+        to: &ParticipantId,
+        payload: RelaySdp,
     ) -> Result<(), ErrorCode> {
-        Err(ErrorCode::ParticipantNotFound)
+        let participants = self
+            .rooms
+            .join_room(room_id, from.clone())
+            .and_then(Result::ok)
+            .unwrap_or_default();
+        signaling::relay_answer_checked(&mut signaling::MockDeliverySink::default(), &participants, from, to, payload)
     }
 
     fn relay_ice_candidate(
         &mut self,
-        _room_id: &RoomId,
-        _from: &ParticipantId,
-        _to: &ParticipantId,
-        _payload: RelayIce,
+        room_id: &RoomId,
+        from: &ParticipantId,
+        to: &ParticipantId,
+        payload: RelayIce,
     ) -> Result<(), ErrorCode> {
-        Err(ErrorCode::ParticipantNotFound)
+        let participants = self
+            .rooms
+            .join_room(room_id, from.clone())
+            .and_then(Result::ok)
+            .unwrap_or_default();
+        signaling::relay_ice_candidate_checked(
+            &mut signaling::MockDeliverySink::default(),
+            &participants,
+            from,
+            to,
+            payload,
+        )
     }
 }
