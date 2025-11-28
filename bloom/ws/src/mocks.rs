@@ -19,6 +19,7 @@ pub struct MockCore {
     pub relay_answer_result: Result<(), ErrorCode>,
     pub relay_ice_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelayIce)>,
     pub relay_ice_result: Result<(), ErrorCode>,
+    pub participants_map: std::collections::HashMap<RoomId, Vec<ParticipantId>>,
 }
 
 impl MockCore {
@@ -36,6 +37,7 @@ impl MockCore {
             relay_answer_result: Ok(()),
             relay_ice_calls: Vec::new(),
             relay_ice_result: Ok(()),
+            participants_map: std::collections::HashMap::new(),
         }
     }
 
@@ -64,6 +66,11 @@ impl MockCore {
 
     pub fn with_relay_ice_result(mut self, result: Result<(), ErrorCode>) -> Self {
         self.relay_ice_result = result;
+        self
+    }
+
+    pub fn with_participants(mut self, room_id: RoomId, participants: Vec<ParticipantId>) -> Self {
+        self.participants_map.insert(room_id, participants);
         self
     }
 }
@@ -111,6 +118,10 @@ impl CoreApi for MockCore {
         self.leave_room_calls
             .push((room_id.clone(), participant.clone()));
         self.leave_room_result.clone()
+    }
+
+    fn participants(&self, room_id: &RoomId) -> Option<Vec<ParticipantId>> {
+        self.participants_map.get(room_id).cloned()
     }
 
     fn relay_offer(

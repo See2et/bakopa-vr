@@ -28,6 +28,10 @@ impl CoreApi for RealCore {
         self.rooms.create_room(room_owner)
     }
 
+    fn participants(&self, room_id: &RoomId) -> Option<Vec<ParticipantId>> {
+        self.rooms.participants(room_id)
+    }
+
     fn join_room(
         &mut self,
         room_id: &RoomId,
