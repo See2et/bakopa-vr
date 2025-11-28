@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use bloom_api::ServerToClient;
 use bloom_core::ParticipantId;
 use futures_util::{SinkExt, StreamExt};
+use std::str::FromStr;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
@@ -177,7 +178,18 @@ impl WebSocketBroadcast {
 
     pub async fn insert(&self, participant: ParticipantId, sink: SharedSink) {
         let mut map = self.peers.lock().await;
-        map.insert(participant, sink);
+        if let Some(old) = map.insert(participant, sink.clone()) {
+            // 仕様: 同一participantの多重接続時は旧接続を優先的に切断する
+            tokio::spawn(async move {
+                let mut guard = old.lock().await;
+                let _ = guard
+                    .send(Message::Close(Some(CloseFrame {
+                        code: CloseCode::Normal,
+                        reason: "duplicate connection".into(),
+                    })))
+                    .await;
+            });
+        }
     }
 
     pub async fn remove(&self, participant: &ParticipantId) {
@@ -267,7 +279,10 @@ async fn handle_connection<C>(
 where
     C: CoreApi + Send + 'static,
 {
-    let participant_id = ParticipantId::new();
+    let participant_id = std::env::var("BLOOM_TEST_PARTICIPANT_ID")
+        .ok()
+        .and_then(|v| ParticipantId::from_str(&v).ok())
+        .unwrap_or_else(ParticipantId::new);
     let span = tracing::info_span!("ws_handshake", participant_id = %participant_id);
     let _enter = span.enter();
 
@@ -321,13 +336,14 @@ where
     let mut ping_timer = interval(ping_cfg.interval);
     ping_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let mut reason = DisconnectReason::Abnormal;
+    let mut reason: Option<DisconnectReason> = None;
     loop {
         tokio::select! {
             maybe_msg = stream.next() => {
                 match maybe_msg {
                     Some(Ok(Message::Close(_))) => {
-                        reason = DisconnectReason::Abnormal;
+                        // Closeフレーム受信も猶予付きで扱う（MVP実装）
+                        reason = Some(DisconnectReason::Abnormal);
                         break;
                     }
                     Some(Ok(Message::Text(text))) => {
@@ -353,15 +369,15 @@ where
                                 },
                             )))
                             .await;
-                        reason = DisconnectReason::Abnormal;
+                        reason = Some(DisconnectReason::Abnormal);
                         break;
                     }
                     Some(Err(_)) => {
-                        reason = DisconnectReason::Abnormal;
+                        reason = Some(DisconnectReason::Abnormal);
                         break;
                     }
                     None => {
-                        reason = DisconnectReason::Abnormal;
+                        reason = Some(DisconnectReason::Abnormal);
                         break;
                     }
                 }
@@ -374,13 +390,13 @@ where
                         reason: "ping timeout".into(),
                     })))
                     .await;
-                    reason = DisconnectReason::Abnormal;
+                    reason = Some(DisconnectReason::Abnormal);
                     break;
                 }
             }
         }
     }
-    reason
+    reason.unwrap_or(DisconnectReason::Abnormal)
 }
 
 async fn handle_disconnect<C>(

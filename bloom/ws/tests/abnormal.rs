@@ -16,6 +16,8 @@ use common::*;
 /// 異常切断でleaveが1回だけ呼ばれ、残存参加者へPeerDisconnected/RoomParticipantsが送られることを検証する。
 #[tokio::test]
 async fn abnormal_close_triggers_single_leave_and_broadcasts() {
+    time::pause();
+
     let mock_core = MockCore::new(CreateRoomResult {
         room_id: RoomId::new(),
         self_id: ParticipantId::new(),
@@ -73,14 +75,18 @@ async fn abnormal_close_triggers_single_leave_and_broadcasts() {
         core.leave_room_result = Some(vec![ParticipantId::from_str(&b_id).expect("parse b id")]);
     }
 
-    // A異常切断（Closeフレーム送信で切断扱い）
+    // A異常切断（Closeフレーム送信だが猶予適用経路を期待）
     ws_a.close(None).await.expect("close ws_a");
 
-    // 接続終了やpingタイムアウトを待つ（リアルタイム、MVPでは許容）
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    // 接続終了を検知させる
+    tokio::task::yield_now().await;
+    time::advance(Duration::from_millis(10)).await;
+    tokio::task::yield_now().await;
 
     // 猶予期間を経過させる
-    tokio::time::sleep(bloom_ws::ABNORMAL_DISCONNECT_GRACE + Duration::from_millis(200)).await;
+    time::advance(bloom_ws::ABNORMAL_DISCONNECT_GRACE + Duration::from_millis(200)).await;
+    time::advance(Duration::from_millis(1)).await;
+    tokio::task::yield_now().await;
 
     // leave_roomが呼ばれているか先に確認（猶予後+余裕分）
     {
@@ -173,11 +179,13 @@ async fn abnormal_close_waits_grace_before_leave() {
         }
     }
 
-    // A異常切断（Closeフレーム送信で切断扱い）
-    ws_a.close(None).await.expect("close ws_a");
+    // A異常切断（ソケットドロップ＝予期せぬ切断を模擬）
+    drop(ws_a);
 
     // 接続終了を検知させる
-    time::advance(Duration::from_millis(1)).await;
+    tokio::task::yield_now().await;
+    time::advance(Duration::from_millis(10)).await;
+    tokio::task::yield_now().await;
 
     // 100ms待ってもleave_roomが呼ばれないことを期待
     time::advance(Duration::from_millis(100)).await;
