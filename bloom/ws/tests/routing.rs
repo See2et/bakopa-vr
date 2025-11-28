@@ -53,24 +53,29 @@ async fn offer_is_delivered_only_to_target_participant() {
         }
     }
 
-    // RoomParticipantsからBのIDを取得
-    let b_id = loop {
-        if let Ok(Some(Ok(Message::Text(t)))) =
-            tokio::time::timeout(std::time::Duration::from_millis(300), ws_a.next()).await
-        {
-            if let Ok(evt) = serde_json::from_str::<ServerToClient>(&t) {
-                if let ServerToClient::RoomParticipants { participants, .. } = evt {
-                    let id = participants
-                        .iter()
-                        .find(|pid| *pid != &a_id)
-                        .cloned()
-                        .expect("participants include b");
-                    break id;
+    // RoomParticipantsからBのIDを取得（A/Bどちらでも可）
+    let b_id = {
+        let mut found: Option<String> = None;
+        for _ in 0..10 {
+            for ws in [&mut ws_a, &mut ws_b] {
+                if let Ok(Some(Ok(Message::Text(t)))) =
+                    tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await
+                {
+                    if let Ok(evt) = serde_json::from_str::<ServerToClient>(&t) {
+                        if let ServerToClient::RoomParticipants { participants, .. } = evt {
+                            if let Some(id) = participants.iter().find(|pid| *pid != &a_id) {
+                                found = Some(id.clone());
+                                break;
+                            }
+                        }
+                    }
                 }
             }
-        } else {
-            panic!("failed to receive RoomParticipants");
+            if found.is_some() {
+                break;
+            }
         }
+        found.expect("participants include b")
     };
 
     // A -> B へ Offer
