@@ -349,6 +349,7 @@ where
             maybe_msg = stream.next() => {
                 match maybe_msg {
                     Some(Ok(Message::Close(_))) => {
+                        reason = Some(DisconnectReason::Normal);
                         break;
                     }
                     Some(Ok(Message::Text(text))) => {
@@ -428,5 +429,6 @@ async fn remaining_peers(peers: &PeerMap, exclude: &ParticipantId) -> Vec<Partic
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DisconnectReason {
+    Normal,
     Abnormal,
 }

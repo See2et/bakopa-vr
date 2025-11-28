@@ -1,5 +1,5 @@
 use bloom_core::{ParticipantId, RoomId};
-use bloom_ws::{CoreApi, MockCore, RealCore, SharedCore};
+use bloom_ws::{CoreApi, MockCore, RealCore};
 
 fn run_contract<C: CoreApi>(mut core: C) {
     let owner = ParticipantId::new();
