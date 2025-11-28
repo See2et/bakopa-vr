@@ -46,7 +46,16 @@ async fn abnormal_close_triggers_single_leave_and_broadcasts() {
     )))
     .await
     .expect("send join room");
-    let _ = recv_server_msg(&mut ws_b).await; // RoomParticipants など
+    // Join時に流れるPeerConnected/RoomParticipantsをすべて消費しておく
+    for _ in 0..3 {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), ws_b.next()).await {
+            Ok(Some(Ok(Message::Text(t)))) => {
+                let _parsed: ServerToClient = serde_json::from_str(&t).expect("parse server msg");
+                // 2つ程度のメッセージを想定（PeerConnected, RoomParticipants）。超過しても無視。
+            }
+            _ => break,
+        }
+    }
 
     // Bのparticipant_id取得
     let b_id = {
