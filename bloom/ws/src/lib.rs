@@ -4,6 +4,7 @@ mod mocks;
 mod rate_limit;
 mod server;
 mod sinks;
+mod real_core;
 
 pub use core_api::CoreApi;
 pub use handler::{HandshakeResponse, WsHandler};
@@ -19,6 +20,7 @@ pub use sinks::{
     BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink,
     SharedBroadcastSink,
 };
+pub use real_core::RealCore;
 
 #[cfg(test)]
 mod tests {
