@@ -79,6 +79,11 @@ impl RoomManager {
         }
         None
     }
+
+    /// Roomの参加者一覧を取得する（存在しない場合None）。
+    pub fn participants(&self, room_id: &RoomId) -> Option<ParticipantList> {
+        self.rooms.get(room_id).map(|r| r.participants.clone())
+    }
 }
 
 /// Room作成時の戻り値。

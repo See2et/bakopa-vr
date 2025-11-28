@@ -53,10 +53,15 @@ impl CoreApi for RealCore {
     ) -> Result<(), ErrorCode> {
         let participants = self
             .rooms
-            .join_room(room_id, from.clone())
-            .and_then(Result::ok)
-            .unwrap_or_default();
-        signaling::relay_offer_checked(&mut signaling::MockDeliverySink::default(), &participants, from, to, payload)
+            .participants(room_id)
+            .ok_or(ErrorCode::ParticipantNotFound)?;
+        signaling::relay_offer_checked(
+            &mut signaling::MockDeliverySink::default(),
+            &participants,
+            from,
+            to,
+            payload,
+        )
     }
 
     fn relay_answer(
@@ -68,10 +73,15 @@ impl CoreApi for RealCore {
     ) -> Result<(), ErrorCode> {
         let participants = self
             .rooms
-            .join_room(room_id, from.clone())
-            .and_then(Result::ok)
-            .unwrap_or_default();
-        signaling::relay_answer_checked(&mut signaling::MockDeliverySink::default(), &participants, from, to, payload)
+            .participants(room_id)
+            .ok_or(ErrorCode::ParticipantNotFound)?;
+        signaling::relay_answer_checked(
+            &mut signaling::MockDeliverySink::default(),
+            &participants,
+            from,
+            to,
+            payload,
+        )
     }
 
     fn relay_ice_candidate(
@@ -83,9 +93,8 @@ impl CoreApi for RealCore {
     ) -> Result<(), ErrorCode> {
         let participants = self
             .rooms
-            .join_room(room_id, from.clone())
-            .and_then(Result::ok)
-            .unwrap_or_default();
+            .participants(room_id)
+            .ok_or(ErrorCode::ParticipantNotFound)?;
         signaling::relay_ice_candidate_checked(
             &mut signaling::MockDeliverySink::default(),
             &participants,
