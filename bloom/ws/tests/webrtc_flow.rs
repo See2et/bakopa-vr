@@ -7,6 +7,7 @@ use bloom_api::{RelayIce, ServerToClient};
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
 use bloom_ws::MockCore;
 use futures_util::{SinkExt, StreamExt};
+use tokio::net::UdpSocket;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -175,6 +176,27 @@ async fn binary_frame_is_rejected_without_room_participants_change() {
     assert!(
         core.leave_room_calls.is_empty(),
         "binary rejection should not invoke leave_room"
+    );
+
+    handle.shutdown().await;
+}
+
+/// WSポートをBloom自身がUDPで占有していないことを確認する（同ポートでUDPバインドできる）。
+#[tokio::test]
+async fn udp_socket_bind_on_ws_port_fails() {
+    let mock_core = MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    });
+    let shared_core = bloom_ws::SharedCore::new(mock_core);
+
+    let (_server_url, handle) = spawn_bloom_ws_server_with_core(shared_core).await;
+
+    let udp_bind = UdpSocket::bind(handle.addr).await;
+    assert!(
+        udp_bind.is_ok(),
+        "UDP bind on ws port should succeed because Bloom does not open UDP sockets"
     );
 
     handle.shutdown().await;
