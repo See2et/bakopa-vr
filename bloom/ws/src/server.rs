@@ -102,6 +102,13 @@ impl<C: CoreApi> CoreApi for SharedCore<C> {
             .leave_room(room_id, participant)
     }
 
+    fn participants(&self, room_id: &bloom_core::RoomId) -> Option<Vec<ParticipantId>> {
+        self.inner
+            .lock()
+            .expect("core lock poisoned")
+            .participants(room_id)
+    }
+
     fn relay_offer(
         &mut self,
         room_id: &bloom_core::RoomId,
@@ -342,8 +349,6 @@ where
             maybe_msg = stream.next() => {
                 match maybe_msg {
                     Some(Ok(Message::Close(_))) => {
-                        // Closeフレーム受信も猶予付きで扱う（MVP実装）
-                        reason = Some(DisconnectReason::Abnormal);
                         break;
                     }
                     Some(Ok(Message::Text(text))) => {
@@ -423,6 +428,5 @@ async fn remaining_peers(peers: &PeerMap, exclude: &ParticipantId) -> Vec<Partic
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DisconnectReason {
-    Normal,
     Abnormal,
 }

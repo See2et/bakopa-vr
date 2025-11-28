@@ -53,13 +53,24 @@ async fn offer_is_delivered_only_to_target_participant() {
         }
     }
 
-    // 参加者IDをコア呼び出しから取得
-    let b_id = {
-        let core = core_arc.lock().expect("lock core");
-        core.join_room_calls
-            .last()
-            .map(|(_, p)| p.to_string())
-            .expect("b id recorded")
+    // RoomParticipantsからBのIDを取得
+    let b_id = loop {
+        if let Ok(Some(Ok(Message::Text(t)))) =
+            tokio::time::timeout(std::time::Duration::from_millis(300), ws_a.next()).await
+        {
+            if let Ok(evt) = serde_json::from_str::<ServerToClient>(&t) {
+                if let ServerToClient::RoomParticipants { participants, .. } = evt {
+                    let id = participants
+                        .iter()
+                        .find(|pid| *pid != &a_id)
+                        .cloned()
+                        .expect("participants include b");
+                    break id;
+                }
+            }
+        } else {
+            panic!("failed to receive RoomParticipants");
+        }
     };
 
     // A -> B へ Offer

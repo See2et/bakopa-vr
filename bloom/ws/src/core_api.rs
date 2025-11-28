@@ -14,6 +14,8 @@ pub trait CoreApi {
         room_id: &RoomId,
         participant: &ParticipantId,
     ) -> Option<Vec<ParticipantId>>;
+    /// 現在の参加者一覧を取得する。RoomがなければNone。
+    fn participants(&self, room_id: &RoomId) -> Option<Vec<ParticipantId>>;
 
     fn relay_offer(
         &mut self,
