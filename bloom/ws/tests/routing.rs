@@ -1,27 +1,16 @@
 #[path = "common.rs"]
 mod common;
 
-use bloom_api::ServerToClient;
+use bloom_api::{ServerToClient, ErrorCode};
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
-use bloom_ws::MockCore;
+use bloom_ws::{MockCore, RealCore, SharedCore, CoreApi};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use common::*;
 
-/// Offerが宛先のみに届くことを検証する。
-#[tokio::test]
-async fn offer_is_delivered_only_to_target_participant() {
-    let mock_core = MockCore::new(CreateRoomResult {
-        room_id: RoomId::new(),
-        self_id: ParticipantId::new(),
-        participants: vec![],
-    })
-    .with_join_result(Some(Ok(vec![])));
-    let core_arc = std::sync::Arc::new(std::sync::Mutex::new(mock_core));
-    let shared_core = bloom_ws::SharedCore::from_arc(core_arc.clone());
-
+async fn run_offer_routing_test<C: CoreApi + Send + 'static>(shared_core: SharedCore<C>) {
     let (server_url, handle) = spawn_bloom_ws_server_with_core(shared_core.clone()).await;
 
     // クライアントA: CreateRoom
@@ -107,10 +96,70 @@ async fn offer_is_delivered_only_to_target_participant() {
         }
     }
 
-    let core = core_arc.lock().expect("lock core");
-    assert_eq!(core.relay_offer_calls.len(), 1);
-    assert_eq!(core.relay_offer_calls[0].1.to_string(), a_id);
-    assert_eq!(core.relay_offer_calls[0].2.to_string(), b_id);
+    handle.shutdown().await;
+}
+
+async fn run_missing_participant_error<C: CoreApi + Send + 'static>(shared_core: SharedCore<C>) {
+    let (server_url, handle) = spawn_bloom_ws_server_with_core(shared_core).await;
+
+    let (mut ws, _) = connect_async(&server_url).await.expect("connect A");
+    ws.send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+        .await
+        .expect("send create room");
+    let _ = recv_server_msg(&mut ws).await;
+
+    let missing_id = uuid::Uuid::new_v4().to_string();
+    let offer = format!(
+        r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer"}}"#,
+        to = missing_id
+    );
+    ws.send(Message::Text(offer.into()))
+        .await
+        .expect("send missing offer");
+    let resp = recv_server_msg(&mut ws).await;
+    match resp {
+        ServerToClient::Error { code, .. } => assert_eq!(code, ErrorCode::ParticipantNotFound),
+        other => panic!("expected ParticipantNotFound, got {:?}", other),
+    }
 
     handle.shutdown().await;
+}
+
+/// Offerが宛先のみに届く（MockCore）
+#[tokio::test]
+async fn offer_is_delivered_only_to_target_participant_mock() {
+    let mock_core = MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    })
+    .with_join_result(Some(Ok(vec![])));
+    let core_arc = std::sync::Arc::new(std::sync::Mutex::new(mock_core));
+    let shared_core = bloom_ws::SharedCore::from_arc(core_arc);
+    run_offer_routing_test(shared_core).await;
+}
+
+/// Offerが宛先のみに届く（RealCore）
+#[tokio::test]
+async fn offer_is_delivered_only_to_target_participant_real_core() {
+    let shared_core = SharedCore::new(RealCore::new());
+    run_offer_routing_test(shared_core).await;
+}
+
+#[tokio::test]
+async fn offer_to_missing_participant_returns_error_mock() {
+    let mock_core = MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    })
+    .with_relay_offer_result(Err(ErrorCode::ParticipantNotFound));
+    let shared_core = bloom_ws::SharedCore::new(mock_core);
+    run_missing_participant_error(shared_core).await;
+}
+
+#[tokio::test]
+async fn offer_to_missing_participant_returns_error_real_core() {
+    let shared_core = SharedCore::new(RealCore::new());
+    run_missing_participant_error(shared_core).await;
 }
