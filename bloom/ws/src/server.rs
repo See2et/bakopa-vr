@@ -329,6 +329,8 @@ async fn process_messages<C>(
                         let _ = sink.lock().await.send(Message::Pong(payload)).await;
                     }
                     Some(Ok(_)) => {
+                        // 非テキスト（バイナリ等）はメディア中継しない方針: 1003 Closeを返し、room_idをクリアして状態変化を避ける
+                        handler.room_id = None;
                         let _ = sink
                             .lock()
                             .await
