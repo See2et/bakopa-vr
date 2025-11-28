@@ -8,7 +8,6 @@ use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
 use bloom_ws::MockCore;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::UdpSocket;
-use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -27,37 +26,8 @@ async fn ice_candidate_is_forwarded_without_mutation() {
     let shared_core = bloom_ws::SharedCore::from_arc(core_arc.clone());
 
     let (server_url, handle) = spawn_bloom_ws_server_with_core(shared_core.clone()).await;
-
-    // クライアントA: CreateRoom
-    let (mut ws_a, _) = connect_async(&server_url).await.expect("connect A");
-    ws_a.send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
-        .await
-        .expect("send create room");
-    let room_created = recv_server_msg(&mut ws_a).await;
-    let (room_id_str, a_id) = match room_created {
-        ServerToClient::RoomCreated { room_id, self_id } => (room_id, self_id),
-        other => panic!("expected RoomCreated, got {:?}", other),
-    };
-
-    // クライアントB: JoinRoom
-    let (mut ws_b, _) = connect_async(&server_url).await.expect("connect B");
-    ws_b.send(Message::Text(format!(
-        r#"{{"type":"JoinRoom","room_id":"{room_id}"}}"#,
-        room_id = room_id_str
-    )))
-    .await
-    .expect("send join room");
-    // join処理完了を待つ
-    let _ = recv_server_msg(&mut ws_b).await;
-
-    // 参加者IDをコア呼び出しから取得
-    let b_id = {
-        let core = core_arc.lock().expect("lock core");
-        core.join_room_calls
-            .last()
-            .map(|(_, p)| p.to_string())
-            .expect("b id recorded")
-    };
+    let (mut ws_a, mut ws_b, _room_id_str, a_id, b_id) =
+        setup_room_with_two_clients(&server_url, &core_arc).await;
 
     // A -> B へ TURN候補を含む IceCandidate
     let candidate =
@@ -104,28 +74,8 @@ async fn binary_frame_is_rejected_without_room_participants_change() {
     let shared_core = bloom_ws::SharedCore::from_arc(core_arc.clone());
 
     let (server_url, handle) = spawn_bloom_ws_server_with_core(shared_core.clone()).await;
-
-    // クライアントA: CreateRoom
-    let (mut ws_a, _) = connect_async(&server_url).await.expect("connect A");
-    ws_a.send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
-        .await
-        .expect("send create room");
-    let room_created = recv_server_msg(&mut ws_a).await;
-    let room_id_str = match room_created {
-        ServerToClient::RoomCreated { room_id, .. } => room_id,
-        other => panic!("expected RoomCreated, got {:?}", other),
-    };
-
-    // クライアントB: JoinRoom
-    let (mut ws_b, _) = connect_async(&server_url).await.expect("connect B");
-    ws_b.send(Message::Text(format!(
-        r#"{{"type":"JoinRoom","room_id":"{room_id}"}}"#,
-        room_id = room_id_str
-    )))
-    .await
-    .expect("send join room");
-    // join完了を待つ
-    let _ = recv_server_msg(&mut ws_b).await;
+    let (mut ws_a, mut ws_b, _room_id_str, _a_id, _b_id) =
+        setup_room_with_two_clients(&server_url, &core_arc).await;
 
     // A側に溜まっている（Joinによる）RoomParticipantsを捨てておく
     while let Ok(Some(Ok(Message::Text(_)))) =
@@ -142,7 +92,7 @@ async fn binary_frame_is_rejected_without_room_participants_change() {
     // サーバから1003 Closeを受信すること
     let mut close_ok = false;
     let start = std::time::Instant::now();
-    while start.elapsed() < std::time::Duration::from_millis(500) {
+    while start.elapsed() < std::time::Duration::from_millis(200) {
         if let Some(msg) = ws_b.next().await {
             match msg {
                 Ok(Message::Close(Some(frame))) => {
@@ -183,7 +133,7 @@ async fn binary_frame_is_rejected_without_room_participants_change() {
 
 /// WSポートをBloom自身がUDPで占有していないことを確認する（同ポートでUDPバインドできる）。
 #[tokio::test]
-async fn udp_socket_bind_on_ws_port_fails() {
+async fn udp_socket_bind_on_ws_port_succeeds() {
     let mock_core = MockCore::new(CreateRoomResult {
         room_id: RoomId::new(),
         self_id: ParticipantId::new(),
@@ -194,10 +144,7 @@ async fn udp_socket_bind_on_ws_port_fails() {
     let (_server_url, handle) = spawn_bloom_ws_server_with_core(shared_core).await;
 
     let udp_bind = UdpSocket::bind(handle.addr).await;
-    assert!(
-        udp_bind.is_ok(),
-        "UDP bind on ws port should succeed because Bloom does not open UDP sockets"
-    );
+    assert!(udp_bind.is_ok(), "UDP bind on ws port should succeed because Bloom does not open UDP sockets");
 
     handle.shutdown().await;
 }
