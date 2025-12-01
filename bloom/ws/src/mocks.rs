@@ -1,7 +1,7 @@
 use bloom_api::{ErrorCode, RelayIce, RelaySdp};
 use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
 
-use crate::core_api::CoreApi;
+use crate::core_api::{CoreApi, RelayAction};
 
 /// Test helper core that returns predetermined values.
 /// テストで参加者IDを動的に扱えるよう、create_room/join_room時に呼び出しごとのIDを反映する。
@@ -14,11 +14,11 @@ pub struct MockCore {
     pub leave_room_result: Option<Vec<ParticipantId>>,
     pub leave_room_calls: Vec<(RoomId, ParticipantId)>,
     pub relay_offer_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelaySdp)>,
-    pub relay_offer_result: Result<(), ErrorCode>,
+    pub relay_offer_result: Option<Result<RelayAction, ErrorCode>>,
     pub relay_answer_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelaySdp)>,
-    pub relay_answer_result: Result<(), ErrorCode>,
+    pub relay_answer_result: Option<Result<RelayAction, ErrorCode>>,
     pub relay_ice_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelayIce)>,
-    pub relay_ice_result: Result<(), ErrorCode>,
+    pub relay_ice_result: Option<Result<RelayAction, ErrorCode>>,
     pub participants_map: std::collections::HashMap<RoomId, Vec<ParticipantId>>,
 }
 
@@ -32,11 +32,11 @@ impl MockCore {
             leave_room_result: None,
             leave_room_calls: Vec::new(),
             relay_offer_calls: Vec::new(),
-            relay_offer_result: Ok(()),
+            relay_offer_result: None,
             relay_answer_calls: Vec::new(),
-            relay_answer_result: Ok(()),
+            relay_answer_result: None,
             relay_ice_calls: Vec::new(),
-            relay_ice_result: Ok(()),
+            relay_ice_result: None,
             participants_map: std::collections::HashMap::new(),
         }
     }
@@ -54,18 +54,18 @@ impl MockCore {
         self
     }
 
-    pub fn with_relay_offer_result(mut self, result: Result<(), ErrorCode>) -> Self {
-        self.relay_offer_result = result;
+    pub fn with_relay_offer_result(mut self, result: Result<RelayAction, ErrorCode>) -> Self {
+        self.relay_offer_result = Some(result);
         self
     }
 
-    pub fn with_relay_answer_result(mut self, result: Result<(), ErrorCode>) -> Self {
-        self.relay_answer_result = result;
+    pub fn with_relay_answer_result(mut self, result: Result<RelayAction, ErrorCode>) -> Self {
+        self.relay_answer_result = Some(result);
         self
     }
 
-    pub fn with_relay_ice_result(mut self, result: Result<(), ErrorCode>) -> Self {
-        self.relay_ice_result = result;
+    pub fn with_relay_ice_result(mut self, result: Result<RelayAction, ErrorCode>) -> Self {
+        self.relay_ice_result = Some(result);
         self
     }
 
@@ -130,10 +130,21 @@ impl CoreApi for MockCore {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: RelaySdp,
-    ) -> Result<(), ErrorCode> {
+    ) -> Result<RelayAction, ErrorCode> {
+        let payload_clone = payload.clone();
         self.relay_offer_calls
             .push((room_id.clone(), from.clone(), to.clone(), payload));
-        self.relay_offer_result.clone()
+        if let Some(result) = self.relay_offer_result.clone() {
+            result
+        } else {
+            Ok(RelayAction {
+                to: to.clone(),
+                message: bloom_api::ServerToClient::Offer {
+                    from: from.to_string(),
+                    payload: payload_clone,
+                },
+            })
+        }
     }
 
     fn relay_answer(
@@ -142,10 +153,21 @@ impl CoreApi for MockCore {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: RelaySdp,
-    ) -> Result<(), ErrorCode> {
+    ) -> Result<RelayAction, ErrorCode> {
+        let payload_clone = payload.clone();
         self.relay_answer_calls
             .push((room_id.clone(), from.clone(), to.clone(), payload));
-        self.relay_answer_result.clone()
+        if let Some(result) = self.relay_answer_result.clone() {
+            result
+        } else {
+            Ok(RelayAction {
+                to: to.clone(),
+                message: bloom_api::ServerToClient::Answer {
+                    from: from.to_string(),
+                    payload: payload_clone,
+                },
+            })
+        }
     }
 
     fn relay_ice_candidate(
@@ -154,9 +176,20 @@ impl CoreApi for MockCore {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: RelayIce,
-    ) -> Result<(), ErrorCode> {
+    ) -> Result<RelayAction, ErrorCode> {
+        let payload_clone = payload.clone();
         self.relay_ice_calls
             .push((room_id.clone(), from.clone(), to.clone(), payload));
-        self.relay_ice_result.clone()
+        if let Some(result) = self.relay_ice_result.clone() {
+            result
+        } else {
+            Ok(RelayAction {
+                to: to.clone(),
+                message: bloom_api::ServerToClient::IceCandidate {
+                    from: from.to_string(),
+                    payload: payload_clone,
+                },
+            })
+        }
     }
 }

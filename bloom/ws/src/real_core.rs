@@ -2,7 +2,7 @@ use bloom_api::{ErrorCode, RelayIce, RelaySdp};
 use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId, RoomManager};
 use bloom_core::signaling;
 
-use crate::core_api::CoreApi;
+use crate::core_api::{CoreApi, RelayAction};
 
 /// シンプルなインメモリ実装の CoreApi。WSサーバ用の最小版。
 pub struct RealCore {
@@ -54,18 +54,19 @@ impl CoreApi for RealCore {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: RelaySdp,
-    ) -> Result<(), ErrorCode> {
+    ) -> Result<RelayAction, ErrorCode> {
         let participants = self
             .rooms
             .participants(room_id)
             .ok_or(ErrorCode::ParticipantNotFound)?;
-        signaling::relay_offer_checked(
-            &mut signaling::MockDeliverySink::default(),
-            &participants,
-            from,
-            to,
-            payload,
-        )
+        if !participants.contains(from) || !participants.contains(to) {
+            return Err(ErrorCode::ParticipantNotFound);
+        }
+        let message = signaling::shape_offer_event(from, payload);
+        Ok(RelayAction {
+            to: to.clone(),
+            message,
+        })
     }
 
     fn relay_answer(
@@ -74,18 +75,19 @@ impl CoreApi for RealCore {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: RelaySdp,
-    ) -> Result<(), ErrorCode> {
+    ) -> Result<RelayAction, ErrorCode> {
         let participants = self
             .rooms
             .participants(room_id)
             .ok_or(ErrorCode::ParticipantNotFound)?;
-        signaling::relay_answer_checked(
-            &mut signaling::MockDeliverySink::default(),
-            &participants,
-            from,
-            to,
-            payload,
-        )
+        if !participants.contains(from) || !participants.contains(to) {
+            return Err(ErrorCode::ParticipantNotFound);
+        }
+        let message = signaling::shape_answer_event(from, payload);
+        Ok(RelayAction {
+            to: to.clone(),
+            message,
+        })
     }
 
     fn relay_ice_candidate(
@@ -94,17 +96,18 @@ impl CoreApi for RealCore {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: RelayIce,
-    ) -> Result<(), ErrorCode> {
+    ) -> Result<RelayAction, ErrorCode> {
         let participants = self
             .rooms
             .participants(room_id)
             .ok_or(ErrorCode::ParticipantNotFound)?;
-        signaling::relay_ice_candidate_checked(
-            &mut signaling::MockDeliverySink::default(),
-            &participants,
-            from,
-            to,
-            payload,
-        )
+        if !participants.contains(from) || !participants.contains(to) {
+            return Err(ErrorCode::ParticipantNotFound);
+        }
+        let message = signaling::shape_ice_event(from, payload);
+        Ok(RelayAction {
+            to: to.clone(),
+            message,
+        })
     }
 }
