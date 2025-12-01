@@ -222,7 +222,7 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 ❌ 全てを`String`,`u64`,`i32`などのプリミティブ型で表現
 ✅ 必要に応じて`UserID`,`Timeout`,`EmailAddress`などの意味を持った型やenumを定義
 
-**examples**
+### examples
 ```diff
 - fn send_email(to: String, body: String) { /* ... */ }
 + pub struct EmailAddress(String);
