@@ -5,8 +5,8 @@ use bloom_api::ServerToClient;
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
 use bloom_ws::{CoreApi, MockCore, ServerOverrides, SharedCore};
 use futures_util::{SinkExt, StreamExt};
-use std::sync::{Arc, Mutex};
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -82,11 +82,8 @@ async fn duplicate_participant_keeps_new_session_registered_for_broadcast() {
 
     // 実Coreで参加者リストを自然に管理させる
     let shared_core = SharedCore::new(bloom_ws::RealCore::new());
-    let (server_url, _handle) = spawn_bloom_ws_server_with_core_and_overrides(
-        shared_core.clone(),
-        overrides.clone(),
-    )
-    .await;
+    let (server_url, _handle) =
+        spawn_bloom_ws_server_with_core_and_overrides(shared_core.clone(), overrides.clone()).await;
 
     // 1本目の接続（旧）
     let (mut ws_old, _) = connect_async(&server_url).await.expect("connect old");
@@ -173,5 +170,4 @@ async fn duplicate_participant_keeps_new_session_registered_for_broadcast() {
         received,
         "new session should stay registered and receive broadcast after duplicate close"
     );
-
 }
