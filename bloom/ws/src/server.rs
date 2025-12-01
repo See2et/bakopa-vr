@@ -296,10 +296,14 @@ async fn handle_connection<C>(
 where
     C: CoreApi + Send + 'static,
 {
+    #[cfg(test)]
     let participant_id = std::env::var("BLOOM_TEST_PARTICIPANT_ID")
         .ok()
         .and_then(|v| ParticipantId::from_str(&v).ok())
         .unwrap_or_else(ParticipantId::new);
+    
+    #[cfg(not(test))]
+    let participant_id = ParticipantId::new();
     let span = tracing::info_span!("ws_handshake", participant_id = %participant_id);
     let _enter = span.enter();
 
