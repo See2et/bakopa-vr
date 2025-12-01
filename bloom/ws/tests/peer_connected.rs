@@ -2,8 +2,7 @@
 mod common;
 
 use bloom_api::ServerToClient;
-use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
-use bloom_ws::{CoreApi, MockCore, RealCore, SharedCore};
+use bloom_ws::{CoreApi, RealCore, SharedCore};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -60,28 +59,6 @@ async fn run_peer_connected_test<C: CoreApi + Send + 'static>(shared_core: Share
 
     // PeerConnected は既存の別テストでカバー済み。ここではJoin後も接続が維持されることのみ確認。
     assert!(!b_id.is_empty());
-}
-
-async fn wait_for_peer_connected(
-    ws: &mut tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-    target: &str,
-) -> bool {
-    for _ in 0..6 {
-        if let Ok(Some(Ok(Message::Text(t)))) =
-            tokio::time::timeout(std::time::Duration::from_millis(300), ws.next()).await
-        {
-            if let Ok(evt) = serde_json::from_str::<ServerToClient>(&t) {
-                if let ServerToClient::PeerConnected { participant_id } = evt {
-                    if participant_id == target {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    false
 }
 
 #[tokio::test]
