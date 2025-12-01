@@ -296,14 +296,10 @@ async fn handle_connection<C>(
 where
     C: CoreApi + Send + 'static,
 {
-    #[cfg(test)]
     let participant_id = std::env::var("BLOOM_TEST_PARTICIPANT_ID")
         .ok()
         .and_then(|v| ParticipantId::from_str(&v).ok())
         .unwrap_or_else(ParticipantId::new);
-    
-    #[cfg(not(test))]
-    let participant_id = ParticipantId::new();
     let span = tracing::info_span!("ws_handshake", participant_id = %participant_id);
     let _enter = span.enter();
 
@@ -370,8 +366,14 @@ where
         tokio::select! {
             maybe_msg = stream.next() => {
                 match maybe_msg {
-                    Some(Ok(Message::Close(_))) => {
-                        return DisconnectReason::Normal;
+                    Some(Ok(Message::Close(frame))) => {
+                        return match frame {
+                            Some(close) => match close.code {
+                                CloseCode::Normal | CloseCode::Away => DisconnectReason::Normal,
+                                _ => DisconnectReason::Abnormal,
+                            },
+                            None => DisconnectReason::Abnormal,
+                        };
                     }
                     Some(Ok(Message::Text(text))) => {
                         handler.handle_text_message(&text).await;

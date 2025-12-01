@@ -6,14 +6,25 @@ use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
 use bloom_ws::{MockCore, SharedCore};
 use futures_util::{SinkExt, StreamExt};
 use std::env;
+use std::sync::OnceLock;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
+
+static ENV_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+async fn env_lock() -> tokio::sync::MutexGuard<'static, ()> {
+    ENV_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await
+}
 
 use common::*;
 
 /// 同一participant_idで新規接続したとき旧接続が優先的に切断されることを検証する
 #[tokio::test]
 async fn duplicate_participant_connection_disconnects_old_session() {
+    let _env_guard = env_lock().await;
     let fixed_id = ParticipantId::new().to_string();
     env::set_var("BLOOM_TEST_PARTICIPANT_ID", &fixed_id);
 
@@ -71,6 +82,7 @@ async fn duplicate_participant_connection_disconnects_old_session() {
 /// 旧接続が切断された後も新接続がブロードキャスト先として登録され続けることを検証する。
 #[tokio::test]
 async fn duplicate_participant_keeps_new_session_registered_for_broadcast() {
+    let _env_guard = env_lock().await;
     let fixed_id = ParticipantId::new().to_string();
     env::set_var("BLOOM_TEST_PARTICIPANT_ID", &fixed_id);
 

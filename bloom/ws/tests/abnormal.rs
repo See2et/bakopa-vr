@@ -9,7 +9,7 @@ use bloom_ws::MockCore;
 use futures_util::{SinkExt, StreamExt};
 use tokio::time::{self, Duration};
 use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Message};
 
 use common::*;
 
@@ -133,6 +133,73 @@ async fn abnormal_close_triggers_single_leave_and_broadcasts() {
 
     let core = core_arc.lock().expect("lock core");
     assert_eq!(core.leave_room_calls.len(), 1);
+}
+
+/// Close(Normal) は異常扱いせず、leave_room を呼ばないことを検証する。
+#[tokio::test]
+async fn normal_close_does_not_trigger_abnormal_leave() {
+    time::pause();
+
+    let mock_core = MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    })
+    .with_join_result(Some(Ok(vec![])))
+    .with_leave_result(Some(vec![ParticipantId::new()]));
+    let core_arc = std::sync::Arc::new(std::sync::Mutex::new(mock_core));
+    let shared_core = bloom_ws::SharedCore::from_arc(core_arc.clone());
+
+    let (server_url, _handle) = spawn_bloom_ws_server_with_core(shared_core).await;
+
+    // A: CreateRoom
+    let (mut ws_a, _) = connect_async(&server_url).await.expect("connect A");
+    ws_a
+        .send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+        .await
+        .expect("send create room");
+    let room_created = recv_server_msg(&mut ws_a).await;
+    let (room_id_str, _) = match room_created {
+        ServerToClient::RoomCreated { room_id, self_id } => (room_id, self_id),
+        other => panic!("expected RoomCreated, got {:?}", other),
+    };
+
+    // B: JoinRoom
+    let (mut ws_b, _) = connect_async(&server_url).await.expect("connect B");
+    ws_b
+        .send(Message::Text(format!(
+            r#"{{"type":"JoinRoom","room_id":"{room_id}"}}"#,
+            room_id = room_id_str
+        )))
+        .await
+        .expect("send join room");
+    // 初期通知を捨てる
+    for _ in 0..3 {
+        match tokio::time::timeout(std::time::Duration::from_millis(50), ws_b.next()).await {
+            Ok(Some(Ok(Message::Text(_)))) => {}
+            _ => break,
+        }
+    }
+
+    // A 正常Close（CloseCode::Normal）
+    ws_a
+        .close(Some(CloseFrame {
+            code: CloseCode::Normal,
+            reason: "".into(),
+        }))
+        .await
+        .expect("close ws_a with Normal");
+
+    tokio::task::yield_now().await;
+    time::advance(Duration::from_millis(20)).await;
+    tokio::task::yield_now().await;
+
+    // 猶予を過ぎても leave_room は呼ばれない
+    time::advance(bloom_ws::ABNORMAL_DISCONNECT_GRACE + Duration::from_millis(50)).await;
+    tokio::task::yield_now().await;
+
+    let core = core_arc.lock().expect("lock core");
+    assert_eq!(core.leave_room_calls.len(), 0);
 }
 
 /// 異常切断時にleave_roomを即時呼ばず、猶予時間経過後に呼ぶことを検証する。
