@@ -203,6 +203,16 @@ impl WebSocketBroadcast {
         let mut map = self.peers.lock().await;
         map.remove(participant);
     }
+
+    /// 現在登録されているsinkが指定sinkと同一の場合のみ削除する（重複接続の新旧判定に使用）。
+    pub async fn remove_if_same(&self, participant: &ParticipantId, sink: &SharedSink) {
+        let mut map = self.peers.lock().await;
+        if let Some(current) = map.get(participant) {
+            if Arc::ptr_eq(current, sink) {
+                map.remove(participant);
+            }
+        }
+    }
 }
 
 impl BroadcastSink for WebSocketBroadcast {
@@ -325,7 +335,15 @@ where
         PingConfig::default(),
     )
     .await;
-    handle_disconnect(&mut handler, &peers, &broadcast, &participant_id, reason).await;
+    handle_disconnect(
+        &mut handler,
+        &peers,
+        &broadcast,
+        &participant_id,
+        reason,
+        sink.clone(),
+    )
+    .await;
 
     Ok(())
 }
@@ -411,6 +429,7 @@ async fn handle_disconnect<C>(
     broadcast: &WebSocketBroadcast,
     participant_id: &ParticipantId,
     reason: DisconnectReason,
+    sink: SharedSink,
 ) where
     C: CoreApi + Send + 'static,
 {
@@ -419,7 +438,7 @@ async fn handle_disconnect<C>(
     }
     let remaining = remaining_peers(peers, participant_id).await;
     handler.handle_abnormal_close(&remaining).await;
-    broadcast.remove(participant_id).await;
+    broadcast.remove_if_same(participant_id, &sink).await;
 }
 
 async fn remaining_peers(peers: &PeerMap, exclude: &ParticipantId) -> Vec<ParticipantId> {
