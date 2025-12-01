@@ -3,7 +3,7 @@ mod common;
 
 use bloom_api::ServerToClient;
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
-use bloom_ws::{MockCore, RealCore, SharedCore, CoreApi};
+use bloom_ws::{CoreApi, MockCore, RealCore, SharedCore};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;

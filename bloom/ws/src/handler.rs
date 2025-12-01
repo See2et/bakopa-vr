@@ -229,7 +229,10 @@ where
             }
         };
 
-        match self.core.relay_offer(&room_id, &self.participant_id, &to_id, payload) {
+        match self
+            .core
+            .relay_offer(&room_id, &self.participant_id, &to_id, payload)
+        {
             Ok(action) => {
                 self.broadcast.send_to(&action.to, action.message);
             }
@@ -256,7 +259,10 @@ where
             }
         };
 
-        match self.core.relay_answer(&room_id, &self.participant_id, &to_id, payload) {
+        match self
+            .core
+            .relay_answer(&room_id, &self.participant_id, &to_id, payload)
+        {
             Ok(action) => {
                 self.broadcast.send_to(&action.to, action.message);
             }

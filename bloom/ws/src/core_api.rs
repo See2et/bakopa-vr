@@ -1,6 +1,6 @@
+use bloom_api::ServerToClient;
 use bloom_api::{RelayIce, RelaySdp};
 use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
-use bloom_api::ServerToClient;
 
 /// Core domain API that the WebSocket layer depends on.
 pub trait CoreApi {

@@ -51,9 +51,9 @@ async fn handshake_returns_switching_protocols_and_sets_participant_span() {
     handle.shutdown().await;
 }
 
-/// /ws 以外のパスに対するHTTP応答が426 Upgrade RequiredかつUpgrade/Connectionヘッダを含むことを検証する。
+/// /ws 以外のパスに対するHTTP応答が404となり、Upgrade/Connectionヘッダを付与しないことを検証する。
 #[tokio::test]
-async fn non_ws_path_returns_426_with_upgrade_headers() {
+async fn non_ws_path_returns_404_without_upgrade_headers() {
     let core = SharedCore::new(MockCore::new(CreateRoomResult {
         room_id: RoomId::new(),
         self_id: ParticipantId::new(),
@@ -78,6 +78,73 @@ Upgrade: websocket\r\n\
 Connection: Upgrade\r\n\
 Sec-WebSocket-Key: dummydummydummydummy==\r\n\
 Sec-WebSocket-Version: 13\r\n\
+\r\n"
+    );
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .expect("write request");
+    let mut buf = Vec::new();
+    stream.read_to_end(&mut buf).await.expect("read response");
+    let resp_str = String::from_utf8_lossy(&buf);
+
+    // ステータス行とヘッダを手動で解析
+    let mut lines = resp_str.lines();
+    let status_line = lines.next().unwrap_or("");
+    assert!(
+        status_line.contains("404"),
+        "status line should contain 404, got {status_line}"
+    );
+    let mut upgrade_hdr = "";
+    let mut connection_hdr = "";
+    for line in lines {
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("upgrade:") {
+            upgrade_hdr = line.splitn(2, ':').nth(1).unwrap_or("").trim();
+        } else if lower.starts_with("connection:") {
+            connection_hdr = line.splitn(2, ':').nth(1).unwrap_or("").trim();
+        }
+        if line.is_empty() {
+            break;
+        }
+    }
+    assert!(
+        upgrade_hdr.is_empty(),
+        "Upgrade header should be absent for non-ws path, got '{upgrade_hdr}'"
+    );
+    assert!(
+        connection_hdr.is_empty(),
+        "Connection header should be absent for non-ws path, got '{connection_hdr}'"
+    );
+
+    handle.shutdown().await;
+}
+
+/// /ws へのリクエストで Upgrade ヘッダが欠如している場合に 426 を返し、Upgrade/Connection ヘッダを要求することを検証する。
+#[tokio::test]
+async fn ws_path_without_upgrade_header_returns_426_with_upgrade_headers() {
+    let core = SharedCore::new(MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    }));
+    let (server_url, handle) = spawn_bloom_ws_server_with_core(core).await;
+
+    // Upgradeヘッダを抜いた /ws へのHTTPリクエスト
+    let host = server_url
+        .strip_prefix("ws://")
+        .expect("ws url")
+        .to_string();
+    let mut parts = host.split('/');
+    let authority = parts.next().unwrap();
+
+    let mut stream = tokio::net::TcpStream::connect(authority)
+        .await
+        .expect("connect tcp");
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let req = format!(
+        "GET /ws HTTP/1.1\r\n\
+Host: {authority}\r\n\
 \r\n"
     );
     stream

@@ -1103,10 +1103,20 @@ mod tests {
 
         let broadcast = SharedBroadcastSink::default();
 
-        let mut handler_a = WsHandler::new(core_a, p1.clone(), RecordingSink::default(), broadcast.clone());
+        let mut handler_a = WsHandler::new(
+            core_a,
+            p1.clone(),
+            RecordingSink::default(),
+            broadcast.clone(),
+        );
         handler_a.room_id = Some(room_a.clone());
 
-        let mut handler_b = WsHandler::new(core_b, q1.clone(), RecordingSink::default(), broadcast.clone());
+        let mut handler_b = WsHandler::new(
+            core_b,
+            q1.clone(),
+            RecordingSink::default(),
+            broadcast.clone(),
+        );
         handler_b.room_id = Some(room_b.clone());
 
         handler_a.handle_abnormal_close().await;
