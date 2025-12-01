@@ -6,7 +6,7 @@ mod real_core;
 mod server;
 mod sinks;
 
-pub use core_api::CoreApi;
+pub use core_api::{CoreApi, RelayAction};
 pub use handler::{HandshakeResponse, WsHandler};
 pub use mocks::MockCore;
 pub use rate_limit::{

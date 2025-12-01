@@ -229,16 +229,9 @@ where
             }
         };
 
-        match self
-            .core
-            .relay_offer(&room_id, &self.participant_id, &to_id, payload.clone())
-        {
-            Ok(_) => {
-                let event = ServerToClient::Offer {
-                    from: self.participant_id.to_string(),
-                    payload,
-                };
-                self.broadcast.send_to(&to_id, event);
+        match self.core.relay_offer(&room_id, &self.participant_id, &to_id, payload) {
+            Ok(action) => {
+                self.broadcast.send_to(&action.to, action.message);
             }
             Err(code) => {
                 self.send_error(code, "failed to relay offer");
@@ -263,16 +256,9 @@ where
             }
         };
 
-        match self
-            .core
-            .relay_answer(&room_id, &self.participant_id, &to_id, payload.clone())
-        {
-            Ok(_) => {
-                let event = ServerToClient::Answer {
-                    from: self.participant_id.to_string(),
-                    payload,
-                };
-                self.broadcast.send_to(&to_id, event);
+        match self.core.relay_answer(&room_id, &self.participant_id, &to_id, payload) {
+            Ok(action) => {
+                self.broadcast.send_to(&action.to, action.message);
             }
             Err(code) => {
                 self.send_error(code, "failed to relay answer");
@@ -299,14 +285,10 @@ where
 
         match self
             .core
-            .relay_ice_candidate(&room_id, &self.participant_id, &to_id, payload.clone())
+            .relay_ice_candidate(&room_id, &self.participant_id, &to_id, payload)
         {
-            Ok(_) => {
-                let event = ServerToClient::IceCandidate {
-                    from: self.participant_id.to_string(),
-                    payload,
-                };
-                self.broadcast.send_to(&to_id, event);
+            Ok(action) => {
+                self.broadcast.send_to(&action.to, action.message);
             }
             Err(code) => {
                 self.send_error(code, "failed to relay ice");

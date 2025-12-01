@@ -1,5 +1,6 @@
 use bloom_api::{RelayIce, RelaySdp};
 use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
+use bloom_api::ServerToClient;
 
 /// Core domain API that the WebSocket layer depends on.
 pub trait CoreApi {
@@ -23,21 +24,28 @@ pub trait CoreApi {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: RelaySdp,
-    ) -> Result<(), bloom_api::ErrorCode>;
+    ) -> Result<RelayAction, bloom_api::ErrorCode>;
     fn relay_answer(
         &mut self,
         room_id: &RoomId,
         from: &ParticipantId,
         to: &ParticipantId,
         payload: RelaySdp,
-    ) -> Result<(), bloom_api::ErrorCode>;
+    ) -> Result<RelayAction, bloom_api::ErrorCode>;
     fn relay_ice_candidate(
         &mut self,
         room_id: &RoomId,
         from: &ParticipantId,
         to: &ParticipantId,
         payload: RelayIce,
-    ) -> Result<(), bloom_api::ErrorCode>;
+    ) -> Result<RelayAction, bloom_api::ErrorCode>;
+}
+
+/// Coreが決定した配送内容をWS層が実行するための指示。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelayAction {
+    pub to: ParticipantId,
+    pub message: ServerToClient,
 }
 
 /// Coreからハンドラへ流れてくるイベントを受け取るためのフック。

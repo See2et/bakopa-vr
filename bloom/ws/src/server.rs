@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use bloom_api::ServerToClient;
+use bloom_api::{ServerToClient, ErrorCode};
 use bloom_core::ParticipantId;
 use futures_util::{SinkExt, StreamExt};
 use std::str::FromStr;
@@ -16,7 +16,7 @@ use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Message};
 use tokio_tungstenite::WebSocketStream;
 
-use crate::core_api::CoreApi;
+use crate::core_api::{CoreApi, RelayAction};
 use crate::handler::WsHandler;
 use crate::sinks::{BroadcastSink, OutSink};
 
@@ -115,7 +115,7 @@ impl<C: CoreApi> CoreApi for SharedCore<C> {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: bloom_api::RelaySdp,
-    ) -> Result<(), bloom_api::ErrorCode> {
+    ) -> Result<RelayAction, ErrorCode> {
         self.inner
             .lock()
             .expect("core lock poisoned")
@@ -128,7 +128,7 @@ impl<C: CoreApi> CoreApi for SharedCore<C> {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: bloom_api::RelaySdp,
-    ) -> Result<(), bloom_api::ErrorCode> {
+    ) -> Result<RelayAction, ErrorCode> {
         self.inner
             .lock()
             .expect("core lock poisoned")
@@ -141,7 +141,7 @@ impl<C: CoreApi> CoreApi for SharedCore<C> {
         from: &ParticipantId,
         to: &ParticipantId,
         payload: bloom_api::RelayIce,
-    ) -> Result<(), bloom_api::ErrorCode> {
+    ) -> Result<RelayAction, ErrorCode> {
         self.inner
             .lock()
             .expect("core lock poisoned")
