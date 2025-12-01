@@ -409,11 +409,14 @@ where
             _ = ping_timer.tick() => {
                 let _ = sink.lock().await.send(Message::Ping(Vec::new())).await;
                 if last_pong.elapsed() >= ping_cfg.interval * ping_cfg.miss_allowed {
-                    let _ = sink.lock().await.send(Message::Close(Some(CloseFrame {
-                        code: CloseCode::Abnormal,
-                        reason: "ping timeout".into(),
-                    })))
-                    .await;
+                    let _ = sink
+                        .lock()
+                        .await
+                        .send(Message::Close(Some(CloseFrame {
+                            code: PING_TIMEOUT_CLOSE_CODE,
+                            reason: "ping timeout".into(),
+                        })))
+                        .await;
                     reason = Some(DisconnectReason::Abnormal);
                     break;
                 }
@@ -451,3 +454,7 @@ enum DisconnectReason {
     Normal,
     Abnormal,
 }
+
+/// Ping/Pong途絶時に送信するCloseCode。1006(Abnormal)は禁止されているためAway(1001)を用いる。
+pub const PING_TIMEOUT_CLOSE_CODE: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode =
+    tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Away;

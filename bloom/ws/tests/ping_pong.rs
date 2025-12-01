@@ -39,3 +39,14 @@ async fn server_sends_periodic_ping_and_disconnects_on_missing_pong() {
     .await;
     assert!(recv.is_ok(), "should receive at least one Ping from server");
 }
+
+/// Ping/Pong途絶時に送られるクローズコードがAwayであることを（定数を通じて）確認する。
+#[test]
+fn ping_timeout_close_code_is_away() {
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+    assert_eq!(
+        bloom_ws::PING_TIMEOUT_CLOSE_CODE,
+        CloseCode::Away,
+        "仕様上送信可能なAway(1001)を用いるべき"
+    );
+}

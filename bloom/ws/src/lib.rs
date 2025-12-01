@@ -14,7 +14,7 @@ pub use rate_limit::{
 };
 pub use server::{
     start_ws_server, SharedCore, WebSocketBroadcast, WebSocketOutSink, WsServerHandle,
-    ABNORMAL_DISCONNECT_GRACE,
+    ABNORMAL_DISCONNECT_GRACE, PING_TIMEOUT_CLOSE_CODE,
 };
 pub use sinks::{
     BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink,
