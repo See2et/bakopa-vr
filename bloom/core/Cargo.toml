@@ -1,0 +1,11 @@
+[package]
+name = "bloom-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uuid = { version = "1.18.1", features = ["v4"] }
+bloom-api = { path = "../api" }
+
+[dev-dependencies]
+serde_json = "1"
