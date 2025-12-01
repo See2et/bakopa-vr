@@ -435,8 +435,8 @@ async fn handle_disconnect<C>(
 {
     if matches!(reason, DisconnectReason::Abnormal) {
         tokio::time::sleep(ABNORMAL_DISCONNECT_GRACE).await;
+        handler.handle_abnormal_close().await;
     }
-    handler.handle_abnormal_close().await;
     broadcast.remove_if_same(participant_id, &sink).await;
 }
 
