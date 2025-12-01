@@ -2,18 +2,23 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use bloom_api::{ServerToClient, ErrorCode};
+use bloom_api::{ErrorCode, ServerToClient};
 use bloom_core::ParticipantId;
 use futures_util::{SinkExt, StreamExt};
 use std::str::FromStr;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration, Instant};
-use tokio_tungstenite::accept_hdr_async;
-use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+use tokio_tungstenite::tungstenite::handshake::machine::TryParse;
+use tokio_tungstenite::tungstenite::handshake::server::{
+    create_response, write_response, Request, Response,
+};
 use tokio_tungstenite::tungstenite::http::StatusCode;
-use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Message};
+use tokio_tungstenite::tungstenite::protocol::{
+    frame::coding::CloseCode, CloseFrame, Message, Role,
+};
 use tokio_tungstenite::WebSocketStream;
 
 use crate::core_api::{CoreApi, RelayAction};
@@ -26,6 +31,7 @@ type SharedSink = Arc<Mutex<WsSink>>;
 type PeerMap = Arc<Mutex<HashMap<ParticipantId, SharedSink>>>;
 
 pub const ABNORMAL_DISCONNECT_GRACE: Duration = Duration::from_secs(5);
+const MAX_HANDSHAKE_SIZE: usize = 8 * 1024;
 
 #[derive(Clone, Debug)]
 struct PingConfig {
@@ -288,6 +294,56 @@ where
     })
 }
 
+fn has_upgrade_headers(req: &Request) -> bool {
+    let connection_ok = req
+        .headers()
+        .get("Connection")
+        .and_then(|h| h.to_str().ok())
+        .map(|h| {
+            h.split(|c| c == ' ' || c == ',')
+                .any(|p| p.eq_ignore_ascii_case("upgrade"))
+        })
+        .unwrap_or(false);
+
+    let upgrade_ok = req
+        .headers()
+        .get("Upgrade")
+        .and_then(|h| h.to_str().ok())
+        .map(|h| h.eq_ignore_ascii_case("websocket"))
+        .unwrap_or(false);
+
+    connection_ok && upgrade_ok
+}
+
+async fn read_handshake_request(stream: &mut TcpStream) -> anyhow::Result<(Request, Vec<u8>)> {
+    let mut buf = Vec::with_capacity(1024);
+    loop {
+        if buf.len() >= MAX_HANDSHAKE_SIZE {
+            anyhow::bail!("handshake request too large");
+        }
+
+        let mut chunk = [0u8; 1024];
+        let n = stream.read(&mut chunk).await?;
+        if n == 0 {
+            anyhow::bail!("connection closed before handshake");
+        }
+        buf.extend_from_slice(&chunk[..n]);
+
+        if let Some((size, req)) = Request::try_parse(&buf)? {
+            let tail = buf.split_off(size);
+            return Ok((req, tail));
+        }
+    }
+}
+
+async fn write_http_response(stream: &mut TcpStream, response: &Response) -> anyhow::Result<()> {
+    let mut output = Vec::new();
+    write_response(&mut output, response)?;
+    stream.write_all(&output).await?;
+    stream.flush().await?;
+    Ok(())
+}
+
 async fn handle_connection<C>(
     stream: TcpStream,
     core: SharedCore<C>,
@@ -303,22 +359,40 @@ where
     let span = tracing::info_span!("ws_handshake", participant_id = %participant_id);
     let _enter = span.enter();
 
-    let callback = |req: &Request, resp: Response| {
-        if req.uri().path() != "/ws" {
-            let resp = Response::builder()
-                .status(StatusCode::UPGRADE_REQUIRED)
-                .header("Upgrade", "websocket")
-                .header("Connection", "Upgrade")
-                .body(None)
-                .expect("build 426 response");
-            Err(resp)
-        } else {
-            Ok(resp)
-        }
-    };
+    let mut stream = stream;
+    let (request, tail) = read_handshake_request(&mut stream).await?;
+
+    if request.uri().path() != "/ws" {
+        let resp = Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .version(request.version())
+            .body(())
+            .expect("build 404 response");
+        write_http_response(&mut stream, &resp).await?;
+        return Ok(());
+    }
+
+    if !has_upgrade_headers(&request) {
+        let resp = Response::builder()
+            .status(StatusCode::UPGRADE_REQUIRED)
+            .version(request.version())
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .body(())
+            .expect("build 426 response");
+        write_http_response(&mut stream, &resp).await?;
+        return Ok(());
+    }
 
     // WS handshake (only /ws is allowed)
-    let ws_stream = accept_hdr_async(stream, callback).await?;
+    let response = create_response(&request)?;
+    write_http_response(&mut stream, &response).await?;
+
+    let ws_stream = if tail.is_empty() {
+        WebSocketStream::from_raw_socket(stream, Role::Server, None).await
+    } else {
+        WebSocketStream::from_partially_read(stream, tail, Role::Server, None).await
+    };
     let (sink, mut stream) = ws_stream.split();
     let sink = Arc::new(Mutex::new(sink));
 
@@ -449,5 +523,6 @@ enum DisconnectReason {
 }
 
 /// Ping/Pong途絶時に送信するCloseCode。1006(Abnormal)は禁止されているためAway(1001)を用いる。
-pub const PING_TIMEOUT_CLOSE_CODE: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode =
+pub const PING_TIMEOUT_CLOSE_CODE:
+    tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode =
     tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Away;

@@ -17,15 +17,14 @@ use logging_common::*;
 #[tokio::test]
 async fn handshake_emits_span_with_participant_id_field_over_ws() {
     let (layer, _guard) = setup_tracing();
-    let (server_url, handle) =
-        spawn_bloom_ws_server_with_core(bloom_ws::SharedCore::new(bloom_ws::MockCore::new(
-            bloom_core::CreateRoomResult {
-                room_id: bloom_core::RoomId::new(),
-                self_id: bloom_core::ParticipantId::new(),
-                participants: vec![],
-            },
-        )))
-        .await;
+    let (server_url, handle) = spawn_bloom_ws_server_with_core(bloom_ws::SharedCore::new(
+        bloom_ws::MockCore::new(bloom_core::CreateRoomResult {
+            room_id: bloom_core::RoomId::new(),
+            self_id: bloom_core::ParticipantId::new(),
+            participants: vec![],
+        }),
+    ))
+    .await;
 
     let (_ws_stream, _response) = connect_async(&server_url)
         .await

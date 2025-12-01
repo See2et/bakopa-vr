@@ -154,8 +154,7 @@ async fn normal_close_does_not_trigger_abnormal_leave() {
 
     // A: CreateRoom
     let (mut ws_a, _) = connect_async(&server_url).await.expect("connect A");
-    ws_a
-        .send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+    ws_a.send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
         .await
         .expect("send create room");
     let room_created = recv_server_msg(&mut ws_a).await;
@@ -166,13 +165,12 @@ async fn normal_close_does_not_trigger_abnormal_leave() {
 
     // B: JoinRoom
     let (mut ws_b, _) = connect_async(&server_url).await.expect("connect B");
-    ws_b
-        .send(Message::Text(format!(
-            r#"{{"type":"JoinRoom","room_id":"{room_id}"}}"#,
-            room_id = room_id_str
-        )))
-        .await
-        .expect("send join room");
+    ws_b.send(Message::Text(format!(
+        r#"{{"type":"JoinRoom","room_id":"{room_id}"}}"#,
+        room_id = room_id_str
+    )))
+    .await
+    .expect("send join room");
     // 初期通知を捨てる
     for _ in 0..3 {
         match tokio::time::timeout(std::time::Duration::from_millis(50), ws_b.next()).await {
@@ -182,13 +180,12 @@ async fn normal_close_does_not_trigger_abnormal_leave() {
     }
 
     // A 正常Close（CloseCode::Normal）
-    ws_a
-        .close(Some(CloseFrame {
-            code: CloseCode::Normal,
-            reason: "".into(),
-        }))
-        .await
-        .expect("close ws_a with Normal");
+    ws_a.close(Some(CloseFrame {
+        code: CloseCode::Normal,
+        reason: "".into(),
+    }))
+    .await
+    .expect("close ws_a with Normal");
 
     tokio::task::yield_now().await;
     time::advance(Duration::from_millis(20)).await;

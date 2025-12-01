@@ -3,8 +3,8 @@ use bloom_ws::{start_ws_server, MockCore, SharedCore, WsServerHandle};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
 pub async fn spawn_bloom_ws_server_with_core<C: bloom_ws::CoreApi + Send + 'static>(
     core: SharedCore<C>,

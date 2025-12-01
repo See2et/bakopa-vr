@@ -158,7 +158,10 @@ async fn udp_socket_bind_on_ws_port_succeeds() {
     let (_server_url, handle) = spawn_bloom_ws_server_with_core(shared_core).await;
 
     let udp_bind = UdpSocket::bind(handle.addr).await;
-    assert!(udp_bind.is_ok(), "UDP bind on ws port should succeed because Bloom does not open UDP sockets");
+    assert!(
+        udp_bind.is_ok(),
+        "UDP bind on ws port should succeed because Bloom does not open UDP sockets"
+    );
 
     handle.shutdown().await;
 }
