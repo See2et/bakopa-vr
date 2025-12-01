@@ -307,6 +307,8 @@ where
         if req.uri().path() != "/ws" {
             let resp = Response::builder()
                 .status(StatusCode::UPGRADE_REQUIRED)
+                .header("Upgrade", "websocket")
+                .header("Connection", "Upgrade")
                 .body(None)
                 .expect("build 426 response");
             Err(resp)

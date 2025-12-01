@@ -51,6 +51,75 @@ async fn handshake_returns_switching_protocols_and_sets_participant_span() {
     handle.shutdown().await;
 }
 
+/// /ws 以外のパスに対するHTTP応答が426 Upgrade RequiredかつUpgrade/Connectionヘッダを含むことを検証する。
+#[tokio::test]
+async fn non_ws_path_returns_426_with_upgrade_headers() {
+    let core = SharedCore::new(MockCore::new(CreateRoomResult {
+        room_id: RoomId::new(),
+        self_id: ParticipantId::new(),
+        participants: vec![],
+    }));
+    let (server_url, handle) = spawn_bloom_ws_server_with_core(core).await;
+
+    // /ws ではなく /foo にHTTPリクエスト（素朴なTCPで十分）
+    let url = server_url.replace("/ws", "/foo");
+    let host = url.strip_prefix("ws://").expect("ws url").to_string();
+    let mut parts = host.split('/');
+    let authority = parts.next().unwrap();
+
+    let mut stream = tokio::net::TcpStream::connect(authority)
+        .await
+        .expect("connect tcp");
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let req = format!(
+        "GET /foo HTTP/1.1\r\n\
+Host: {authority}\r\n\
+Upgrade: websocket\r\n\
+Connection: Upgrade\r\n\
+Sec-WebSocket-Key: dummydummydummydummy==\r\n\
+Sec-WebSocket-Version: 13\r\n\
+\r\n"
+    );
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .expect("write request");
+    let mut buf = Vec::new();
+    stream.read_to_end(&mut buf).await.expect("read response");
+    let resp_str = String::from_utf8_lossy(&buf);
+
+    // ステータス行とヘッダを手動で解析
+    let mut lines = resp_str.lines();
+    let status_line = lines.next().unwrap_or("");
+    assert!(
+        status_line.contains("426"),
+        "status line should contain 426, got {status_line}"
+    );
+    let mut upgrade_hdr = "";
+    let mut connection_hdr = "";
+    for line in lines {
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("upgrade:") {
+            upgrade_hdr = line.splitn(2, ':').nth(1).unwrap_or("").trim();
+        } else if lower.starts_with("connection:") {
+            connection_hdr = line.splitn(2, ':').nth(1).unwrap_or("").trim();
+        }
+        if line.is_empty() {
+            break;
+        }
+    }
+    assert!(
+        upgrade_hdr.to_ascii_lowercase().contains("websocket"),
+        "Upgrade header should include websocket, got '{upgrade_hdr}'"
+    );
+    assert!(
+        connection_hdr.to_ascii_lowercase().contains("upgrade"),
+        "Connection header should include Upgrade, got '{connection_hdr}'"
+    );
+
+    handle.shutdown().await;
+}
+
 /// CreateRoomを送信するとRoomCreatedが返り、coreが一度呼ばれることを検証。
 #[tokio::test]
 async fn create_room_returns_room_created_and_calls_core_once() {
