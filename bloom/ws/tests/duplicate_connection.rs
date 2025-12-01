@@ -3,7 +3,7 @@ mod common;
 
 use bloom_api::ServerToClient;
 use bloom_core::{CreateRoomResult, ParticipantId, RoomId};
-use bloom_ws::MockCore;
+use bloom_ws::{MockCore, SharedCore};
 use futures_util::{SinkExt, StreamExt};
 use std::env;
 use tokio_tungstenite::connect_async;
@@ -64,6 +64,93 @@ async fn duplicate_participant_connection_disconnects_old_session() {
         ServerToClient::RoomCreated { .. } => {}
         other => panic!("new connection should remain active, got {:?}", other),
     }
+
+    env::remove_var("BLOOM_TEST_PARTICIPANT_ID");
+}
+
+/// 旧接続が切断された後も新接続がブロードキャスト先として登録され続けることを検証する。
+#[tokio::test]
+async fn duplicate_participant_keeps_new_session_registered_for_broadcast() {
+    let fixed_id = ParticipantId::new().to_string();
+    env::set_var("BLOOM_TEST_PARTICIPANT_ID", &fixed_id);
+
+    // 実Coreで参加者リストを自然に管理させる
+    let shared_core = SharedCore::new(bloom_ws::RealCore::new());
+    let (server_url, _handle) = spawn_bloom_ws_server_with_core(shared_core).await;
+
+    // 1本目の接続（旧）
+    let (mut ws_old, _) = connect_async(&server_url).await.expect("connect old");
+
+    // 2本目の接続（新）— この時点で旧接続へのCloseが飛ぶ
+    let (mut ws_new, _) = connect_async(&server_url).await.expect("connect new");
+
+    // 旧接続がCloseされるのを確認しておく（その後の残存処理を完了させるため）
+    let _ = tokio::time::timeout(std::time::Duration::from_millis(200), async {
+        loop {
+            match ws_old.next().await {
+                Some(Ok(Message::Close(_))) => break,
+                Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => continue,
+                Some(Ok(_)) => continue,
+                Some(Err(_)) => break,
+                None => break,
+            }
+        }
+    })
+    .await;
+
+    // 新接続でRoomを作成
+    ws_new
+        .send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+        .await
+        .expect("send create room on new");
+    let room_created = recv_server_msg(&mut ws_new).await;
+    let room_id = match room_created {
+        ServerToClient::RoomCreated { room_id, .. } => room_id,
+        other => panic!("expected RoomCreated, got {:?}", other),
+    };
+
+    // joinerは別participantにするため、固定ID設定を解除する
+    env::remove_var("BLOOM_TEST_PARTICIPANT_ID");
+
+    // 別participantでJoinし、オーナー（新接続）へブロードキャストされることを期待
+    let (mut ws_joiner, _) = connect_async(&server_url).await.expect("connect joiner");
+    ws_joiner
+        .send(Message::Text(format!(
+            r#"{{"type":"JoinRoom","room_id":"{room_id}"}}"#
+        )))
+        .await
+        .expect("send join");
+    let _ = recv_server_msg(&mut ws_joiner).await; // joiner側の初回応答を消費
+
+    // オーナー側でPeerConnectedまたはRoomParticipantsを受信できるか確認
+    let received = tokio::time::timeout(std::time::Duration::from_millis(500), async {
+        loop {
+            match ws_new.next().await {
+                Some(Ok(Message::Text(t))) => {
+                    if let Ok(evt) = serde_json::from_str::<ServerToClient>(&t) {
+                        match evt {
+                            ServerToClient::PeerConnected { .. } => return true,
+                            ServerToClient::RoomParticipants { participants, .. } => {
+                                if participants.len() >= 2 {
+                                    return true;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => break,
+            }
+        }
+        false
+    })
+    .await
+    .unwrap_or(false);
+
+    assert!(
+        received,
+        "new session should stay registered and receive broadcast after duplicate close"
+    );
 
     env::remove_var("BLOOM_TEST_PARTICIPANT_ID");
 }
