@@ -131,7 +131,7 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 
 1. **戻り値は `anyhow::Result<T>` を使うのは「最上位だけ」**
    - `main` や CLI ハンドラ、HTTP サーバのエントリポイントなど、  
-     「最終的にログを出して終了／レスポンスに変換する層」に限定して `anyhow::Result<()>` を使う。:contentReference[oaicite:4]{index=4}
+     「最終的にログを出して終了／レスポンスに変換する層」に限定して `anyhow::Result<()>` を使う。
    - ドメインロジックにまで `anyhow::Result` を広げない。
 
    ```rust
