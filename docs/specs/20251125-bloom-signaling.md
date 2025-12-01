@@ -48,8 +48,6 @@ Bloomはシグナリング専用の役割を担い、クライアント⇔Bloom�
     - 振る舞い: 21 件目で `RateLimited` エラーを即時返却し、同一セッションではその後 1 秒間の到着メッセージをすべてドロップし `RateLimited` のみ返す。1 秒経過後にカウントをリセットして再度受け付ける。
 
 ## 非機能要件
-- レイテンシ: シグナリング1ホップあたりp95 < 50ms（プロセス内計測）。
-- 信頼性: 1 Room 8人接続・Offer/Answer/ICE計50メッセージ/秒まで落ちず処理。
 - ロギング: `tracing`でspan単位にroom_id/participant_idを必須フィールドとして付与。subscriber初期化はbinary側。
 - ロギング: `tracing`でspan単位にroom_id/participant_idを必須フィールドとして付与。subscriber初期化はbinary側。
   - WSハンドラ（handshake含む）では、各spanに少なくとも`participant_id`フィールドを必ず載せる。
