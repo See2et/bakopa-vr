@@ -19,3 +19,4 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros", "time", "test-util"] }
 tracing-subscriber = { version = "0.3", features = ["fmt", "registry"] }
+uuid = { version = "1.18.1", features = ["v4"] }
