@@ -66,7 +66,7 @@ Bloomはシグナリング専用の役割を担い、クライアント⇔Bloom�
 6. P2P確立後、音声（SRTP）と位置/テキスト（DataChannel）はクライアント間WebRTCで直接流れる。Bloomは関与しない。
 7. 切断/タイムアウト時、Bloomが`PeerDisconnected`と最新`RoomParticipants`をWSで通知。
 
-## WebSocketメッセージ仕様良めーじ（JSON）
+## WebSocketメッセージ仕様イメージ（JSON）
 ```
 // クライアント→Bloom
 { "type": "CreateRoom" }
