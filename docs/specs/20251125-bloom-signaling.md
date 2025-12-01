@@ -84,7 +84,7 @@ Bloomはシグナリング専用の役割を担い、クライアント⇔Bloom�
 { "type": "PeerConnected", "participant_id": "..." }
 { "type": "PeerDisconnected", "participant_id": "..." }
 { "type": "Offer" | "Answer" | "IceCandidate", "from": "participant_id", ...payload }
-{ "type": "Error", "code": "RoomFull" | "InvalidPayload" | "ParticipantNotFound" | "RateLimited" | "Internal", "message": "..." }
+{ "type": "Error", "code": "RoomFull" | "RoomNotFound" | "InvalidPayload" | "ParticipantNotFound" | "RateLimited" | "Internal", "message": "..." }
 ```
 
 ## WebSocket接続仕様（Handshake/Transport）

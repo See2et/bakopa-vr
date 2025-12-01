@@ -2,9 +2,9 @@ mod core_api;
 mod handler;
 mod mocks;
 mod rate_limit;
+mod real_core;
 mod server;
 mod sinks;
-mod real_core;
 
 pub use core_api::CoreApi;
 pub use handler::{HandshakeResponse, WsHandler};
@@ -12,6 +12,7 @@ pub use mocks::MockCore;
 pub use rate_limit::{
     Clock, DynClock, RateLimitConfig, RateLimitDecision, RateLimiter, SystemClock,
 };
+pub use real_core::RealCore;
 pub use server::{
     start_ws_server, SharedCore, WebSocketBroadcast, WebSocketOutSink, WsServerHandle,
     ABNORMAL_DISCONNECT_GRACE, PING_TIMEOUT_CLOSE_CODE,
@@ -20,7 +21,6 @@ pub use sinks::{
     BroadcastSink, NoopBroadcastSink, OutSink, RecordingBroadcastSink, RecordingSink,
     SharedBroadcastSink,
 };
-pub use real_core::RealCore;
 
 #[cfg(test)]
 mod tests {
@@ -707,6 +707,41 @@ mod tests {
             handler.sink.sent[0],
             ServerToClient::Error {
                 code: ErrorCode::RoomFull,
+                ..
+            }
+        ));
+        assert!(handler.broadcast.sent.is_empty());
+    }
+
+    /// JoinRoomで存在しないroom_idを指定した場合にRoomNotFoundエラーが返ることを確認。
+    #[tokio::test]
+    async fn join_room_not_found_returns_room_not_found_error() {
+        let room_id = RoomId::new();
+        let self_id = ParticipantId::new();
+
+        let core_result = CreateRoomResult {
+            room_id: room_id.clone(),
+            self_id: self_id.clone(),
+            participants: vec![self_id.clone()],
+        };
+
+        // join_room_result = None を返すモックで「存在しない」扱いにする
+        let core = MockCore::new(core_result).with_join_result(None);
+        let sink = RecordingSink::default();
+        let broadcast = RecordingBroadcastSink::default();
+        let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
+
+        handler.perform_handshake().await;
+        handler
+            .handle_text_message(&format!(r#"{{"type":"JoinRoom","room_id":"{}"}}"#, room_id))
+            .await;
+
+        assert_eq!(handler.core.join_room_calls.len(), 1);
+        assert_eq!(handler.sink.sent.len(), 1);
+        assert!(matches!(
+            handler.sink.sent[0],
+            ServerToClient::Error {
+                code: ErrorCode::RoomNotFound,
                 ..
             }
         ));
