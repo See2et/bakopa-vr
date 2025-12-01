@@ -1,15 +1,30 @@
 use bloom_api::ServerToClient;
-use bloom_ws::{start_ws_server, MockCore, SharedCore, WsServerHandle};
+use bloom_ws::{start_ws_server, start_ws_server_with_overrides, MockCore, ServerOverrides, SharedCore, WsServerHandle};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
+#[allow(dead_code)]
 pub async fn spawn_bloom_ws_server_with_core<C: bloom_ws::CoreApi + Send + 'static>(
     core: SharedCore<C>,
 ) -> (String, WsServerHandle) {
     let handle = start_ws_server("127.0.0.1:0".parse().unwrap(), core)
+        .await
+        .expect("start ws server");
+    let url = format!("ws://{}/ws", handle.addr);
+    (url, handle)
+}
+
+#[allow(dead_code)]
+pub async fn spawn_bloom_ws_server_with_core_and_overrides<
+    C: bloom_ws::CoreApi + Send + 'static,
+>(
+    core: SharedCore<C>,
+    overrides: ServerOverrides,
+) -> (String, WsServerHandle) {
+    let handle = start_ws_server_with_overrides("127.0.0.1:0".parse().unwrap(), core, overrides)
         .await
         .expect("start ws server");
     let url = format!("ws://{}/ws", handle.addr);

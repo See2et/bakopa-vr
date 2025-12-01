@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 use bloom_api::{ErrorCode, ServerToClient};
 use bloom_core::ParticipantId;
 use futures_util::{SinkExt, StreamExt};
-use std::str::FromStr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, Mutex};
@@ -32,6 +31,35 @@ type PeerMap = Arc<Mutex<HashMap<ParticipantId, SharedSink>>>;
 
 pub const ABNORMAL_DISCONNECT_GRACE: Duration = Duration::from_secs(5);
 const MAX_HANDSHAKE_SIZE: usize = 8 * 1024;
+
+#[derive(Clone)]
+pub struct ServerOverrides {
+    participant_id_provider: Arc<dyn Fn() -> Option<ParticipantId> + Send + Sync>,
+}
+
+impl Default for ServerOverrides {
+    fn default() -> Self {
+        Self {
+            participant_id_provider: Arc::new(|| None),
+        }
+    }
+}
+
+impl ServerOverrides {
+    pub fn with_participant_id_provider<F>(self, provider: F) -> Self
+    where
+        F: Fn() -> Option<ParticipantId> + Send + Sync + 'static,
+    {
+        Self {
+            participant_id_provider: Arc::new(provider),
+            ..self
+        }
+    }
+
+    fn participant_id(&self) -> Option<ParticipantId> {
+        (self.participant_id_provider)()
+    }
+}
 
 #[derive(Clone, Debug)]
 struct PingConfig {
@@ -257,12 +285,25 @@ pub async fn start_ws_server<C>(
 where
     C: CoreApi + Send + 'static,
 {
+    start_ws_server_with_overrides(bind_addr, core, ServerOverrides::default()).await
+}
+
+/// Start a WebSocket server with test-only overrides (e.g., participant_id provider).
+pub async fn start_ws_server_with_overrides<C>(
+    bind_addr: SocketAddr,
+    core: SharedCore<C>,
+    overrides: ServerOverrides,
+) -> anyhow::Result<WsServerHandle>
+where
+    C: CoreApi + Send + 'static,
+{
     let listener = TcpListener::bind(bind_addr).await?;
     let local_addr = listener.local_addr()?;
 
     let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
     let shared_core = core;
     let peers: PeerMap = Arc::new(Mutex::new(HashMap::new()));
+    let overrides = overrides;
 
     let join_handle = tokio::spawn(async move {
         loop {
@@ -277,8 +318,9 @@ where
                     };
                     let core = shared_core.clone();
                     let peers = peers.clone();
+                    let overrides = overrides.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(stream, core, peers).await {
+                        if let Err(e) = handle_connection(stream, core, peers, overrides).await {
                             tracing::warn!(error=%e, "ws connection error");
                         }
                     });
@@ -348,13 +390,13 @@ async fn handle_connection<C>(
     stream: TcpStream,
     core: SharedCore<C>,
     peers: PeerMap,
+    overrides: ServerOverrides,
 ) -> anyhow::Result<()>
 where
     C: CoreApi + Send + 'static,
 {
-    let participant_id = std::env::var("BLOOM_TEST_PARTICIPANT_ID")
-        .ok()
-        .and_then(|v| ParticipantId::from_str(&v).ok())
+    let participant_id = overrides
+        .participant_id()
         .unwrap_or_else(ParticipantId::new);
     let span = tracing::info_span!("ws_handshake", participant_id = %participant_id);
     let _enter = span.enter();
