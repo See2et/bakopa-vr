@@ -1058,7 +1058,7 @@ mod tests {
         let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast.clone());
         handler.room_id = Some(room_id.clone());
 
-        handler.handle_abnormal_close(&remaining).await;
+        handler.handle_abnormal_close().await;
 
         assert_eq!(handler.core.leave_room_calls.len(), 1);
 
@@ -1071,8 +1071,63 @@ mod tests {
                 .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &self_id.to_string())));
         }
 
-        handler.handle_abnormal_close(&remaining).await;
+        handler.handle_abnormal_close().await;
         assert_eq!(handler.core.leave_room_calls.len(), 1);
+    }
+
+    /// 異常切断時に他ルームの参加者へ通知が漏れないことを検証する（Red）。
+    #[tokio::test]
+    async fn abnormal_close_broadcasts_only_within_same_room() {
+        // room A: p1 -> disconnecting, p2 stays
+        // room B: q1 unrelated
+        let room_a = RoomId::new();
+        let room_b = RoomId::new();
+        let p1 = ParticipantId::new();
+        let p2 = ParticipantId::new();
+        let q1 = ParticipantId::new();
+
+        let core_a_result = CreateRoomResult {
+            room_id: room_a.clone(),
+            self_id: p1.clone(),
+            participants: vec![p1.clone(), p2.clone()],
+        };
+        let core_b_result = CreateRoomResult {
+            room_id: room_b.clone(),
+            self_id: q1.clone(),
+            participants: vec![q1.clone()],
+        };
+
+        // p1 leaves room A; remaining should be [p2]
+        let core_a = MockCore::new(core_a_result).with_leave_result(Some(vec![p2.clone()]));
+        let core_b = MockCore::new(core_b_result).with_leave_result(Some(vec![]));
+
+        let broadcast = SharedBroadcastSink::default();
+
+        let mut handler_a = WsHandler::new(core_a, p1.clone(), RecordingSink::default(), broadcast.clone());
+        handler_a.room_id = Some(room_a.clone());
+
+        let mut handler_b = WsHandler::new(core_b, q1.clone(), RecordingSink::default(), broadcast.clone());
+        handler_b.room_id = Some(room_b.clone());
+
+        handler_a.handle_abnormal_close().await;
+
+        // p2 (same room) receives disconnect + participants
+        let msgs_p2 = broadcast
+            .messages_for(&p2)
+            .expect("p2 should receive notifications");
+        assert!(msgs_p2
+            .iter()
+            .any(|m| matches!(m, ServerToClient::PeerDisconnected { participant_id } if participant_id == &p1.to_string())));
+        assert!(msgs_p2
+            .iter()
+            .any(|m| matches!(m, ServerToClient::RoomParticipants { participants, .. } if participants.len() == 1 && participants[0] == p2.to_string())));
+
+        // q1 (other room) must receive nothing
+        assert!(broadcast.messages_for(&q1).is_none());
+
+        // leave は1回だけ呼ばれる
+        assert_eq!(handler_a.core.leave_room_calls.len(), 1);
+        assert!(handler_b.core.leave_room_calls.is_empty());
     }
 
     /// coreイベント経由のPeerConnected/PeerDisconnectedが同一roomの全接続に配送されることを確認。
