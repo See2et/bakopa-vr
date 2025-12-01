@@ -228,7 +228,7 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 + pub struct EmailAddress(String);
 + pub struct EmailBody(String);
 + 
-* fn send_email(to: EmailAddress, body: EmailBody) { /* ... */ }
++ fn send_email(to: EmailAddress, body: EmailBody) { /* ... */ }
 ```
 
 ### 単純な抽象 (Simple Abstractions)
