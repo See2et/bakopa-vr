@@ -1,5 +1,8 @@
 use bloom_api::ServerToClient;
-use bloom_ws::{start_ws_server, start_ws_server_with_overrides, MockCore, ServerOverrides, SharedCore, WsServerHandle};
+use bloom_ws::{
+    start_ws_server, start_ws_server_with_overrides, MockCore, ServerOverrides, SharedCore,
+    WsServerHandle,
+};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
