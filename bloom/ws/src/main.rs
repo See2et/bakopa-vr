@@ -17,11 +17,11 @@ async fn main() -> anyhow::Result<()> {
 
     let core = SharedCore::new(RealCore::new());
     let handle = start_ws_server(addr, core).await?;
-    println!("Bloom WS listening on ws://{}", handle.addr);
+    tracing::info!(addr = %handle.addr, "Bloom WS listening");
 
     // wait for ctrl-c
     tokio::signal::ctrl_c().await?;
-    println!("Shutting down...");
+    tracing::info!("Shutting down...");
     handle.shutdown().await;
     Ok(())
 }
