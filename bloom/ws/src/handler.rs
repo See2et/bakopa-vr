@@ -149,7 +149,7 @@ where
                         self.send_error(ErrorCode::RoomFull, "room is full");
                     }
                     None => {
-                        self.send_error(ErrorCode::Internal, "room not found");
+                        self.send_error(ErrorCode::RoomNotFound, "room not found");
                     }
                 }
             }
