@@ -38,7 +38,7 @@
 
 ## 短期的な目標
 
-まずはSuteraVRの理念をMinimal Value Productとして提示するために、以下の内容を短期的な実装目標として掲げます。
+まずはSuteraVRの理念をMinimum Value Productとして提示するために、以下の内容を短期的な実装目標として掲げます。
 
 **目標**
 - Bloomはルームの管理とP2Pシグナリングのみを行う
