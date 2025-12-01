@@ -339,7 +339,6 @@ where
     .await;
     handle_disconnect(
         &mut handler,
-        &peers,
         &broadcast,
         &participant_id,
         reason,
@@ -363,14 +362,12 @@ where
     let mut ping_timer = interval(ping_cfg.interval);
     ping_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let mut reason: Option<DisconnectReason> = None;
     loop {
         tokio::select! {
             maybe_msg = stream.next() => {
                 match maybe_msg {
                     Some(Ok(Message::Close(_))) => {
-                        reason = Some(DisconnectReason::Normal);
-                        break;
+                        return DisconnectReason::Normal;
                     }
                     Some(Ok(Message::Text(text))) => {
                         handler.handle_text_message(&text).await;
@@ -395,16 +392,13 @@ where
                                 },
                             )))
                             .await;
-                        reason = Some(DisconnectReason::Abnormal);
-                        break;
+                        return DisconnectReason::Abnormal;
                     }
                     Some(Err(_)) => {
-                        reason = Some(DisconnectReason::Abnormal);
-                        break;
+                        return DisconnectReason::Abnormal;
                     }
                     None => {
-                        reason = Some(DisconnectReason::Abnormal);
-                        break;
+                        return DisconnectReason::Abnormal;
                     }
                 }
             }
@@ -419,18 +413,15 @@ where
                             reason: "ping timeout".into(),
                         })))
                         .await;
-                    reason = Some(DisconnectReason::Abnormal);
-                    break;
+                    return DisconnectReason::Abnormal;
                 }
             }
         }
     }
-    reason.unwrap_or(DisconnectReason::Abnormal)
 }
 
 async fn handle_disconnect<C>(
     handler: &mut WsHandler<SharedCore<C>, WebSocketOutSink, WebSocketBroadcast>,
-    peers: &PeerMap,
     broadcast: &WebSocketBroadcast,
     participant_id: &ParticipantId,
     reason: DisconnectReason,
@@ -441,14 +432,8 @@ async fn handle_disconnect<C>(
     if matches!(reason, DisconnectReason::Abnormal) {
         tokio::time::sleep(ABNORMAL_DISCONNECT_GRACE).await;
     }
-    let remaining = remaining_peers(peers, participant_id).await;
-    handler.handle_abnormal_close(&remaining).await;
+    handler.handle_abnormal_close().await;
     broadcast.remove_if_same(participant_id, &sink).await;
-}
-
-async fn remaining_peers(peers: &PeerMap, exclude: &ParticipantId) -> Vec<ParticipantId> {
-    let map = peers.lock().await;
-    map.keys().filter(|pid| *pid != exclude).cloned().collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -334,10 +334,10 @@ where
 
     /// Handle abnormal socket close (error path). Should trigger leave once and notify peers.
     #[instrument(
-        skip(self, participants),
+        skip(self),
         fields(room_id=?self.room_id, participant_id=?self.participant_id)
     )]
-    pub async fn handle_abnormal_close(&mut self, participants: &[ParticipantId]) {
+    pub async fn handle_abnormal_close(&mut self) {
         if let Some(room_id) = self.room_id.clone() {
             let remaining = self.core.leave_room(&room_id, &self.participant_id);
 
@@ -345,14 +345,14 @@ where
                 let disconnect_evt = ServerToClient::PeerDisconnected {
                     participant_id: self.participant_id.to_string(),
                 };
-                for p in participants {
+                for p in rem.iter() {
                     self.broadcast.send_to(p, disconnect_evt.clone());
                 }
                 let participants_evt = ServerToClient::RoomParticipants {
                     room_id: room_id.to_string(),
                     participants: rem.iter().map(ToString::to_string).collect(),
                 };
-                for p in participants {
+                for p in rem.iter() {
                     self.broadcast.send_to(p, participants_evt.clone());
                 }
             }
