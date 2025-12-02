@@ -67,6 +67,41 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
 5. 再接続: 同一participant_idで再Offerした場合、旧接続破棄→新接続有効。
 6. 切断検知: DataChannel/音声クローズ時にPeerLeftが一度だけ通知され、状態が空になる。
 
+## Syncer API 最小仕様
+- 本節は 1PR/1Spec 運用のための最小API仕様。基礎契約とする。
+
+### リクエスト/イベント列挙（案）
+- `SyncerRequest`
+  - `Join { room_id, participant_id, ice_servers, auth_token }`
+  - `SendPose { pose }`
+  - `SendChat { message }`
+  - （将来拡張用のプレースホルダ: Control系, Signaling系）
+- `SyncerEvent`
+  - `SelfJoined { room_id, participant_id }`
+  - `PeerJoined { participant_id }`
+  - `PoseReceived { from, pose }`
+  - `ChatReceived { from, message }`
+  - `PeerLeft { participant_id }`
+  - `RateLimited { stream_kind }`
+  - `Error { kind }` （InvalidPayload等を含む想定）
+
+### 戻り値モデル（要判断）
+- `Syncer::handle(req) -> Vec<SyncerEvent>` で「1リクエスト→複数イベント」を同期返却。
+
+### 非同期性
+- `fn handle(...)` で同期APIを保持し、非同期は Transport 抽象が吸収。フェイクTransportで即時応答を作りやすくする。
+
+### Transport 抽象の粒度
+- Reliability/ordering は Transport 内部に隠蔽し、Pose用 unordered/unreliable を設定するか？
+  - →API層に露出せず Transport 内部で固定。
+
+### レート制御の返し方
+- `RateLimited` を Event として返す（push型）。
+
+### エラー表現（方針）
+- API公開面では型付き `Error` を返却し、アプリケーション境界で anyhow に集約（既存規約に従う）。
+- `InvalidPayload` など recoverable なものは `SyncerEvent::Error` または `RateLimited` として通知し、致命エラーのみ Result の Err に載せる想定。
+
 ## 実装手順（TDD単位）
 1. Syncerファサード/APIのテスト作成（Red）
    - IPC相当の抽象インターフェースを定義（sync/async問わず「1リクエスト→複数イベント返却」型）
