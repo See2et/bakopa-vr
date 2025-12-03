@@ -5,8 +5,7 @@ pub trait Syncer {
     fn handle(&mut self, request: SyncerRequest) -> Vec<SyncerEvent>;
 }
 
-/// WebRTC/DataChannel等の下位トランスポートを抽象化するためのトrait。
-/// 実装はMVP後続で置き換える予定。
+/// WebRTC/DataChannel等の下位トランスポートを抽象化するためのtrait。
 pub trait Transport {
     fn register_participant(&mut self, participant: ParticipantId);
     fn send(&mut self, to: ParticipantId, payload: TransportPayload);
