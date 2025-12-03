@@ -62,7 +62,47 @@ pub struct Pose {
 pub struct StubSyncer;
 
 impl Syncer for StubSyncer {
-    fn handle(&mut self, _request: SyncerRequest) -> Vec<SyncerEvent> {
-        Vec::new()
+    fn handle(&mut self, request: SyncerRequest) -> Vec<SyncerEvent> {
+        // 単純なメモリ内状態で「1リクエスト→複数イベント」を返す最小実装。
+        match request {
+            SyncerRequest::Join {
+                room_id,
+                participant_id,
+            } => {
+                let mut guard = ROOM_STATE.lock().unwrap();
+                let room_entry = guard.entry(room_id.clone()).or_insert_with(Vec::new);
+
+                // 既存参加者を PeerJoined として返す
+                let mut events: Vec<SyncerEvent> = room_entry
+                    .iter()
+                    .cloned()
+                    .map(|p| SyncerEvent::PeerJoined { participant_id: p })
+                    .collect();
+
+                // SelfJoined を追加
+                events.push(SyncerEvent::SelfJoined {
+                    room_id,
+                    participant_id: participant_id.clone(),
+                });
+
+                // 新規参加者を状態に追加
+                room_entry.push(participant_id);
+
+                events
+            }
+            SyncerRequest::SendPose { from, pose } => {
+                // 最小実装: PoseReceived をローカルエコーしない（テストで期待していない）
+                // ここではイベントを返さない。
+                let _ = (from, pose);
+                Vec::new()
+            }
+        }
     }
+}
+
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+lazy_static::lazy_static! {
+    static ref ROOM_STATE: Mutex<HashMap<RoomId, Vec<ParticipantId>>> = Mutex::new(HashMap::new());
 }

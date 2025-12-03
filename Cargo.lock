@@ -658,6 +658,7 @@ name = "syncer"
 version = "0.1.0"
 dependencies = [
  "bloom-core",
+ "lazy_static",
 ]
 
 [[package]]

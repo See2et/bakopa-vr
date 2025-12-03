@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 bloom-core = { path = "../bloom/core" }
+lazy_static = "1"
