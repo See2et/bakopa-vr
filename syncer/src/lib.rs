@@ -1,6 +1,6 @@
 pub mod messages;
 
-pub use crate::messages::{ChatMessage, PoseMessage as Pose, PoseTransform};
+pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, PoseTransform};
 
 use crate::messages::{SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};
@@ -182,4 +182,48 @@ use std::sync::Mutex;
 
 lazy_static::lazy_static! {
     static ref ROOM_STATE: Mutex<HashMap<RoomId, Vec<ParticipantId>>> = Mutex::new(HashMap::new());
+}
+
+/// ControlメッセージからPeerJoined/PeerLeftへ橋渡しするための中間表現。
+#[derive(Debug, Clone, PartialEq)]
+pub struct PendingPeerEvent {
+    pub participant_id: String,
+    pub reconnect_token: Option<String>,
+    pub reason: Option<String>,
+    pub kind: PendingPeerEventKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PendingPeerEventKind {
+    Joined,
+    Left,
+}
+
+impl From<ControlMessage> for PendingPeerEvent {
+    fn from(msg: ControlMessage) -> Self {
+        match msg {
+            ControlMessage::Join(payload) => PendingPeerEvent {
+                participant_id: payload.participant_id,
+                reconnect_token: payload.reconnect_token,
+                reason: payload.reason,
+                kind: PendingPeerEventKind::Joined,
+            },
+            ControlMessage::Leave(payload) => PendingPeerEvent {
+                participant_id: payload.participant_id,
+                reconnect_token: payload.reconnect_token,
+                reason: payload.reason,
+                kind: PendingPeerEventKind::Left,
+            },
+        }
+    }
+}
+
+impl PendingPeerEvent {
+    /// TODO: 最終的な ParticipantId への変換と SyncerEvent::PeerJoined/PeerLeft 生成を実装する。
+    #[allow(dead_code)]
+    pub fn into_syncer_event(self) -> Option<SyncerEvent> {
+        // 現時点では ControlPayload の participant_id が Bloom の ParticipantId(String) であり、
+        // UUIDへの安全な変換や RoomId 紐付けロジックは未実装。今後 Bloom 側と整合させる。
+        None
+    }
 }
