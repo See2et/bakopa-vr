@@ -1,6 +1,6 @@
 pub mod messages;
 
-pub use crate::messages::{PoseMessage as Pose, PoseTransform};
+pub use crate::messages::{ChatMessage, PoseMessage as Pose, PoseTransform};
 
 use crate::messages::{SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};
@@ -52,6 +52,10 @@ pub enum SyncerRequest {
         pose: Pose,
         ctx: TracingContext,
     },
+    SendChat {
+        chat: ChatMessage,
+        ctx: TracingContext,
+    },
 }
 
 /// API出力モデル。
@@ -69,6 +73,10 @@ pub enum SyncerEvent {
         pose: Pose,
         ctx: TracingContext,
     },
+    ChatReceived {
+        chat: ChatMessage,
+        ctx: TracingContext,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,7 +86,18 @@ pub struct TracingContext {
     pub stream_kind: StreamKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl TracingContext {
+    /// Helper for chat events to ensure StreamKind::Chat is consistently applied.
+    pub fn for_chat(room_id: &RoomId, participant_id: &ParticipantId) -> Self {
+        Self {
+            room_id: room_id.clone(),
+            participant_id: participant_id.clone(),
+            stream_kind: StreamKind::Chat,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StreamKind {
     #[serde(rename = "pose")]
     Pose,
@@ -148,6 +167,10 @@ impl Syncer for StubSyncer {
                 // 最小実装: PoseReceived をローカルエコーしない（テストで期待していない）
                 // ここではイベントを返さない。
                 let _ = (from, pose, ctx);
+                Vec::new()
+            }
+            SyncerRequest::SendChat { chat, ctx } => {
+                let _ = (chat, ctx);
                 Vec::new()
             }
         }

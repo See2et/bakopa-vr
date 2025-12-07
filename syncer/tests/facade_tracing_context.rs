@@ -124,6 +124,7 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
                 self.transport
                     .send(from.clone(), TransportPayload::Bytes(Vec::new()));
             }
+            SyncerRequest::SendChat { .. } => {}
         }
 
         events

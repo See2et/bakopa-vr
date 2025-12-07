@@ -104,6 +104,22 @@ impl SyncMessageEnvelope {
             body,
         })
     }
+
+    pub fn from_chat(message: ChatMessage) -> Result<Self, SyncMessageError> {
+        message.validate()?;
+
+        let body =
+            serde_json::to_value(&message).map_err(|_| SyncMessageError::SchemaViolation {
+                kind: "chat".to_string(),
+                reason: "serialize_failed",
+            })?;
+
+        Ok(SyncMessageEnvelope {
+            version: 1,
+            kind: StreamKind::Chat,
+            body,
+        })
+    }
 }
 
 impl FromStr for StreamKind {
@@ -173,6 +189,63 @@ impl PoseMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    pub version: u32,
+    pub timestamp_micros: u64,
+    pub sequence_id: u64,
+    pub sender: String,
+    pub message: String,
+}
+
+impl ChatMessage {
+    pub const MAX_MESSAGE_LEN: usize = 2048;
+
+    pub fn from_json_body(value: &JsonValue) -> Result<Self, SyncMessageError> {
+        if !value.is_object() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "chat".to_string(),
+                reason: "body_not_object",
+            });
+        }
+
+        let msg: ChatMessage = serde_json::from_value(value.clone()).map_err(|_| {
+            SyncMessageError::SchemaViolation {
+                kind: "chat".to_string(),
+                reason: "invalid_chat",
+            }
+        })?;
+
+        msg.validate()?;
+        Ok(msg)
+    }
+
+    pub fn validate(&self) -> Result<(), SyncMessageError> {
+        if self.version != 1 {
+            return Err(SyncMessageError::UnsupportedVersion {
+                received: self.version,
+            });
+        }
+
+        if self.sender.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "chat".to_string(),
+                reason: "missing_sender",
+            });
+        }
+
+        if self.message.is_empty() || self.message.chars().count() > Self::MAX_MESSAGE_LEN {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "chat".to_string(),
+                reason: "message_length",
+            });
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PoseTransform {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
@@ -190,6 +263,21 @@ impl TryFrom<SyncMessageEnvelope> for PoseMessage {
         }
 
         PoseMessage::from_json_body(&envelope.body)
+    }
+}
+
+impl TryFrom<SyncMessageEnvelope> for ChatMessage {
+    type Error = SyncMessageError;
+
+    fn try_from(envelope: SyncMessageEnvelope) -> Result<Self, Self::Error> {
+        if envelope.kind != StreamKind::Chat {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "chat".to_string(),
+                reason: "kind_mismatch",
+            });
+        }
+
+        ChatMessage::from_json_body(&envelope.body)
     }
 }
 
