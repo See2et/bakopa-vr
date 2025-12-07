@@ -1,6 +1,6 @@
 use crate::StreamKind;
 use serde::{Deserialize, Serialize};
-use serde_json::{self, Value as JsonValue};
+use serde_json::{self, Map as JsonMap, Value as JsonValue};
 use std::convert::TryFrom;
 use std::str::FromStr;
 
@@ -326,6 +326,7 @@ pub struct ControlPayload {
 pub enum SignalingMessage {
     Offer(SignalingOffer),
     Answer(SignalingAnswer),
+    Ice(SignalingIce),
 }
 
 impl SignalingMessage {
@@ -366,6 +367,15 @@ impl SignalingMessage {
                     reason: "invalid_answer",
                 })?
             }
+            "ice" => {
+                Self::ensure_field(obj, "roomId", "missing_room_id")?;
+                Self::ensure_field(obj, "authToken", "missing_auth_token")?;
+                Self::ensure_field(obj, "candidate", "missing_candidate")?;
+                serde_json::from_value(value.clone()).map_err(|_| SyncMessageError::SchemaViolation {
+                    kind: "signaling".to_string(),
+                    reason: "invalid_ice",
+                })?
+            }
             _ => {
                 return Err(SyncMessageError::SchemaViolation {
                     kind: "signaling".to_string(),
@@ -379,7 +389,7 @@ impl SignalingMessage {
     }
 
     fn ensure_field(
-        obj: &serde_json::Map<String, JsonValue>,
+        obj: &JsonMap<String, JsonValue>,
         key: &str,
         reason: &'static str,
     ) -> Result<(), SyncMessageError> {
@@ -396,6 +406,7 @@ impl SignalingMessage {
         match self {
             SignalingMessage::Offer(offer) => offer.validate(),
             SignalingMessage::Answer(answer) => answer.validate(),
+            SignalingMessage::Ice(ice) => ice.validate(),
         }
     }
 
@@ -403,6 +414,7 @@ impl SignalingMessage {
         match self {
             SignalingMessage::Offer(_) => StreamKind::SignalingOffer,
             SignalingMessage::Answer(_) => StreamKind::SignalingAnswer,
+            SignalingMessage::Ice(_) => StreamKind::SignalingIce,
         }
     }
 }
@@ -492,6 +504,51 @@ impl SignalingAnswer {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignalingIce {
+    pub version: u32,
+    pub room_id: String,
+    pub participant_id: String,
+    pub auth_token: String,
+    pub candidate: String,
+    #[serde(default)]
+    pub sdp_mid: Option<String>,
+    #[serde(default)]
+    pub sdp_mline_index: Option<u16>,
+}
+
+impl SignalingIce {
+    const MAX_CANDIDATE_LEN: usize = 1024;
+
+    fn validate(&self) -> Result<(), SyncMessageError> {
+        if self.version != 1 {
+            return Err(SyncMessageError::UnsupportedVersion {
+                received: self.version,
+            });
+        }
+        if self.room_id.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_room_id",
+            });
+        }
+        if self.auth_token.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_auth_token",
+            });
+        }
+        if self.candidate.is_empty() || self.candidate.len() > Self::MAX_CANDIDATE_LEN {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "invalid_candidate",
+            });
+        }
+        Ok(())
+    }
+}
+
 impl TryFrom<SyncMessageEnvelope> for PoseMessage {
     type Error = SyncMessageError;
 
@@ -543,12 +600,49 @@ impl TryFrom<SyncMessageEnvelope> for SignalingMessage {
 
     fn try_from(envelope: SyncMessageEnvelope) -> Result<Self, Self::Error> {
         match envelope.kind {
-            StreamKind::SignalingOffer | StreamKind::SignalingAnswer => {
+            StreamKind::SignalingOffer | StreamKind::SignalingAnswer | StreamKind::SignalingIce => {
                 SignalingMessage::from_json_body(&envelope.body)
             }
             _ => Err(SyncMessageError::SchemaViolation {
                 kind: "signaling".to_string(),
                 reason: "kind_mismatch",
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SyncMessage {
+    Pose(PoseMessage),
+    Chat(ChatMessage),
+    Control(ControlMessage),
+    Signaling(SignalingMessage),
+}
+
+impl SyncMessage {
+    pub fn into_envelope(self) -> Result<SyncMessageEnvelope, SyncMessageError> {
+        match self {
+            SyncMessage::Pose(pose) => SyncMessageEnvelope::from_pose(pose),
+            SyncMessage::Chat(chat) => SyncMessageEnvelope::from_chat(chat),
+            SyncMessage::Control(control) => SyncMessageEnvelope::from_control(control),
+            SyncMessage::Signaling(signaling) => SyncMessageEnvelope::from_signaling(signaling),
+        }
+    }
+
+    pub fn from_envelope(envelope: SyncMessageEnvelope) -> Result<Self, SyncMessageError> {
+        match envelope.kind {
+            StreamKind::Pose => PoseMessage::try_from(envelope).map(SyncMessage::Pose),
+            StreamKind::Chat => ChatMessage::try_from(envelope).map(SyncMessage::Chat),
+            StreamKind::ControlJoin | StreamKind::ControlLeave => {
+                ControlMessage::try_from(envelope).map(SyncMessage::Control)
+            }
+            StreamKind::SignalingOffer
+            | StreamKind::SignalingAnswer
+            | StreamKind::SignalingIce => {
+                SignalingMessage::try_from(envelope).map(SyncMessage::Signaling)
+            }
+            other => Err(SyncMessageError::UnknownKind {
+                value: other.as_str().to_string(),
             }),
         }
     }

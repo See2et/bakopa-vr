@@ -2,7 +2,7 @@ pub mod messages;
 
 pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, PoseTransform};
 
-use crate::messages::{SyncMessageEnvelope, SyncMessageError};
+use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +28,15 @@ impl TransportPayload {
     pub fn as_message_envelope(&self) -> Result<SyncMessageEnvelope, SyncMessageError> {
         match self {
             TransportPayload::Bytes(bytes) => SyncMessageEnvelope::from_slice(bytes),
+        }
+    }
+
+    pub fn as_sync_message(&self) -> Result<SyncMessage, SyncMessageError> {
+        match self {
+            TransportPayload::Bytes(bytes) => {
+                let envelope = SyncMessageEnvelope::from_slice(bytes)?;
+                SyncMessage::from_envelope(envelope)
+            }
         }
     }
 }
