@@ -1,6 +1,8 @@
-use bloom_core::{ParticipantId, RoomId};
-
 pub mod messages;
+
+use crate::messages::{SyncMessageEnvelope, SyncMessageError};
+use bloom_core::{ParticipantId, RoomId};
+use serde::{Deserialize, Serialize};
 
 /// Syncer全体のファサード。1リクエストに対して複数イベントを返す契約。
 pub trait Syncer {
@@ -17,6 +19,15 @@ pub trait Transport {
 #[derive(Debug, Clone)]
 pub enum TransportPayload {
     Bytes(Vec<u8>),
+}
+
+impl TransportPayload {
+    /// Parse the underlying bytes as a SyncMessageEnvelope.
+    pub fn as_message_envelope(&self) -> Result<SyncMessageEnvelope, SyncMessageError> {
+        match self {
+            TransportPayload::Bytes(bytes) => SyncMessageEnvelope::from_slice(bytes),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -70,13 +81,39 @@ pub struct TracingContext {
     pub stream_kind: StreamKind,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StreamKind {
+    #[serde(rename = "pose")]
     Pose,
+    #[serde(rename = "chat")]
     Chat,
+    #[serde(rename = "voice")]
     Voice,
-    Signaling,
-    Control,
+    #[serde(rename = "control.join")]
+    ControlJoin,
+    #[serde(rename = "control.leave")]
+    ControlLeave,
+    #[serde(rename = "signaling.offer")]
+    SignalingOffer,
+    #[serde(rename = "signaling.answer")]
+    SignalingAnswer,
+    #[serde(rename = "signaling.ice")]
+    SignalingIce,
+}
+
+impl StreamKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StreamKind::Pose => "pose",
+            StreamKind::Chat => "chat",
+            StreamKind::Voice => "voice",
+            StreamKind::ControlJoin => "control.join",
+            StreamKind::ControlLeave => "control.leave",
+            StreamKind::SignalingOffer => "signaling.offer",
+            StreamKind::SignalingAnswer => "signaling.answer",
+            StreamKind::SignalingIce => "signaling.ice",
+        }
+    }
 }
 
 pub struct StubSyncer;

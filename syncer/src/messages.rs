@@ -1,3 +1,4 @@
+use crate::StreamKind;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use std::convert::TryFrom;
@@ -10,7 +11,7 @@ pub struct SyncMessageEnvelope {
     #[serde(rename = "v")]
     pub version: u32,
     #[serde(rename = "kind")]
-    pub kind: SyncMessageKind,
+    pub kind: StreamKind,
     #[serde(rename = "body")]
     pub body: JsonValue,
 }
@@ -62,7 +63,7 @@ impl SyncMessageEnvelope {
                 kind: "envelope".to_string(),
                 reason: "kind_not_string",
             })?;
-        let kind = SyncMessageKind::from_str(kind_str)?;
+        let kind = StreamKind::from_str(kind_str)?;
 
         let body_value = envelope
             .get("body")
@@ -85,50 +86,19 @@ impl SyncMessageEnvelope {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SyncMessageKind {
-    #[serde(rename = "pose")]
-    Pose,
-    #[serde(rename = "chat")]
-    Chat,
-    #[serde(rename = "control.join")]
-    ControlJoin,
-    #[serde(rename = "control.leave")]
-    ControlLeave,
-    #[serde(rename = "signaling.offer")]
-    SignalingOffer,
-    #[serde(rename = "signaling.answer")]
-    SignalingAnswer,
-    #[serde(rename = "signaling.ice")]
-    SignalingIce,
-}
-
-impl SyncMessageKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            SyncMessageKind::Pose => "pose",
-            SyncMessageKind::Chat => "chat",
-            SyncMessageKind::ControlJoin => "control.join",
-            SyncMessageKind::ControlLeave => "control.leave",
-            SyncMessageKind::SignalingOffer => "signaling.offer",
-            SyncMessageKind::SignalingAnswer => "signaling.answer",
-            SyncMessageKind::SignalingIce => "signaling.ice",
-        }
-    }
-}
-
-impl FromStr for SyncMessageKind {
+impl FromStr for StreamKind {
     type Err = SyncMessageError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "pose" => Ok(SyncMessageKind::Pose),
-            "chat" => Ok(SyncMessageKind::Chat),
-            "control.join" => Ok(SyncMessageKind::ControlJoin),
-            "control.leave" => Ok(SyncMessageKind::ControlLeave),
-            "signaling.offer" => Ok(SyncMessageKind::SignalingOffer),
-            "signaling.answer" => Ok(SyncMessageKind::SignalingAnswer),
-            "signaling.ice" => Ok(SyncMessageKind::SignalingIce),
+            "pose" => Ok(StreamKind::Pose),
+            "chat" => Ok(StreamKind::Chat),
+            "voice" => Ok(StreamKind::Voice),
+            "control.join" => Ok(StreamKind::ControlJoin),
+            "control.leave" => Ok(StreamKind::ControlLeave),
+            "signaling.offer" => Ok(StreamKind::SignalingOffer),
+            "signaling.answer" => Ok(StreamKind::SignalingAnswer),
+            "signaling.ice" => Ok(StreamKind::SignalingIce),
             other => Err(SyncMessageError::UnknownKind {
                 value: other.to_string(),
             }),

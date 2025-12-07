@@ -1,11 +1,12 @@
 use serde_json::json;
-use syncer::messages::{SyncMessageEnvelope, SyncMessageError, SyncMessageKind};
+use syncer::messages::{SyncMessageEnvelope, SyncMessageError};
+use syncer::StreamKind;
 
 #[test]
 fn envelope_round_trip_through_serde_json() {
     let envelope = SyncMessageEnvelope {
         version: 1,
-        kind: SyncMessageKind::Pose,
+        kind: StreamKind::Pose,
         body: json!({
             "head": {
                 "position": [0.0, 1.0, 0.5],
