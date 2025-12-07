@@ -120,6 +120,20 @@ impl SyncMessageEnvelope {
             body,
         })
     }
+
+    pub fn from_control(message: ControlMessage) -> Result<Self, SyncMessageError> {
+        let body =
+            serde_json::to_value(&message).map_err(|_| SyncMessageError::SchemaViolation {
+                kind: "control".to_string(),
+                reason: "serialize_failed",
+            })?;
+
+        Ok(SyncMessageEnvelope {
+            version: 1,
+            kind: message.kind_stream(),
+            body,
+        })
+    }
 }
 
 impl FromStr for StreamKind {
@@ -251,6 +265,46 @@ pub struct PoseTransform {
     pub rotation: [f32; 4],
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ControlMessage {
+    Join(ControlPayload),
+    Leave(ControlPayload),
+}
+
+impl ControlMessage {
+    pub fn from_json_body(value: &JsonValue) -> Result<Self, SyncMessageError> {
+        if !value.is_object() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "control".to_string(),
+                reason: "body_not_object",
+            });
+        }
+
+        serde_json::from_value(value.clone()).map_err(|_| SyncMessageError::SchemaViolation {
+            kind: "control".to_string(),
+            reason: "unsupported_kind",
+        })
+    }
+
+    fn kind_stream(&self) -> StreamKind {
+        match self {
+            ControlMessage::Join(_) => StreamKind::ControlJoin,
+            ControlMessage::Leave(_) => StreamKind::ControlLeave,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ControlPayload {
+    pub participant_id: String,
+    #[serde(default)]
+    pub reconnect_token: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
 impl TryFrom<SyncMessageEnvelope> for PoseMessage {
     type Error = SyncMessageError;
 
@@ -278,6 +332,22 @@ impl TryFrom<SyncMessageEnvelope> for ChatMessage {
         }
 
         ChatMessage::from_json_body(&envelope.body)
+    }
+}
+
+impl TryFrom<SyncMessageEnvelope> for ControlMessage {
+    type Error = SyncMessageError;
+
+    fn try_from(envelope: SyncMessageEnvelope) -> Result<Self, Self::Error> {
+        match envelope.kind {
+            StreamKind::ControlJoin | StreamKind::ControlLeave => {
+                ControlMessage::from_json_body(&envelope.body)
+            }
+            _ => Err(SyncMessageError::SchemaViolation {
+                kind: "control".to_string(),
+                reason: "kind_mismatch",
+            }),
+        }
     }
 }
 
