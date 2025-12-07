@@ -35,6 +35,7 @@ pub enum SyncerRequest {
     SendPose {
         from: ParticipantId,
         pose: Pose,
+        ctx: TracingContext,
     },
 }
 
@@ -51,12 +52,29 @@ pub enum SyncerEvent {
     PoseReceived {
         from: ParticipantId,
         pose: Pose,
+        ctx: TracingContext,
     },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pose {
     pub dummy: (),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TracingContext {
+    pub room_id: RoomId,
+    pub participant_id: ParticipantId,
+    pub stream_kind: StreamKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StreamKind {
+    Pose,
+    Chat,
+    Voice,
+    Signaling,
+    Control,
 }
 
 pub struct StubSyncer;
@@ -90,10 +108,10 @@ impl Syncer for StubSyncer {
 
                 events
             }
-            SyncerRequest::SendPose { from, pose } => {
+            SyncerRequest::SendPose { from, pose, ctx } => {
                 // 最小実装: PoseReceived をローカルエコーしない（テストで期待していない）
                 // ここではイベントを返さない。
-                let _ = (from, pose);
+                let _ = (from, pose, ctx);
                 Vec::new()
             }
         }

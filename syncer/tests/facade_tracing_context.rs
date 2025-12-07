@@ -40,21 +40,20 @@ impl Transport for FakeTransport {
                 .cloned()
                 .collect()
         };
-
         let mut bus = self.bus.borrow_mut();
         for p in recipients {
             bus.messages.push((p, self.me.clone(), payload.clone()));
         }
-        let _ = to; // signatureは保持しつつ、ここではブロードキャストのみを模倣
+        let _ = to;
     }
 
     fn poll(&mut self) -> Vec<TransportEvent> {
-        let mut buf = self.bus.borrow_mut();
+        let mut bus = self.bus.borrow_mut();
         let mut received = Vec::new();
         let mut i = 0;
-        while i < buf.messages.len() {
-            if buf.messages[i].0 == self.me {
-                let (_to, from, payload) = buf.messages.remove(i);
+        while i < bus.messages.len() {
+            if bus.messages[i].0 == self.me {
+                let (_to, from, payload) = bus.messages.remove(i);
                 received.push(TransportEvent::Received { from, payload });
             } else {
                 i += 1;
@@ -89,10 +88,7 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
             .map(|ev| match ev {
                 TransportEvent::Received { from, payload: _ } => SyncerEvent::PoseReceived {
                     ctx: TracingContext {
-                        room_id: self
-                            .room
-                            .clone()
-                            .expect("room should be set before receive"),
+                        room_id: self.room.clone().unwrap(),
                         participant_id: from.clone(),
                         stream_kind: StreamKind::Pose,
                     },
@@ -111,7 +107,7 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
                 self.transport.register_participant(participant_id.clone());
                 self.me = Some(participant_id);
             }
-            SyncerRequest::SendPose { from, pose: _pose, ctx: _ctx } => {
+            SyncerRequest::SendPose { from, pose: _, ctx: _ } => {
                 self.transport
                     .send(from.clone(), TransportPayload::Bytes(Vec::new()));
             }
@@ -122,7 +118,7 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
 }
 
 #[test]
-fn join_pose_flow_delivers_pose_to_peer() {
+fn pose_received_carries_tracing_context() {
     let shared = Rc::new(RefCell::new(SharedState {
         participants: Vec::new(),
         messages: Vec::new(),
@@ -138,7 +134,6 @@ fn join_pose_flow_delivers_pose_to_peer() {
     let mut syncer_a = TransportBackedSyncer::new(&mut transport_a);
     let mut syncer_b = TransportBackedSyncer::new(&mut transport_b);
 
-    // Both peers join
     syncer_a.handle(SyncerRequest::Join {
         room_id: room_id.clone(),
         participant_id: a.clone(),
@@ -148,7 +143,6 @@ fn join_pose_flow_delivers_pose_to_peer() {
         participant_id: b.clone(),
     });
 
-    // A sends pose
     syncer_a.handle(SyncerRequest::SendPose {
         from: a.clone(),
         pose: Pose { dummy: () },
@@ -159,7 +153,6 @@ fn join_pose_flow_delivers_pose_to_peer() {
         },
     });
 
-    // B polls events via handle and expects PoseReceived
     let events = syncer_b.handle(SyncerRequest::SendPose {
         from: b.clone(),
         pose: Pose { dummy: () },
@@ -170,10 +163,15 @@ fn join_pose_flow_delivers_pose_to_peer() {
         },
     });
 
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, SyncerEvent::PoseReceived { from, .. } if from == &a)),
-        "expected PoseReceived from A on B side"
-    );
+    let pose_event = events
+        .into_iter()
+        .find_map(|e| match e {
+            SyncerEvent::PoseReceived { ctx, .. } => Some(ctx),
+            _ => None,
+        })
+        .expect("PoseReceived event expected");
+
+    assert_eq!(pose_event.room_id, room_id);
+    assert_eq!(pose_event.participant_id, a);
+    assert_eq!(pose_event.stream_kind, StreamKind::Pose);
 }
