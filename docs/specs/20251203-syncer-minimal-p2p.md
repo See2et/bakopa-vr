@@ -102,6 +102,59 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
 - API公開面では型付き `Error` を返却し、アプリケーション境界で anyhow に集約（既存規約に従う）。
 - `InvalidPayload` など recoverable なものは `SyncerEvent::Error` または `RateLimited` として通知し、致命エラーのみ Result の Err に載せる想定。
 
+## メッセージエンベロープ仕様（DataChannel / Signaling 共通）
+
+### JSON構造
+- すべてのDataChannelおよびBloomシグナリングメッセージは、以下の単一オブジェクトで包む。
+
+```json
+{
+  "v": 1,
+  "kind": "pose",
+  "body": { "..." }
+}
+```
+
+- `v`: `u32`。バージョン1のみ受理。未知バージョンを受信した場合は即座に `InvalidPayload::UnsupportedVersion` として破棄する。
+- `kind`: 文字列（スネークケース）。下表の列挙のみ許可し、未知値は `InvalidPayload::UnknownKind`。
+- `body`: JSONオブジェクト。各 `kind` 固有のスキーマに従う。バイナリ/圧縮は行わず、UTF-8 JSONのみ許容する。
+- 予約フィールド: 将来互換のため `meta`（オブジェクト）を予約するが、MVPでは省略必須。受信時に存在しても無視（ログ出力不要）。
+
+### kind一覧と用途
+| kind | 用途 | body概要 |
+| --- | --- | --- |
+| `pose` | Pose配送（unordered/unreliable） | `PoseMessage`（head/hand姿勢 + バージョン）|
+| `chat` | テキストチャット | `ChatMessage`（message, sender, timestamp 等）|
+| `control.join` | 参加通知 | `ControlJoin`（participant_id, reconnect_token など）|
+| `control.leave` | 離脱通知 | `ControlLeave`（participant_id, reason, disconnect_reason）|
+| `signaling.offer` | SDP Offer | `SignalingOffer`（sdp, room_id, participant_id, ice_policy）|
+| `signaling.answer` | SDP Answer | `SignalingAnswer`（sdp, room_id, participant_id）|
+| `signaling.ice` | ICE candidate | `SignalingIce`（candidate, sdp_mid, sdp_mline_index）|
+
+> 備考: Control/Signaling系は後述のセクションで詳細スキーマを追加予定。`kind` 名は将来のネームスペース衝突を避けるため `.` 区切りを許可する。
+
+### InvalidPayloadの分類と扱い
+- `InvalidPayload` は以下の enum バリアントを持つ。イベント/ログはこの粒度で発火。
+  - `MissingVersion`: `v`欠損。
+  - `UnsupportedVersion { received: u32 }`: 既知のメジャー以外。
+  - `UnknownKind { value: String }`: 未定義 `kind`。
+  - `BodyTooLarge { bytes: usize }`: 受信時に 64 KiB（MVP上限、今後設定化）を超過。
+  - `BodyJsonMalformed`: `body` のJSONデコード失敗。
+  - `SchemaViolation { kind: String, reason: &'static str }`: 必須フィールド欠損や型不整合。
+- これらは recoverable とし、`SyncerEvent::Error { kind: ErrorKind::InvalidPayload(...) }` でSidecarへ通知すると同時に、当該メッセージはドロップ。
+- RateLimitカウンタには加算しない（攻撃検知は将来のテレメトリで扱う）。
+
+### ロギングベストプラクティス
+- すべての `InvalidPayload` は `warn!` レベルで単発ログを出す。`room_id`, `participant_id`, `stream_kind`, `invalid_reason`, `kind`, `payload_size` をフィールドとして構造化記録する。
+- `body` の原文ログは禁止。ユーザー入力を含む恐れがあるため、最大でもSHA-256ハッシュ等のダイジェストをフィールド化する（必要になった時のみ導入）。
+- 未知 `kind` / `v` はスパム防止のため秒間1回に抑制する（将来の structured rate-limit）。MVPでは `warn!` + `debug!`（詳細原因）を1度だけ出す。
+- ログメッセージ例: `warn!(room_id = ?, participant_id = ?, stream_kind = "signaling", invalid_reason = "missing_version", "dropping invalid message");`
+
+### その他ルール
+- `body` JSONはトップレベルオブジェクト必須。配列/値のみは `SchemaViolation`。
+- 受信側で `meta` を含む未来バージョンを観測した場合は記録せず無視し、互換性を維持。
+- 送信側は常に `v=1` を埋め、`kind`/`body`が後方互換になるよう注意する。Breaking changeを入れる場合は `v=2` を定義し、旧バージョンは受信拒否で明示的に検知できるようにする。
+
 ## 実装手順（TDD単位）
 1. Syncerファサード/APIのテスト作成（Red）
    - IPC相当の抽象インターフェースを定義（sync/async問わず「1リクエスト→複数イベント返却」型）
