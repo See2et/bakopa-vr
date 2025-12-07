@@ -3,9 +3,22 @@ use std::rc::Rc;
 
 use bloom_core::{ParticipantId, RoomId};
 use syncer::{
-    Pose, StreamKind, Syncer, SyncerEvent, SyncerRequest, TracingContext, Transport,
-    TransportEvent, TransportPayload,
+    Pose, PoseTransform, StreamKind, Syncer, SyncerEvent, SyncerRequest, TracingContext,
+    Transport, TransportEvent, TransportPayload,
 };
+
+fn sample_pose() -> Pose {
+    Pose {
+        version: 1,
+        timestamp_micros: 0,
+        head: PoseTransform {
+            position: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+        },
+        hand_l: None,
+        hand_r: None,
+    }
+}
 
 struct SharedState {
     participants: Vec<ParticipantId>,
@@ -97,7 +110,7 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
                         stream_kind: StreamKind::Pose,
                     },
                     from,
-                    pose: Pose { dummy: () },
+                    pose: sample_pose(),
                 },
             })
             .collect();
@@ -151,7 +164,7 @@ fn join_pose_flow_delivers_pose_to_peer() {
     // A sends pose
     syncer_a.handle(SyncerRequest::SendPose {
         from: a.clone(),
-        pose: Pose { dummy: () },
+        pose: sample_pose(),
         ctx: TracingContext {
             room_id: room_id.clone(),
             participant_id: a.clone(),
@@ -162,7 +175,7 @@ fn join_pose_flow_delivers_pose_to_peer() {
     // B polls events via handle and expects PoseReceived
     let events = syncer_b.handle(SyncerRequest::SendPose {
         from: b.clone(),
-        pose: Pose { dummy: () },
+        pose: sample_pose(),
         ctx: TracingContext {
             room_id: room_id.clone(),
             participant_id: b.clone(),

@@ -1,5 +1,7 @@
 pub mod messages;
 
+pub use crate::messages::{PoseMessage as Pose, PoseTransform};
+
 use crate::messages::{SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};
 use serde::{Deserialize, Serialize};
@@ -67,11 +69,6 @@ pub enum SyncerEvent {
         pose: Pose,
         ctx: TracingContext,
     },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Pose {
-    pub dummy: (),
 }
 
 #[derive(Debug, Clone, PartialEq)]
