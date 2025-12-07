@@ -1,5 +1,7 @@
 use bloom_core::{ParticipantId, RoomId};
 
+pub mod messages;
+
 /// Syncer全体のファサード。1リクエストに対して複数イベントを返す契約。
 pub trait Syncer {
     fn handle(&mut self, request: SyncerRequest) -> Vec<SyncerEvent>;

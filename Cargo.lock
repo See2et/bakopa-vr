@@ -659,6 +659,8 @@ version = "0.1.0"
 dependencies = [
  "bloom-core",
  "lazy_static",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
