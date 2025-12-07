@@ -133,6 +133,16 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
 
 > 備考: Control/Signaling系は後述のセクションで詳細スキーマを追加予定。`kind` 名は将来のネームスペース衝突を避けるため `.` 区切りを許可する。
 
+#### Signalingメッセージ詳細
+- Offer/Answer
+  - `sdp` はプレーンUTF-8文字列のまま格納し、Base64エンコードは行わない。
+  - 必須フィールド: `version`(固定1) / `room_id` / `participant_id` / `auth_token` / (`ice_policy`はOfferのみ)。
+  - `sdp` が空文字の場合は `InvalidPayload::SchemaViolation(kind="signaling", reason="missing_sdp")` として即座に破棄する。
+- ICE
+  - Bloom WS仕様のRelayIceに合わせ、`candidate`, `sdpMid`, `sdpMLineIndex`, `participant_id`, `auth_token` をそのままJSONに乗せる。
+  - `candidate` 文字列は1024文字上限。超過した場合は `reason="invalid_candidate"` を返しログにはハッシュのみ出力する。
+  - 再送（同一candidateの再通知）はBloom側の制御に委ね、Syncerは受信順にWebRTCスタックへブリッジする。冪等化が必要になった場合に備え、`participant_id`/`room_id`/`candidate`の組をハッシュ化して将来の重複検出用メタデータに活用できるよう、型の余地を残す。
+
 ### InvalidPayloadの分類と扱い
 - `InvalidPayload` は以下の enum バリアントを持つ。イベント/ログはこの粒度で発火。
   - `MissingVersion`: `v`欠損。

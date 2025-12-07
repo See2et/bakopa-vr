@@ -5,6 +5,7 @@ pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, Pose
 use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 /// Syncer全体のファサード。1リクエストに対して複数イベントを返す契約。
 pub trait Syncer {
@@ -25,13 +26,13 @@ pub enum TransportPayload {
 
 impl TransportPayload {
     /// Parse the underlying bytes as a SyncMessageEnvelope.
-    pub fn as_message_envelope(&self) -> Result<SyncMessageEnvelope, SyncMessageError> {
+    pub fn parse_envelope(&self) -> Result<SyncMessageEnvelope, SyncMessageError> {
         match self {
             TransportPayload::Bytes(bytes) => SyncMessageEnvelope::from_slice(bytes),
         }
     }
 
-    pub fn as_sync_message(&self) -> Result<SyncMessage, SyncMessageError> {
+    pub fn parse_sync_message(&self) -> Result<SyncMessage, SyncMessageError> {
         match self {
             TransportPayload::Bytes(bytes) => {
                 let envelope = SyncMessageEnvelope::from_slice(bytes)?;
@@ -75,6 +76,9 @@ pub enum SyncerEvent {
         participant_id: ParticipantId,
     },
     PeerJoined {
+        participant_id: ParticipantId,
+    },
+    PeerLeft {
         participant_id: ParticipantId,
     },
     PoseReceived {
@@ -137,6 +141,22 @@ impl StreamKind {
             StreamKind::SignalingOffer => "signaling.offer",
             StreamKind::SignalingAnswer => "signaling.answer",
             StreamKind::SignalingIce => "signaling.ice",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, SyncMessageError> {
+        match value {
+            "pose" => Ok(StreamKind::Pose),
+            "chat" => Ok(StreamKind::Chat),
+            "voice" => Ok(StreamKind::Voice),
+            "control.join" => Ok(StreamKind::ControlJoin),
+            "control.leave" => Ok(StreamKind::ControlLeave),
+            "signaling.offer" => Ok(StreamKind::SignalingOffer),
+            "signaling.answer" => Ok(StreamKind::SignalingAnswer),
+            "signaling.ice" => Ok(StreamKind::SignalingIce),
+            other => Err(SyncMessageError::UnknownKind {
+                value: other.to_string(),
+            }),
         }
     }
 }
@@ -228,11 +248,13 @@ impl From<ControlMessage> for PendingPeerEvent {
 }
 
 impl PendingPeerEvent {
-    /// TODO: 最終的な ParticipantId への変換と SyncerEvent::PeerJoined/PeerLeft 生成を実装する。
-    #[allow(dead_code)]
     pub fn into_syncer_event(self) -> Option<SyncerEvent> {
-        // 現時点では ControlPayload の participant_id が Bloom の ParticipantId(String) であり、
-        // UUIDへの安全な変換や RoomId 紐付けロジックは未実装。今後 Bloom 側と整合させる。
-        None
+        let participant_id = ParticipantId::from_str(&self.participant_id).ok()?;
+        let event = match self.kind {
+            PendingPeerEventKind::Joined => SyncerEvent::PeerJoined { participant_id },
+            PendingPeerEventKind::Left => SyncerEvent::PeerLeft { participant_id },
+        };
+
+        Some(event)
     }
 }

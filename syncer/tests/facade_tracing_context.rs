@@ -1,24 +1,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use bloom_core::{ParticipantId, RoomId};
-use syncer::{
-    Pose, PoseTransform, StreamKind, Syncer, SyncerEvent, SyncerRequest, TracingContext,
-    Transport, TransportEvent, TransportPayload,
-};
+mod common;
 
-fn sample_pose() -> Pose {
-    Pose {
-        version: 1,
-        timestamp_micros: 0,
-        head: PoseTransform {
-            position: [0.0, 0.0, 0.0],
-            rotation: [0.0, 0.0, 0.0, 1.0],
-        },
-        hand_l: None,
-        hand_r: None,
-    }
-}
+use bloom_core::{ParticipantId, RoomId};
+use common::{sample_pose, sample_tracing_context};
+use syncer::{
+    StreamKind, Syncer, SyncerEvent, SyncerRequest, TracingContext, Transport, TransportEvent,
+    TransportPayload,
+};
 
 struct SharedState {
     participants: Vec<ParticipantId>,
@@ -160,21 +150,13 @@ fn pose_received_carries_tracing_context() {
     syncer_a.handle(SyncerRequest::SendPose {
         from: a.clone(),
         pose: sample_pose(),
-        ctx: TracingContext {
-            room_id: room_id.clone(),
-            participant_id: a.clone(),
-            stream_kind: StreamKind::Pose,
-        },
+        ctx: sample_tracing_context(&room_id, &a),
     });
 
     let events = syncer_b.handle(SyncerRequest::SendPose {
         from: b.clone(),
         pose: sample_pose(),
-        ctx: TracingContext {
-            room_id: room_id.clone(),
-            participant_id: b.clone(),
-            stream_kind: StreamKind::Pose,
-        },
+        ctx: sample_tracing_context(&room_id, &b),
     });
 
     let pose_event = events
