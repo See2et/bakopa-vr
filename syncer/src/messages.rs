@@ -134,6 +134,22 @@ impl SyncMessageEnvelope {
             body,
         })
     }
+
+    pub fn from_signaling(message: SignalingMessage) -> Result<Self, SyncMessageError> {
+        message.validate()?;
+
+        let body =
+            serde_json::to_value(&message).map_err(|_| SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "serialize_failed",
+            })?;
+
+        Ok(SyncMessageEnvelope {
+            version: 1,
+            kind: message.kind_stream(),
+            body,
+        })
+    }
 }
 
 impl FromStr for StreamKind {
@@ -305,6 +321,177 @@ pub struct ControlPayload {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum SignalingMessage {
+    Offer(SignalingOffer),
+    Answer(SignalingAnswer),
+}
+
+impl SignalingMessage {
+    pub fn from_json_body(value: &JsonValue) -> Result<Self, SyncMessageError> {
+        if !value.is_object() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "body_not_object",
+            });
+        }
+
+        let obj = value.as_object().expect("checked is_object");
+        let signaling_type = obj
+            .get("type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_type",
+            })?;
+
+        let message: SignalingMessage = match signaling_type {
+            "offer" => {
+                Self::ensure_field(obj, "roomId", "missing_room_id")?;
+                Self::ensure_field(obj, "authToken", "missing_auth_token")?;
+                Self::ensure_field(obj, "icePolicy", "missing_ice_policy")?;
+                Self::ensure_field(obj, "sdp", "missing_sdp")?;
+                serde_json::from_value(value.clone()).map_err(|_| SyncMessageError::SchemaViolation {
+                    kind: "signaling".to_string(),
+                    reason: "invalid_offer",
+                })?
+            }
+            "answer" => {
+                Self::ensure_field(obj, "roomId", "missing_room_id")?;
+                Self::ensure_field(obj, "authToken", "missing_auth_token")?;
+                Self::ensure_field(obj, "sdp", "missing_sdp")?;
+                serde_json::from_value(value.clone()).map_err(|_| SyncMessageError::SchemaViolation {
+                    kind: "signaling".to_string(),
+                    reason: "invalid_answer",
+                })?
+            }
+            _ => {
+                return Err(SyncMessageError::SchemaViolation {
+                    kind: "signaling".to_string(),
+                    reason: "unsupported_kind",
+                })
+            }
+        };
+
+        message.validate()?;
+        Ok(message)
+    }
+
+    fn ensure_field(
+        obj: &serde_json::Map<String, JsonValue>,
+        key: &str,
+        reason: &'static str,
+    ) -> Result<(), SyncMessageError> {
+        if !obj.contains_key(key) {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason,
+            });
+        }
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<(), SyncMessageError> {
+        match self {
+            SignalingMessage::Offer(offer) => offer.validate(),
+            SignalingMessage::Answer(answer) => answer.validate(),
+        }
+    }
+
+    fn kind_stream(&self) -> StreamKind {
+        match self {
+            SignalingMessage::Offer(_) => StreamKind::SignalingOffer,
+            SignalingMessage::Answer(_) => StreamKind::SignalingAnswer,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignalingOffer {
+    pub version: u32,
+    pub room_id: String,
+    pub participant_id: String,
+    pub auth_token: String,
+    pub ice_policy: String,
+    pub sdp: String,
+}
+
+impl SignalingOffer {
+    fn validate(&self) -> Result<(), SyncMessageError> {
+        if self.version != 1 {
+            return Err(SyncMessageError::UnsupportedVersion {
+                received: self.version,
+            });
+        }
+        if self.room_id.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_room_id",
+            });
+        }
+        if self.auth_token.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_auth_token",
+            });
+        }
+        if self.sdp.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_sdp",
+            });
+        }
+        if self.ice_policy.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_ice_policy",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignalingAnswer {
+    pub version: u32,
+    pub room_id: String,
+    pub participant_id: String,
+    pub auth_token: String,
+    pub sdp: String,
+}
+
+impl SignalingAnswer {
+    fn validate(&self) -> Result<(), SyncMessageError> {
+        if self.version != 1 {
+            return Err(SyncMessageError::UnsupportedVersion {
+                received: self.version,
+            });
+        }
+        if self.room_id.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_room_id",
+            });
+        }
+        if self.auth_token.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_auth_token",
+            });
+        }
+        if self.sdp.is_empty() {
+            return Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
+                reason: "missing_sdp",
+            });
+        }
+        Ok(())
+    }
+}
+
 impl TryFrom<SyncMessageEnvelope> for PoseMessage {
     type Error = SyncMessageError;
 
@@ -345,6 +532,22 @@ impl TryFrom<SyncMessageEnvelope> for ControlMessage {
             }
             _ => Err(SyncMessageError::SchemaViolation {
                 kind: "control".to_string(),
+                reason: "kind_mismatch",
+            }),
+        }
+    }
+}
+
+impl TryFrom<SyncMessageEnvelope> for SignalingMessage {
+    type Error = SyncMessageError;
+
+    fn try_from(envelope: SyncMessageEnvelope) -> Result<Self, Self::Error> {
+        match envelope.kind {
+            StreamKind::SignalingOffer | StreamKind::SignalingAnswer => {
+                SignalingMessage::from_json_body(&envelope.body)
+            }
+            _ => Err(SyncMessageError::SchemaViolation {
+                kind: "signaling".to_string(),
                 reason: "kind_mismatch",
             }),
         }
