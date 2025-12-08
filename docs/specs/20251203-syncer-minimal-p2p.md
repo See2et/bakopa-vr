@@ -188,6 +188,7 @@ ParticipantTable の基本シナリオ
 - **離脱:** `apply_join(alice)` で登録済みの状態から `apply_leave(alice)` を呼ぶと、`PeerLeft { participant_id: alice }` が1度のみ返り、内部状態から alice が除去される。
   - 既に離脱済みのparticipant_idに対して `apply_leave` を呼んでもイベントは発生しない。
 - **再接続:** `apply_join(alice)` 済みの状態で再度 `apply_join(alice)` を呼ぶと、旧セッションを破棄した上で `PeerLeft { alice }` → `PeerJoined { alice }` の順で2イベントを返し、内部状態は新セッションIDに差し替わる。
+- **Controlメッセージ連携:** Bloomから流入する `ControlMessage` を `PendingPeerEvent` として ParticipantTable に適用した場合でも、同一 `leave` の多重適用では `PeerLeft` が1度しか返らない（冪等）。
 
 4. RateLimiterのユニットテスト（Red→Green）
    - 1秒20件超過でRateLimited、1秒後に回復をテストで固定

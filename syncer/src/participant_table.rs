@@ -1,8 +1,9 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use bloom_core::ParticipantId;
 
-use crate::SyncerEvent;
+use crate::{PendingPeerEvent, PendingPeerEventKind, SyncerEvent};
 
 #[derive(Default)]
 pub struct ParticipantTable {
@@ -47,6 +48,19 @@ impl ParticipantTable {
                 participant_id: participant,
             }],
             None => Vec::new(),
+        }
+    }
+
+    /// Apply a PendingPeerEvent originating from ControlMessage notifications.
+    pub fn apply_pending_peer_event(&mut self, event: PendingPeerEvent) -> Vec<SyncerEvent> {
+        let participant_id = match ParticipantId::from_str(&event.participant_id) {
+            Ok(participant_id) => participant_id,
+            Err(_) => return Vec::new(),
+        };
+
+        match event.kind {
+            PendingPeerEventKind::Joined => self.apply_join(participant_id),
+            PendingPeerEventKind::Left => self.apply_leave(participant_id),
         }
     }
 
