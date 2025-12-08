@@ -8,6 +8,7 @@ use crate::{PendingPeerEvent, PendingPeerEventKind, SyncerError, SyncerEvent};
 #[derive(Default)]
 pub struct ParticipantTable {
     sessions: HashMap<ParticipantId, SessionId>,
+    order: Vec<ParticipantId>,
     next_session: u64,
 }
 
@@ -18,6 +19,7 @@ impl ParticipantTable {
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
+            order: Vec::new(),
             next_session: 1,
         }
     }
@@ -26,7 +28,8 @@ impl ParticipantTable {
     pub fn apply_join(&mut self, participant: ParticipantId) -> Vec<SyncerEvent> {
         let mut events = Vec::new();
 
-        if self.sessions.contains_key(&participant) {
+        if self.sessions.remove(&participant).is_some() {
+            self.remove_from_order(&participant);
             events.push(SyncerEvent::PeerLeft {
                 participant_id: participant.clone(),
             });
@@ -34,6 +37,7 @@ impl ParticipantTable {
 
         let session = self.allocate_session();
         self.sessions.insert(participant.clone(), session);
+        self.order.push(participant.clone());
         events.push(SyncerEvent::PeerJoined {
             participant_id: participant,
         });
@@ -44,9 +48,12 @@ impl ParticipantTable {
     /// Apply a leave event and return emitted SyncerEvents.
     pub fn apply_leave(&mut self, participant: ParticipantId) -> Vec<SyncerEvent> {
         match self.sessions.remove(&participant) {
-            Some(_session) => vec![SyncerEvent::PeerLeft {
-                participant_id: participant,
-            }],
+            Some(_session) => {
+                self.remove_from_order(&participant);
+                vec![SyncerEvent::PeerLeft {
+                    participant_id: participant,
+                }]
+            }
             None => Vec::new(),
         }
     }
@@ -77,12 +84,18 @@ impl ParticipantTable {
 
     /// Returns a snapshot of the registered participants.
     pub fn participants(&self) -> Vec<ParticipantId> {
-        self.sessions.keys().cloned().collect()
+        self.order.clone()
     }
 
     fn allocate_session(&mut self) -> SessionId {
         let session = SessionId(self.next_session);
         self.next_session += 1;
         session
+    }
+
+    fn remove_from_order(&mut self, participant: &ParticipantId) {
+        if let Some(pos) = self.order.iter().position(|p| p == participant) {
+            self.order.remove(pos);
+        }
     }
 }
