@@ -40,6 +40,16 @@ impl ParticipantTable {
         events
     }
 
+    /// Apply a leave event and return emitted SyncerEvents.
+    pub fn apply_leave(&mut self, participant: ParticipantId) -> Vec<SyncerEvent> {
+        match self.sessions.remove(&participant) {
+            Some(_session) => vec![SyncerEvent::PeerLeft {
+                participant_id: participant,
+            }],
+            None => Vec::new(),
+        }
+    }
+
     /// Returns true if the participant is currently registered in the table.
     pub fn is_registered(&self, participant: &ParticipantId) -> bool {
         self.sessions.contains_key(participant)

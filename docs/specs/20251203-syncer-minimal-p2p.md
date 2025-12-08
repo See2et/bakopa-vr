@@ -185,6 +185,8 @@ ParticipantTable の基本シナリオ
 - **新規参加:** 空テーブルで `apply_join(alice)` を呼ぶと `PeerJoined { participant_id: alice }` を1件返し、内部状態に alice が登録される。
   - 状態確認API（`participants()` など）で alice が含まれることを保証。
   - 冪等性確保のため、同じ participant_id を2回連続で join した際の挙動は別フェーズで定義する。
+- **離脱:** `apply_join(alice)` で登録済みの状態から `apply_leave(alice)` を呼ぶと、`PeerLeft { participant_id: alice }` が1度のみ返り、内部状態から alice が除去される。
+  - 既に離脱済みのparticipant_idに対して `apply_leave` を呼んでもイベントは発生しない。
 
 4. RateLimiterのユニットテスト（Red→Green）
    - 1秒20件超過でRateLimited、1秒後に回復をテストで固定
