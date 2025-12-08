@@ -181,6 +181,11 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
    - Bloom側のjoin/leave通知も含めた整合性をテストで保証
    - 切断理由フィールドはMVP固定値だが、構造だけ確保（Refactor）
 
+ParticipantTable の基本シナリオ
+- **新規参加:** 空テーブルで `apply_join(alice)` を呼ぶと `PeerJoined { participant_id: alice }` を1件返し、内部状態に alice が登録される。
+  - 状態確認API（`participants()` など）で alice が含まれることを保証。
+  - 冪等性確保のため、同じ participant_id を2回連続で join した際の挙動は別フェーズで定義する。
+
 4. RateLimiterのユニットテスト（Red→Green）
    - 1秒20件超過でRateLimited、1秒後に回復をテストで固定
    - IPCセッション単位でのカウント管理を明確化

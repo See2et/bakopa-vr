@@ -1,4 +1,5 @@
 pub mod messages;
+pub mod participant_table;
 
 pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, PoseTransform};
 
