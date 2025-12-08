@@ -91,6 +91,14 @@ pub enum SyncerEvent {
         chat: ChatMessage,
         ctx: TracingContext,
     },
+    Error {
+        kind: SyncerError,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SyncerError {
+    InvalidParticipantId { raw_value: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]

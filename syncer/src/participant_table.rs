@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use bloom_core::ParticipantId;
 
-use crate::{PendingPeerEvent, PendingPeerEventKind, SyncerEvent};
+use crate::{PendingPeerEvent, PendingPeerEventKind, SyncerError, SyncerEvent};
 
 #[derive(Default)]
 pub struct ParticipantTable {
@@ -55,7 +55,13 @@ impl ParticipantTable {
     pub fn apply_pending_peer_event(&mut self, event: PendingPeerEvent) -> Vec<SyncerEvent> {
         let participant_id = match ParticipantId::from_str(&event.participant_id) {
             Ok(participant_id) => participant_id,
-            Err(_) => return Vec::new(),
+            Err(_) => {
+                return vec![SyncerEvent::Error {
+                    kind: SyncerError::InvalidParticipantId {
+                        raw_value: event.participant_id,
+                    },
+                }]
+            }
         };
 
         match event.kind {

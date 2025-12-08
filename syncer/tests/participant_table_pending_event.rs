@@ -1,11 +1,21 @@
 use bloom_core::ParticipantId;
 
 use syncer::messages::ControlPayload;
-use syncer::{participant_table::ParticipantTable, ControlMessage, PendingPeerEvent, SyncerEvent};
+use syncer::{
+    participant_table::ParticipantTable, ControlMessage, PendingPeerEvent, SyncerError, SyncerEvent,
+};
 
 fn leave_event_for(participant: &ParticipantId) -> PendingPeerEvent {
+    leave_event_with_raw(&participant.to_string())
+}
+
+fn join_event_for(participant: &ParticipantId) -> PendingPeerEvent {
+    join_event_with_raw(&participant.to_string())
+}
+
+fn leave_event_with_raw(raw: &str) -> PendingPeerEvent {
     let payload = ControlPayload {
-        participant_id: participant.to_string(),
+        participant_id: raw.to_string(),
         reconnect_token: None,
         reason: None,
     };
@@ -13,9 +23,9 @@ fn leave_event_for(participant: &ParticipantId) -> PendingPeerEvent {
     PendingPeerEvent::from(ControlMessage::Leave(payload))
 }
 
-fn join_event_for(participant: &ParticipantId) -> PendingPeerEvent {
+fn join_event_with_raw(raw: &str) -> PendingPeerEvent {
     let payload = ControlPayload {
-        participant_id: participant.to_string(),
+        participant_id: raw.to_string(),
         reconnect_token: None,
         reason: None,
     };
@@ -52,5 +62,22 @@ fn duplicate_control_leave_events_are_idempotent() {
     assert!(
         second_leave.is_empty(),
         "duplicate leave events should not emit PeerLeft twice"
+    );
+}
+
+#[test]
+fn invalid_participant_id_emits_error_event() {
+    let mut table = ParticipantTable::new();
+    let invalid_raw = "not-a-valid-participant-id";
+
+    let events = table.apply_pending_peer_event(join_event_with_raw(invalid_raw));
+
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            SyncerEvent::Error { kind: SyncerError::InvalidParticipantId { raw_value } }
+                if raw_value == invalid_raw
+        )),
+        "invalid participant id should emit error event"
     );
 }
