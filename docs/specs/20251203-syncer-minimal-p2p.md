@@ -190,6 +190,7 @@ ParticipantTable の基本シナリオ
 - **再接続:** `apply_join(alice)` 済みの状態で再度 `apply_join(alice)` を呼ぶと、旧セッションを破棄した上で `PeerLeft { alice }` → `PeerJoined { alice }` の順で2イベントを返し、内部状態は新セッションIDに差し替わる。
 - **Controlメッセージ連携:** Bloomから流入する `ControlMessage` を `PendingPeerEvent` として ParticipantTable に適用した場合でも、同一 `leave` の多重適用では `PeerLeft` が1度しか返らない（冪等）。
 - **無効 participant_id:** Controlメッセージ経由で `ParticipantId::from_str` に失敗した場合は `SyncerEvent::Error { kind = InvalidParticipantId }` を1度返し、join/leaveイベントは生成しない。
+- **参加者スナップショット:** `ParticipantTable::participants()` は現在登録されている participant_id の一覧を Vec で返す（順不同可）。leave 済みの参加者は含まれないことをテストで保証する。
 
 4. RateLimiterのユニットテスト（Red→Green）
    - 1秒20件超過でRateLimited、1秒後に回復をテストで固定
