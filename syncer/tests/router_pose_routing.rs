@@ -120,8 +120,3 @@ fn route_chat_returns_empty_when_recipient_left() {
         "should drop chat when recipient is already disconnected"
     );
 }
-
-#[test]
-fn outbound_to_event_fills_tracing_context_with_stream_kind_pose_and_chat() {
-    // moved to router_outbound_tracing.rs to keep routing tests focused
-}
