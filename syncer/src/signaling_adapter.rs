@@ -106,7 +106,7 @@ where
     }
 
     /// キューに溜まったServerToClientをSyncer側で扱えるペイロードとイベントへ変換する。
-    pub fn poll(&mut self) -> (Vec<TransportPayload>, Vec<SyncerEvent>) {
+    pub fn poll(&mut self) -> PollResult {
         let messages = std::mem::take(&mut self.inbox);
         let mut payloads: Vec<TransportPayload> = Vec::new();
 
@@ -121,79 +121,60 @@ where
         }
 
         let events = std::mem::take(&mut self.events);
-        (payloads, events)
+        PollResult { payloads, events }
     }
 
     fn shape_incoming(
         &mut self,
         message: ServerToClient,
     ) -> Result<Option<TransportPayload>, serde_json::Error> {
-        let envelope = match message {
+        let envelope_opt = match message {
             ServerToClient::Offer { from, payload } => {
-                let existing = self.on_reoffer(&from);
-                let offer = SignalingOffer {
-                    version: 1,
-                    room_id: self.context.room_id.clone(),
-                    participant_id: from.clone(),
-                    auth_token: self.context.auth_token.clone(),
-                    ice_policy: self.context.ice_policy.clone(),
-                    sdp: payload.sdp,
-                };
-                let existing = existing;
-                match SyncMessageEnvelope::from_signaling(SignalingMessage::Offer(offer)) {
-                    Ok(env) => {
-                        if let Some(ref pid) = existing {
-                            self.close_and_emit_peer_left(&pid);
-                        }
-                        env
-                    }
-                    Err(err) => {
-                        self.emit_invalid(&from, err, existing.is_some());
-                        return Ok(None);
-                    }
-                }
+                let (from_pid, existing) = self.track_participant(from.as_str())?;
+                self.handle_env_result(
+                    from_pid,
+                    existing,
+                    SyncMessageEnvelope::from_signaling(SignalingMessage::Offer(SignalingOffer {
+                        version: 1,
+                        room_id: self.context.room_id.clone(),
+                        participant_id: from,
+                        auth_token: self.context.auth_token.clone(),
+                        ice_policy: self.context.ice_policy.clone(),
+                        sdp: payload.sdp,
+                    })),
+                )?
             }
             ServerToClient::Answer { from, payload } => {
-                let answer = SignalingAnswer {
-                    version: 1,
-                    room_id: self.context.room_id.clone(),
-                    participant_id: from.clone(),
-                    auth_token: self.context.auth_token.clone(),
-                    sdp: payload.sdp,
-                };
-                match SyncMessageEnvelope::from_signaling(SignalingMessage::Answer(answer)) {
-                    Ok(env) => env,
-                    Err(err) => {
-                        let existing = self.on_reoffer(&from);
-                        if let Some(ref pid) = existing {
-                            self.close_and_emit_peer_left(&pid);
-                        }
-                        self.emit_invalid(&from, err, existing.is_some());
-                        return Ok(None);
-                    }
-                }
+                let from_pid = self.parse_participant(from.as_str());
+                self.handle_env_result(
+                    from_pid,
+                    false,
+                    SyncMessageEnvelope::from_signaling(SignalingMessage::Answer(
+                        SignalingAnswer {
+                            version: 1,
+                            room_id: self.context.room_id.clone(),
+                            participant_id: from,
+                            auth_token: self.context.auth_token.clone(),
+                            sdp: payload.sdp,
+                        },
+                    )),
+                )?
             }
             ServerToClient::IceCandidate { from, payload } => {
-                let ice = SignalingIce {
-                    version: 1,
-                    room_id: self.context.room_id.clone(),
-                    participant_id: from.clone(),
-                    auth_token: self.context.auth_token.clone(),
-                    candidate: payload.candidate,
-                    sdp_mid: None,
-                    sdp_mline_index: None,
-                };
-                match SyncMessageEnvelope::from_signaling(SignalingMessage::Ice(ice)) {
-                    Ok(env) => env,
-                    Err(err) => {
-                        let existing = self.on_reoffer(&from);
-                        if let Some(ref pid) = existing {
-                            self.close_and_emit_peer_left(&pid);
-                        }
-                        self.emit_invalid(&from, err, existing.is_some());
-                        return Ok(None);
-                    }
-                }
+                let from_pid = self.parse_participant(from.as_str());
+                self.handle_env_result(
+                    from_pid,
+                    false,
+                    SyncMessageEnvelope::from_signaling(SignalingMessage::Ice(SignalingIce {
+                        version: 1,
+                        room_id: self.context.room_id.clone(),
+                        participant_id: from,
+                        auth_token: self.context.auth_token.clone(),
+                        candidate: payload.candidate,
+                        sdp_mid: None,
+                        sdp_mline_index: None,
+                    })),
+                )?
             }
             _ => {
                 return Err(serde_json::Error::io(io::Error::new(
@@ -203,21 +184,27 @@ where
             }
         };
 
+        let envelope = match envelope_opt {
+            Some(env) => env,
+            None => return Ok(None),
+        };
+
         let bytes = serde_json::to_vec(&envelope)?;
         Ok(Some(TransportPayload::Bytes(bytes)))
     }
 
-    /// Returns Some(pid) when the participant already had an active session (re-offer case).
-    fn on_reoffer(&mut self, participant: &str) -> Option<ParticipantId> {
-        let Ok(pid) = ParticipantId::from_str(participant) else {
-            return None;
-        };
-
-        if !self.active_participants.insert(pid.clone()) {
-            // already existed
-            Some(pid)
+    /// Track participant and determine whether it is a re-offer.
+    /// Returns (Some(pid), true) when participant already existed, (Some(pid), false) when newly inserted.
+    /// None if participant_id cannot be parsed.
+    fn track_participant(
+        &mut self,
+        participant: &str,
+    ) -> Result<(Option<ParticipantId>, bool), serde_json::Error> {
+        if let Some(pid) = self.parse_participant(participant) {
+            let existed = !self.active_participants.insert(pid.clone());
+            Ok((Some(pid), existed))
         } else {
-            None
+            Ok((None, false))
         }
     }
 
@@ -228,19 +215,50 @@ where
         });
     }
 
-    fn emit_invalid(&mut self, participant: &str, error: SyncMessageError, existing: bool) {
+    fn emit_invalid(&mut self, pid: Option<ParticipantId>, error: SyncMessageError, existing: bool) {
         self.events.push(SyncerEvent::Error {
             kind: SyncerError::InvalidPayload(error.clone()),
         });
 
         if existing {
-            if let Ok(pid) = ParticipantId::from_str(participant) {
+            if let Some(pid) = pid {
                 if self.active_participants.remove(&pid) {
                     self.close_and_emit_peer_left(&pid);
                 }
             }
         }
     }
+
+    fn handle_env_result(
+        &mut self,
+        pid: Option<ParticipantId>,
+        existing: bool,
+        result: Result<SyncMessageEnvelope, SyncMessageError>,
+    ) -> Result<Option<SyncMessageEnvelope>, serde_json::Error> {
+        match result {
+            Ok(env) => {
+                if existing {
+                    if let Some(ref pid) = pid {
+                        self.close_and_emit_peer_left(pid);
+                    }
+                }
+                Ok(Some(env))
+            }
+            Err(err) => {
+                self.emit_invalid(pid, err, existing);
+                Ok(None)
+            }
+        }
+    }
+
+    fn parse_participant(&self, participant: &str) -> Option<ParticipantId> {
+        ParticipantId::from_str(participant).ok()
+    }
+}
+
+pub struct PollResult {
+    pub payloads: Vec<TransportPayload>,
+    pub events: Vec<SyncerEvent>,
 }
 
 #[derive(Debug, Clone, Default)]

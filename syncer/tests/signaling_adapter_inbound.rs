@@ -33,7 +33,9 @@ fn inbound_offer_is_wrapped_into_sync_message_envelope() {
 
     adapter.push_incoming(raw);
 
-    let (mut polled, events) = adapter.poll();
+    let poll = adapter.poll();
+    let mut polled = poll.payloads;
+    let events = poll.events;
     assert!(events.is_empty());
     assert_eq!(polled.len(), 1, "one payload should be produced");
 
@@ -81,7 +83,9 @@ fn inbound_answer_and_ice_are_also_wrapped() {
         },
     });
 
-    let (polled, events) = adapter.poll();
+    let poll = adapter.poll();
+    let polled = poll.payloads;
+    let events = poll.events;
     assert!(events.is_empty());
     assert_eq!(polled.len(), 2);
 

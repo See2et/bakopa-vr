@@ -43,7 +43,8 @@ fn invalid_offer_emits_invalid_payload_and_peer_left_then_closes_pc() {
         },
     };
     adapter.push_incoming(valid_offer);
-    let (_payloads, events) = adapter.poll();
+    let poll = adapter.poll();
+    let events = poll.events;
     assert!(events.is_empty(), "first valid offer should not emit errors");
 
     // invalid offer with empty SDP
@@ -53,8 +54,9 @@ fn invalid_offer_emits_invalid_payload_and_peer_left_then_closes_pc() {
     };
     adapter.push_incoming(invalid_offer);
 
-    let (payloads, events) = adapter.poll();
-    assert!(payloads.is_empty(), "invalid payload should not be forwarded");
+    let poll = adapter.poll();
+    assert!(poll.payloads.is_empty(), "invalid payload should not be forwarded");
+    let events = poll.events;
 
     // expect one InvalidPayload error and one PeerLeft for cleanup
     assert!(events.contains(&SyncerEvent::Error {

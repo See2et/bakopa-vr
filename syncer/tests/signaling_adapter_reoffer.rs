@@ -43,12 +43,14 @@ fn reoffer_closes_previous_peer_connection_and_emits_peer_left() {
 
     // 1回目のOffer
     adapter.push_incoming(offer("v=0\no=- 0 0 IN IP4 127.0.0.1\n"));
-    let (_payloads, events) = adapter.poll();
+    let poll = adapter.poll();
+    let events = poll.events;
     assert!(events.is_empty(), "initial offer should not emit PeerLeft");
 
     // 2回目のOffer（再接続）
     adapter.push_incoming(offer("v=0\no=- 1 1 IN IP4 127.0.0.1\n"));
-    let (_payloads, events) = adapter.poll();
+    let poll = adapter.poll();
+    let events = poll.events;
 
     assert!(
         events.contains(&SyncerEvent::PeerLeft {
