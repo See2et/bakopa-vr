@@ -1,12 +1,25 @@
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::collections::HashSet;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 mod mock_bus;
 pub mod signaling_hub;
 
 use bloom_core::ParticipantId;
 use anyhow::Result;
+use tokio::sync::{mpsc, oneshot};
+use webrtc::api::media_engine::MediaEngine;
+use webrtc::api::interceptor_registry::register_default_interceptors;
+use webrtc::api::setting_engine::SettingEngine;
+use webrtc::api::APIBuilder;
+use webrtc::data_channel::RTCDataChannel;
+use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
+use webrtc::ice_transport::ice_server::RTCIceServer;
+use webrtc::peer_connection::configuration::RTCConfiguration;
+use webrtc::peer_connection::RTCPeerConnection;
+use webrtc::interceptor::registry::Registry;
 
 use crate::{Transport, TransportEvent, TransportPayload, TransportSendParams};
 
@@ -53,6 +66,10 @@ pub struct RealWebrtcTransport {
     open_channels: HashSet<String>,
     bus: mock_bus::MockBus,
     peer: Option<ParticipantId>,
+    #[allow(dead_code)]
+    pc: Option<Arc<RTCPeerConnection>>,
+    data_channels: Vec<Arc<RTCDataChannel>>,
+    open_rx: Option<oneshot::Receiver<()>>,
 }
 
 impl RealWebrtcTransport {
@@ -65,6 +82,9 @@ impl RealWebrtcTransport {
             open_channels: HashSet::from(["sutera-data".to_string()]), // 仮でopen扱い
             bus,
             peer: None,
+            pc: None,
+            data_channels: Vec::new(),
+            open_rx: None,
         })
     }
 
@@ -77,13 +97,19 @@ impl RealWebrtcTransport {
                 open_channels: HashSet::from(["sutera-data".to_string()]),
                 bus: bus_a,
                 peer: Some(b.clone()),
+                pc: None,
+                data_channels: Vec::new(),
+                open_rx: None,
             },
             Self {
                 me: b,
                 pc_present: true,
                 open_channels: HashSet::from(["sutera-data".to_string()]),
                 bus: bus_b,
-                peer: Some(a),
+                peer: Some(a.clone()),
+                pc: None,
+                data_channels: Vec::new(),
+                open_rx: None,
             },
         )
     }
@@ -94,7 +120,157 @@ impl RealWebrtcTransport {
 
     /// 仮実装: sutera-dataチャネルがopen済みかを返す（現状は即true）。
     pub fn has_data_channel_open(&self, label: &str) -> bool {
-        self.open_channels.contains(label)
+        if self.open_channels.contains(label) {
+            return true;
+        }
+        self.data_channels.iter().any(|dc| dc.label() == label)
+    }
+
+    /// async版: 実PeerConnectionを生成し、sutera-data DataChannelのopenまでを確立する。
+    pub async fn pair_with_datachannel_real(a: ParticipantId, b: ParticipantId) -> Result<(Self, Self)> {
+        // MediaEngine/Codecs setup
+        let mut m = MediaEngine::default();
+        m.register_default_codecs()?;
+
+        let mut registry = Registry::new();
+        registry = register_default_interceptors(registry, &mut m)?;
+
+        let setting_engine = SettingEngine::default();
+
+        let api = APIBuilder::new()
+            .with_media_engine(m)
+            .with_interceptor_registry(registry)
+            .with_setting_engine(setting_engine)
+            .build();
+
+        // In-processなのでICEサーバは不要。ホスト候補のみで十分。
+        let config = RTCConfiguration {
+            ice_servers: Vec::<RTCIceServer>::new(),
+            ..Default::default()
+        };
+
+        let pc1 = Arc::new(api.new_peer_connection(config.clone()).await?);
+        let pc2 = Arc::new(api.new_peer_connection(config).await?);
+
+        // ICE candidate exchange via local channels (in-process signaling)
+        let (to_pc2_tx, mut to_pc2_rx) = mpsc::unbounded_channel::<RTCIceCandidateInit>();
+        let (to_pc1_tx, mut to_pc1_rx) = mpsc::unbounded_channel::<RTCIceCandidateInit>();
+
+        pc1.on_ice_candidate(Box::new(move |cand| {
+            let tx = to_pc2_tx.clone();
+            Box::pin(async move {
+                if let Some(c) = cand {
+                    if let Ok(json) = c.to_json() {
+                        let _ = tx.send(json);
+                    }
+                }
+            })
+        }));
+
+        pc2.on_ice_candidate(Box::new(move |cand| {
+            let tx = to_pc1_tx.clone();
+            Box::pin(async move {
+                if let Some(c) = cand {
+                    if let Ok(json) = c.to_json() {
+                        let _ = tx.send(json);
+                    }
+                }
+            })
+        }));
+
+        // DataChannel from pc1, wait open on both ends
+        let (open_tx1, open_rx1) = oneshot::channel();
+        let (open_tx2, open_rx2) = oneshot::channel();
+
+        let open_tx1_mutex = Arc::new(Mutex::new(Some(open_tx1)));
+        let open_tx2_mutex = Arc::new(Mutex::new(Some(open_tx2)));
+
+        let dc1 = pc1.create_data_channel("sutera-data", None).await?;
+        let open_tx1_clone = open_tx1_mutex.clone();
+        dc1.on_open(Box::new(move || {
+            let open_tx1_clone = open_tx1_clone.clone();
+            Box::pin(async move {
+                if let Some(tx) = open_tx1_clone.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+            })
+        }));
+
+        pc2.on_data_channel(Box::new(move |dc: Arc<RTCDataChannel>| {
+            let open_tx2_mutex = open_tx2_mutex.clone();
+            Box::pin(async move {
+                dc.on_open(Box::new(move || {
+                    let open_tx2_mutex = open_tx2_mutex.clone();
+                    Box::pin(async move {
+                        if let Some(tx) = open_tx2_mutex.lock().unwrap().take() {
+                            let _ = tx.send(());
+                        }
+                    })
+                }));
+            })
+        }));
+
+        // Offer/Answer exchange
+        let offer = pc1.create_offer(None).await?;
+        pc1.set_local_description(offer.clone()).await?;
+        let mut gather_complete = pc1.gathering_complete_promise().await;
+        // wait for ICE gathering to complete to include host candidates
+        let _ = gather_complete.recv().await;
+
+        pc2.set_remote_description(offer).await?;
+        // start forwarding pc1 -> pc2 ICE after remote desc is set
+        let pc2_for_task = pc2.clone();
+        tokio::spawn(async move {
+            while let Some(c) = to_pc2_rx.recv().await {
+                let _ = pc2_for_task.add_ice_candidate(c).await;
+            }
+        });
+
+        let answer = pc2.create_answer(None).await?;
+        pc2.set_local_description(answer.clone()).await?;
+        let mut gather_complete2 = pc2.gathering_complete_promise().await;
+        let _ = gather_complete2.recv().await;
+
+        pc1.set_remote_description(answer).await?;
+        // start forwarding pc2 -> pc1 ICE after remote desc is set
+        let pc1_for_task = pc1.clone();
+        tokio::spawn(async move {
+            while let Some(c) = to_pc1_rx.recv().await {
+                let _ = pc1_for_task.add_ice_candidate(c).await;
+            }
+        });
+
+        let (bus1, bus2) = mock_bus::MockBus::new_shared();
+
+        Ok((
+            Self {
+                me: a.clone(),
+                pc_present: true,
+                open_channels: HashSet::new(),
+                bus: bus1,
+                peer: Some(b.clone()),
+                pc: Some(pc1),
+                data_channels: vec![dc1],
+                open_rx: Some(open_rx1),
+            },
+            Self {
+                me: b.clone(),
+                pc_present: true,
+                open_channels: HashSet::new(),
+                bus: bus2,
+                peer: Some(a),
+                pc: Some(pc2),
+                data_channels: Vec::new(), // dc arrives via on_data_channel
+                open_rx: Some(open_rx2),
+            },
+        ))
+    }
+
+    pub async fn wait_data_channel_open(&mut self, timeout: std::time::Duration) -> Result<()> {
+        if let Some(rx) = self.open_rx.take() {
+            tokio::time::timeout(timeout, rx).await??;
+        }
+        Ok(())
     }
 }
 
