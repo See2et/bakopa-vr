@@ -1,5 +1,5 @@
 use bloom_core::{ParticipantId, RoomId};
-use syncer::{Pose, PoseTransform, StreamKind, TracingContext};
+use syncer::{messages::ChatMessage, Pose, PoseTransform, StreamKind, TracingContext};
 
 pub mod fake_clock;
 
@@ -23,5 +23,16 @@ pub fn sample_tracing_context(room_id: &RoomId, participant_id: &ParticipantId) 
         room_id: room_id.clone(),
         participant_id: participant_id.clone(),
         stream_kind: StreamKind::Pose,
+    }
+}
+
+#[allow(dead_code)]
+pub fn sample_chat(sender: &ParticipantId) -> ChatMessage {
+    ChatMessage {
+        version: 1,
+        timestamp_micros: 0,
+        sequence_id: 1,
+        sender: sender.to_string(),
+        message: "hello".to_string(),
     }
 }
