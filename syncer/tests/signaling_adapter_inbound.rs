@@ -3,7 +3,6 @@ use bloom_api::ServerToClient;
 use bloom_core::{ParticipantId, RoomId};
 use syncer::messages::{SignalingMessage, SyncMessage};
 use syncer::signaling_adapter::{BloomSignalingAdapter, ClientToServerSender, SignalingContext};
-use syncer::TransportPayload;
 
 #[derive(Default)]
 struct NoopSender;
@@ -21,7 +20,8 @@ fn inbound_offer_is_wrapped_into_sync_message_envelope() {
         ice_policy: "default".to_string(),
     };
 
-    let mut adapter = BloomSignalingAdapter::with_context(NoopSender::default(), ctx);
+    let mut adapter: BloomSignalingAdapter<NoopSender> =
+        BloomSignalingAdapter::with_context(NoopSender::default(), ctx);
 
     let remote = ParticipantId::new();
     let raw = ServerToClient::Offer {
@@ -33,7 +33,8 @@ fn inbound_offer_is_wrapped_into_sync_message_envelope() {
 
     adapter.push_incoming(raw);
 
-    let mut polled = adapter.poll();
+    let (mut polled, events) = adapter.poll();
+    assert!(events.is_empty());
     assert_eq!(polled.len(), 1, "one payload should be produced");
 
     let payload = polled.pop().unwrap();
@@ -61,7 +62,8 @@ fn inbound_answer_and_ice_are_also_wrapped() {
         ice_policy: "default".to_string(),
     };
 
-    let mut adapter = BloomSignalingAdapter::with_context(NoopSender::default(), ctx);
+    let mut adapter: BloomSignalingAdapter<NoopSender> =
+        BloomSignalingAdapter::with_context(NoopSender::default(), ctx);
 
     let remote = ParticipantId::new();
 
@@ -79,7 +81,8 @@ fn inbound_answer_and_ice_are_also_wrapped() {
         },
     });
 
-    let polled = adapter.poll();
+    let (polled, events) = adapter.poll();
+    assert!(events.is_empty());
     assert_eq!(polled.len(), 2);
 
     let messages: Vec<_> = polled
