@@ -5,17 +5,20 @@ use bloom_core::ParticipantId;
 
 use syncer::{Transport, TransportEvent, TransportPayload};
 
+#[allow(dead_code)]
 #[derive(Default)]
 pub struct BusState {
     pub registered: Vec<ParticipantId>,
     pub messages: Vec<(ParticipantId, ParticipantId, TransportPayload)>,
 }
 
+#[allow(dead_code)]
 pub struct BusTransport {
     me: ParticipantId,
     bus: Rc<RefCell<BusState>>,
 }
 
+#[allow(dead_code)]
 impl BusTransport {
     pub fn new(me: ParticipantId, bus: Rc<RefCell<BusState>>) -> Self {
         Self { me, bus }
@@ -64,6 +67,7 @@ impl Transport for BusTransport {
     }
 }
 
+#[allow(dead_code)]
 pub fn new_bus() -> Rc<RefCell<BusState>> {
     Rc::new(RefCell::new(BusState::default()))
 }

@@ -3,10 +3,7 @@ use std::rc::Rc;
 
 use bloom_core::ParticipantId;
 
-use crate::{
-    messages::SyncMessage,
-    Transport, TransportEvent, TransportPayload, TransportSendParams, StreamKind,
-};
+use crate::{Transport, TransportEvent, TransportPayload, TransportSendParams};
 
 #[derive(Default, Debug)]
 struct WebrtcBus {
@@ -86,19 +83,6 @@ impl WebrtcTransport {
     /// 送信時に使用されたチャネルパラメータの記録を取得（テスト用）。
     pub fn sent_params(&self) -> Vec<crate::TransportSendParams> {
         self.state.borrow().sent_params.clone()
-    }
-}
-
-fn stream_kind_from_payload(payload: &TransportPayload) -> Option<StreamKind> {
-    match payload {
-        TransportPayload::AudioFrame(_) => Some(StreamKind::Voice),
-        TransportPayload::Bytes(_) => match payload.parse_sync_message() {
-            Ok(SyncMessage::Pose(_)) => Some(StreamKind::Pose),
-            Ok(SyncMessage::Chat(_)) => Some(StreamKind::Chat),
-            Ok(SyncMessage::Control(control)) => Some(control.kind_stream()),
-            Ok(SyncMessage::Signaling(sig)) => Some(sig.kind_stream()),
-            Err(_) => None,
-        },
     }
 }
 
