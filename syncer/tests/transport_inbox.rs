@@ -34,8 +34,8 @@ fn pose_received_is_parsed_with_tracing_context() {
         .into_transport_payload()
         .expect("serialize outbound");
 
-    let events = TransportInbox::from_events(vec![TransportEvent::Received { from: from.clone(), payload }])
-        .drain_into_events(&room_id, &participants);
+    let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received { from: from.clone(), payload }]);
+    let events = inbox.drain_into_events(&room_id, &participants);
 
     let pose = events
         .into_iter()
@@ -66,8 +66,8 @@ fn chat_received_is_parsed_with_tracing_context() {
         .into_transport_payload()
         .expect("serialize outbound");
 
-    let events = TransportInbox::from_events(vec![TransportEvent::Received { from: from.clone(), payload }])
-        .drain_into_events(&room_id, &participants);
+    let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received { from: from.clone(), payload }]);
+    let events = inbox.drain_into_events(&room_id, &participants);
 
     let chat = events
         .into_iter()
@@ -89,8 +89,8 @@ fn invalid_payload_is_reported_as_error_event() {
 
     let invalid_payload = syncer::TransportPayload::Bytes(vec![]);
 
-    let events = TransportInbox::from_events(vec![TransportEvent::Received { from, payload: invalid_payload }])
-        .drain_into_events(&room_id, &participants);
+    let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received { from, payload: invalid_payload }]);
+    let events = inbox.drain_into_events(&room_id, &participants);
 
     assert!(events
         .iter()

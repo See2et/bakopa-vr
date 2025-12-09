@@ -82,8 +82,8 @@ fn send_reaches_everyone_except_sender() {
     ta.send(b.clone(), TransportPayload::Bytes(vec![1]));
 
     // B and C should receive, A should not
-    let mut received_b = tb.poll();
-    let mut received_c = tc.poll();
+    let received_b = tb.poll();
+    let received_c = tc.poll();
 
     assert_eq!(received_b.len(), 1, "B should receive one message");
     assert_eq!(received_c.len(), 1, "C should receive one message");

@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// 受信したTransportEventをSyncerEventへ変換する小さなバッファ。
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct TransportInbox {
     events: Vec<TransportEvent>,
 }
@@ -21,15 +21,21 @@ impl TransportInbox {
         Self { events }
     }
 
+    pub fn push(&mut self, ev: TransportEvent) {
+        self.events.push(ev);
+    }
+
     /// 受信イベントをパースし、SyncerEventへ変換して返す。
     pub fn drain_into_events(
-        self,
+        &mut self,
         room_id: &RoomId,
         _participants: &ParticipantTable,
     ) -> Vec<SyncerEvent> {
         let mut out = Vec::new();
 
-        for event in self.events {
+        let events = std::mem::take(&mut self.events);
+
+        for event in events {
             match event {
                 TransportEvent::Received { from, payload } => {
                     let parsed = payload.parse_sync_message();

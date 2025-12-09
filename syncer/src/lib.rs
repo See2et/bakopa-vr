@@ -9,6 +9,7 @@ pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, Pose
 pub use crate::router::{Outbound, OutboundPayload, Router};
 pub use crate::signaling_adapter::SignalingAdapter;
 pub use crate::transport_inbox::TransportInbox;
+pub use crate::participant_table::ParticipantTable;
 
 use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};
@@ -61,6 +62,101 @@ impl<T: Transport> FilteringTransport<T> {
 
     pub fn poll(&mut self) -> Vec<TransportEvent> {
         self.inner.poll()
+    }
+}
+
+/// Router・TransportInbox を組み合わせた最小Syncer実装。
+pub struct BasicSyncer<T: Transport> {
+    transport: FilteringTransport<T>,
+    participants: ParticipantTable,
+    router: Router,
+    inbox: TransportInbox,
+    room: Option<RoomId>,
+}
+
+impl<T: Transport> BasicSyncer<T> {
+    pub fn new(me: ParticipantId, transport: T) -> Self {
+        Self {
+            transport: FilteringTransport::new(me, transport),
+            participants: ParticipantTable::new(),
+            router: Router::new(),
+            inbox: TransportInbox::new(),
+            room: None,
+        }
+    }
+}
+
+impl<T: Transport> Syncer for BasicSyncer<T> {
+    fn handle(&mut self, request: SyncerRequest) -> Vec<SyncerEvent> {
+        // 先に受信を取り込んでおく
+        if let Some(room) = &self.room {
+            for ev in self.transport.poll() {
+                self.inbox.push(ev);
+            }
+
+            let inbound = self.inbox.drain_into_events(room, &self.participants);
+            if !inbound.is_empty() {
+                // inbound events are returned along with those produced by request handling
+                let mut events = inbound;
+                events.extend(self.handle_request(request));
+                return events;
+            }
+        }
+
+        self.handle_request(request)
+    }
+}
+
+impl<T: Transport> BasicSyncer<T> {
+    fn handle_request(&mut self, request: SyncerRequest) -> Vec<SyncerEvent> {
+        let mut events = Vec::new();
+
+        match request {
+            SyncerRequest::Join {
+                room_id,
+                participant_id,
+            } => {
+                self.room = Some(room_id.clone());
+                self.transport.register();
+                events.extend(self.participants.apply_join(participant_id.clone()));
+                events.push(SyncerEvent::SelfJoined {
+                    room_id,
+                    participant_id,
+                });
+            }
+            SyncerRequest::SendPose { from, pose, ctx } => {
+                let outs = self.router.route_pose(&from, pose, &self.participants);
+                for outbound in outs {
+                    if let Ok(payload) = outbound.into_transport_payload() {
+                        self.transport.send(outbound.to.clone(), payload);
+                    }
+                }
+
+                if let Some(room) = &self.room {
+                    events.extend(self.inbox.drain_into_events(room, &self.participants));
+                } else {
+                    let _ = ctx;
+                }
+            }
+            SyncerRequest::SendChat { chat, ctx } => {
+                let outs = self
+                    .router
+                    .route_chat(&ctx.participant_id, chat, &self.participants);
+                for outbound in outs {
+                    if let Ok(payload) = outbound.into_transport_payload() {
+                        self.transport.send(outbound.to.clone(), payload);
+                    }
+                }
+
+                if let Some(room) = &self.room {
+                    events.extend(self.inbox.drain_into_events(room, &self.participants));
+                } else {
+                    let _ = ctx;
+                }
+            }
+        }
+
+        events
     }
 }
 
