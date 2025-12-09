@@ -3,7 +3,7 @@ use bloom_core::RoomId;
 use crate::{
     messages::SyncMessage,
     participant_table::ParticipantTable,
-    StreamKind, SyncerError, SyncerEvent, TracingContext, TransportEvent,
+    StreamKind, SyncerError, SyncerEvent, TracingContext, TransportEvent, TransportPayload,
 };
 
 /// 受信したTransportEventをSyncerEventへ変換する小さなバッファ。
@@ -37,43 +37,52 @@ impl TransportInbox {
 
         for event in events {
             match event {
-                TransportEvent::Received { from, payload } => {
-                    let parsed = payload.parse_sync_message();
-                    match parsed {
-                        Ok(sync_msg) => {
-                            let ctx = TracingContext {
-                                room_id: room_id.clone(),
-                                participant_id: from.clone(),
-                                stream_kind: stream_kind_of(&sync_msg),
-                            };
+                TransportEvent::Received { from, payload } => match payload {
+                    TransportPayload::AudioFrame(frame) => {
+                        let ctx = TracingContext {
+                            room_id: room_id.clone(),
+                            participant_id: from.clone(),
+                            stream_kind: StreamKind::Voice,
+                        };
 
-                            match sync_msg {
-                                SyncMessage::Pose(pose) => out.push(SyncerEvent::PoseReceived {
-                                    from,
-                                    pose,
-                                    ctx,
-                                }),
-                                SyncMessage::Chat(chat) => out.push(SyncerEvent::ChatReceived {
-                                    chat,
-                                    ctx,
-                                }),
-                                SyncMessage::Control(_) | SyncMessage::Signaling(_) => {
-                                    out.push(SyncerEvent::Error {
-                                        kind: SyncerError::InvalidPayload(
-                                            crate::messages::SyncMessageError::UnknownKind {
-                                                value: "control_or_signaling_in_data_channel"
-                                                    .to_string(),
-                                            },
-                                        ),
-                                    })
+                        out.push(SyncerEvent::VoiceFrameReceived { from, frame, ctx });
+                    }
+                    TransportPayload::Bytes(_) => {
+                        let parsed = payload.parse_sync_message();
+                        match parsed {
+                            Ok(sync_msg) => {
+                                let ctx = TracingContext {
+                                    room_id: room_id.clone(),
+                                    participant_id: from.clone(),
+                                    stream_kind: stream_kind_of(&sync_msg),
+                                };
+
+                                match sync_msg {
+                                    SyncMessage::Pose(pose) => {
+                                        out.push(SyncerEvent::PoseReceived { from, pose, ctx })
+                                    }
+                                    SyncMessage::Chat(chat) => {
+                                        out.push(SyncerEvent::ChatReceived { chat, ctx })
+                                    }
+                                    SyncMessage::Control(_) | SyncMessage::Signaling(_) => {
+                                        out.push(SyncerEvent::Error {
+                                            kind: SyncerError::InvalidPayload(
+                                                crate::messages::SyncMessageError::UnknownKind {
+                                                    value:
+                                                        "control_or_signaling_in_data_channel"
+                                                            .to_string(),
+                                                },
+                                            ),
+                                        })
+                                    }
                                 }
                             }
+                            Err(err) => out.push(SyncerEvent::Error {
+                                kind: SyncerError::InvalidPayload(err),
+                            }),
                         }
-                        Err(err) => out.push(SyncerEvent::Error {
-                            kind: SyncerError::InvalidPayload(err),
-                        }),
                     }
-                }
+                },
             }
         }
 

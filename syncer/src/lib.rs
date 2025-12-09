@@ -84,6 +84,11 @@ impl<T: Transport> BasicSyncer<T> {
             room: None,
         }
     }
+
+    /// テスト用: 生のTransportPayloadを送信する（音声プレースホルダなど）。
+    pub fn send_transport_payload(&mut self, to: ParticipantId, payload: TransportPayload) {
+        self.transport.send(to, payload);
+    }
 }
 
 impl<T: Transport> Syncer for BasicSyncer<T> {
@@ -203,6 +208,7 @@ impl TransportSendParams {
 #[derive(Debug, Clone)]
 pub enum TransportPayload {
     Bytes(Vec<u8>),
+    AudioFrame(Vec<u8>),
 }
 
 impl TransportPayload {
@@ -210,6 +216,9 @@ impl TransportPayload {
     pub fn parse_envelope(&self) -> Result<SyncMessageEnvelope, SyncMessageError> {
         match self {
             TransportPayload::Bytes(bytes) => SyncMessageEnvelope::from_slice(bytes),
+            TransportPayload::AudioFrame(_) => Err(SyncMessageError::UnknownKind {
+                value: StreamKind::Voice.as_str().to_string(),
+            }),
         }
     }
 
@@ -219,6 +228,9 @@ impl TransportPayload {
                 let envelope = SyncMessageEnvelope::from_slice(bytes)?;
                 SyncMessage::from_envelope(envelope)
             }
+            TransportPayload::AudioFrame(_) => Err(SyncMessageError::UnknownKind {
+                value: StreamKind::Voice.as_str().to_string(),
+            }),
         }
     }
 }
@@ -269,6 +281,11 @@ pub enum SyncerEvent {
     },
     ChatReceived {
         chat: ChatMessage,
+        ctx: TracingContext,
+    },
+    VoiceFrameReceived {
+        from: ParticipantId,
+        frame: Vec<u8>,
         ctx: TracingContext,
     },
     Error {
