@@ -6,9 +6,10 @@ async fn chat_roundtrip_over_real_datachannel() {
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
-    let (mut ta, mut tb) = syncer::webrtc_transport::RealWebrtcTransport::pair_with_datachannel_real(a, b.clone())
-        .await
-        .expect("pc setup");
+    let (mut ta, mut tb) =
+        syncer::webrtc_transport::RealWebrtcTransport::pair_with_datachannel_real(a, b.clone())
+            .await
+            .expect("pc setup");
 
     let timeout = std::time::Duration::from_secs(5);
     ta.wait_data_channel_open(timeout).await.expect("open a");
