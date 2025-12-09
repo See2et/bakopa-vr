@@ -72,12 +72,15 @@ impl WebrtcTransport {
 }
 
 fn stream_kind_from_payload(payload: &TransportPayload) -> Option<StreamKind> {
-    match payload.parse_sync_message() {
-        Ok(SyncMessage::Pose(_)) => Some(StreamKind::Pose),
-        Ok(SyncMessage::Chat(_)) => Some(StreamKind::Chat),
-        Ok(SyncMessage::Control(control)) => Some(control.kind_stream()),
-        Ok(SyncMessage::Signaling(sig)) => Some(sig.kind_stream()),
-        Err(_) => None,
+    match payload {
+        TransportPayload::AudioFrame(_) => Some(StreamKind::Voice),
+        TransportPayload::Bytes(_) => match payload.parse_sync_message() {
+            Ok(SyncMessage::Pose(_)) => Some(StreamKind::Pose),
+            Ok(SyncMessage::Chat(_)) => Some(StreamKind::Chat),
+            Ok(SyncMessage::Control(control)) => Some(control.kind_stream()),
+            Ok(SyncMessage::Signaling(sig)) => Some(sig.kind_stream()),
+            Err(_) => None,
+        },
     }
 }
 
