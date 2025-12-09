@@ -15,7 +15,12 @@ fn failure_emits_peer_left_and_clears_participants() {
     let opts = WebrtcTransportOptions {
         inject_failure_once: true,
     };
-    let (ta, tb) = WebrtcTransport::pair_with_options(a.clone(), b.clone(), opts, WebrtcTransportOptions::default());
+    let (ta, tb) = WebrtcTransport::pair_with_options(
+        a.clone(),
+        b.clone(),
+        opts,
+        WebrtcTransportOptions::default(),
+    );
 
     let mut syncer_a = BasicSyncer::new(a.clone(), ta);
     let mut syncer_b = BasicSyncer::new(b.clone(), tb);
@@ -30,13 +35,13 @@ fn failure_emits_peer_left_and_clears_participants() {
         participant_id: b.clone(),
     });
 
-    // simulate signaling/ICE failure: ここでは未実装のため、単にチャット送信後に PeerLeft を期待する（RED目的）
+    // simulate signaling/ICE failure: ここでは未実装のため、単にチャット送信後に PeerLeft を期待する
     let events = syncer_a.handle(SyncerRequest::SendChat {
         chat: common::sample_chat(&a),
         ctx: TracingContext::for_chat(&room, &a),
     });
 
-    // 失敗処理で PeerLeft が1回だけ返ることを期待（現実装では返らないためRED）
+    // 失敗処理で PeerLeft が1回だけ返ることを期待
     assert!(
         events
             .iter()
