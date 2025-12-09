@@ -1,5 +1,6 @@
 pub mod messages;
 pub mod participant_table;
+pub mod rate_limiter;
 
 pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, PoseTransform};
 
