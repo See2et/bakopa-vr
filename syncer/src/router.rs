@@ -1,6 +1,6 @@
 use bloom_core::ParticipantId;
 
-use crate::{messages::ChatMessage, Pose, StreamKind};
+use crate::{messages::ChatMessage, participant_table::ParticipantTable, Pose, StreamKind};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutboundPayload {
@@ -28,12 +28,12 @@ impl Router {
         &self,
         from: &ParticipantId,
         pose: Pose,
-        participants: &[ParticipantId],
+        participants: &ParticipantTable,
     ) -> Vec<Outbound> {
         participants
-            .iter()
-            .filter(|p| *p != from)
-            .cloned()
+            .participants()
+            .into_iter()
+            .filter(|p| p != from)
             .map(|to| Outbound {
                 to,
                 stream_kind: StreamKind::Pose,
