@@ -106,6 +106,26 @@ fn route_chat_mirrors_pose_routing_and_sets_stream_kind_chat() {
 }
 
 #[test]
+fn route_chat_returns_empty_when_recipient_left() {
+    let sender = ParticipantId::new();
+    let receiver = ParticipantId::new();
+
+    let mut table = ParticipantTable::new();
+    table.apply_join(sender.clone());
+    table.apply_join(receiver.clone());
+    table.apply_leave(receiver.clone());
+
+    let chat = sample_chat(&sender);
+    let router = Router::new();
+    let outbound = router.route_chat(&sender, chat, &table);
+
+    assert!(
+        outbound.is_empty(),
+        "should drop chat when recipient is already disconnected"
+    );
+}
+
+#[test]
 fn outbound_to_event_fills_tracing_context_with_stream_kind_pose_and_chat() {
     let room = RoomId::new();
     let sender = ParticipantId::new();
