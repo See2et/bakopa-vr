@@ -10,11 +10,13 @@ pub mod signaling_hub;
 use bloom_core::ParticipantId;
 use anyhow::Result;
 use tokio::sync::{mpsc, oneshot};
+use bytes::Bytes;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::setting_engine::SettingEngine;
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::RTCDataChannel;
+use webrtc::data_channel::data_channel_message::DataChannelMessage;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::configuration::RTCConfiguration;
@@ -64,11 +66,13 @@ pub struct RealWebrtcTransport {
     me: ParticipantId,
     pc_present: bool,
     open_channels: HashSet<String>,
+    #[allow(dead_code)]
     bus: mock_bus::MockBus,
     peer: Option<ParticipantId>,
     #[allow(dead_code)]
     pc: Option<Arc<RTCPeerConnection>>,
-    data_channels: Vec<Arc<RTCDataChannel>>,
+    data_channels: Arc<Mutex<Vec<Arc<RTCDataChannel>>>>,
+    pending: Arc<Mutex<Vec<TransportEvent>>>,
     open_rx: Option<oneshot::Receiver<()>>,
 }
 
@@ -83,7 +87,8 @@ impl RealWebrtcTransport {
             bus,
             peer: None,
             pc: None,
-            data_channels: Vec::new(),
+            data_channels: Arc::new(Mutex::new(Vec::new())),
+            pending: Arc::new(Mutex::new(Vec::new())),
             open_rx: None,
         })
     }
@@ -98,7 +103,8 @@ impl RealWebrtcTransport {
                 bus: bus_a,
                 peer: Some(b.clone()),
                 pc: None,
-                data_channels: Vec::new(),
+                data_channels: Arc::new(Mutex::new(Vec::new())),
+                pending: Arc::new(Mutex::new(Vec::new())),
                 open_rx: None,
             },
             Self {
@@ -108,7 +114,8 @@ impl RealWebrtcTransport {
                 bus: bus_b,
                 peer: Some(a.clone()),
                 pc: None,
-                data_channels: Vec::new(),
+                data_channels: Arc::new(Mutex::new(Vec::new())),
+                pending: Arc::new(Mutex::new(Vec::new())),
                 open_rx: None,
             },
         )
@@ -123,7 +130,10 @@ impl RealWebrtcTransport {
         if self.open_channels.contains(label) {
             return true;
         }
-        self.data_channels.iter().any(|dc| dc.label() == label)
+        self.data_channels
+            .lock()
+            .map(|dcs| dcs.iter().any(|dc| dc.label() == label))
+            .unwrap_or(false)
     }
 
     /// async版: 実PeerConnectionを生成し、sutera-data DataChannelのopenまでを確立する。
@@ -185,8 +195,16 @@ impl RealWebrtcTransport {
         let open_tx1_mutex = Arc::new(Mutex::new(Some(open_tx1)));
         let open_tx2_mutex = Arc::new(Mutex::new(Some(open_tx2)));
 
+        let data_channels1 = Arc::new(Mutex::new(Vec::<Arc<RTCDataChannel>>::new()));
+        let data_channels2 = Arc::new(Mutex::new(Vec::<Arc<RTCDataChannel>>::new()));
+        let pending1 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
+        let pending2 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
+
         let dc1 = pc1.create_data_channel("sutera-data", None).await?;
+        data_channels1.lock().unwrap().push(dc1.clone());
         let open_tx1_clone = open_tx1_mutex.clone();
+        let pending1_clone = pending1.clone();
+        let peer_b = b.clone();
         dc1.on_open(Box::new(move || {
             let open_tx1_clone = open_tx1_clone.clone();
             Box::pin(async move {
@@ -196,15 +214,47 @@ impl RealWebrtcTransport {
             })
         }));
 
+        dc1.on_message(Box::new(move |msg: DataChannelMessage| {
+            let pending1_clone = pending1_clone.clone();
+            let peer_b = peer_b.clone();
+            Box::pin(async move {
+                let bytes = msg.data.to_vec();
+                pending1_clone.lock().unwrap().push(TransportEvent::Received {
+                    from: peer_b.clone(),
+                    payload: TransportPayload::Bytes(bytes),
+                });
+            })
+        }));
+
+        let peer_a_for_dc = a.clone();
+        let data_channels2_for_dc = data_channels2.clone();
+        let pending2_for_dc = pending2.clone();
+
         pc2.on_data_channel(Box::new(move |dc: Arc<RTCDataChannel>| {
             let open_tx2_mutex = open_tx2_mutex.clone();
+            let data_channels2 = data_channels2_for_dc.clone();
+            let pending2 = pending2_for_dc.clone();
+            let peer_a = peer_a_for_dc.clone();
             Box::pin(async move {
+                data_channels2.lock().unwrap().push(dc.clone());
                 dc.on_open(Box::new(move || {
                     let open_tx2_mutex = open_tx2_mutex.clone();
                     Box::pin(async move {
                         if let Some(tx) = open_tx2_mutex.lock().unwrap().take() {
                             let _ = tx.send(());
                         }
+                    })
+                }));
+
+                dc.on_message(Box::new(move |msg: DataChannelMessage| {
+                    let pending2 = pending2.clone();
+                    let peer_a = peer_a.clone();
+                    Box::pin(async move {
+                        let bytes = msg.data.to_vec();
+                        pending2.lock().unwrap().push(TransportEvent::Received {
+                            from: peer_a.clone(),
+                            payload: TransportPayload::Bytes(bytes),
+                        });
                     })
                 }));
             })
@@ -250,7 +300,8 @@ impl RealWebrtcTransport {
                 bus: bus1,
                 peer: Some(b.clone()),
                 pc: Some(pc1),
-                data_channels: vec![dc1],
+                data_channels: data_channels1,
+                pending: pending1,
                 open_rx: Some(open_rx1),
             },
             Self {
@@ -260,7 +311,8 @@ impl RealWebrtcTransport {
                 bus: bus2,
                 peer: Some(a),
                 pc: Some(pc2),
-                data_channels: Vec::new(), // dc arrives via on_data_channel
+                data_channels: data_channels2, // dc arrives via on_data_channel
+                pending: pending2,
                 open_rx: Some(open_rx2),
             },
         ))
@@ -281,14 +333,33 @@ impl Transport for RealWebrtcTransport {
 
     fn send(&mut self, to: ParticipantId, payload: TransportPayload, _params: TransportSendParams) {
         if let Some(peer) = &self.peer {
-            if &to == peer {
-                self.bus.push(to, self.me.clone(), payload);
+            if &to != peer {
+                return;
+            }
+        } else {
+            return;
+        }
+
+        let bytes = match payload {
+            TransportPayload::Bytes(b) => b,
+            _ => return,
+        };
+
+        if let Ok(dc_opt) = self.data_channels.lock().map(|dcs| dcs.last().cloned()) {
+            if let Some(dc) = dc_opt {
+                let bytes = Bytes::from(bytes);
+                tokio::spawn(async move {
+                    let _ = dc.send(&bytes).await;
+                });
             }
         }
     }
 
     fn poll(&mut self) -> Vec<TransportEvent> {
-        self.bus.drain_for(&self.me)
+        if let Ok(mut pending) = self.pending.lock() {
+            return pending.drain(..).collect();
+        }
+        Vec::new()
     }
 }
 
