@@ -82,7 +82,7 @@ impl ParticipantTable {
         self.sessions.contains_key(participant)
     }
 
-    /// Returns a snapshot of the registered participants.
+    /// Returns a snapshot of the registered participants, preserving the original join order.
     pub fn participants(&self) -> Vec<ParticipantId> {
         self.order.clone()
     }
