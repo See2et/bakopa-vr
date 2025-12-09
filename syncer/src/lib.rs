@@ -2,9 +2,11 @@ pub mod messages;
 pub mod participant_table;
 pub mod rate_limiter;
 pub mod router;
+pub mod signaling_adapter;
 
 pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, PoseTransform};
 pub use crate::router::{Outbound, OutboundPayload, Router};
+pub use crate::signaling_adapter::SignalingAdapter;
 
 use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};
