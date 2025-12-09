@@ -25,3 +25,14 @@ fn route_pose_sends_to_other_participants_only() {
         "pose routing must set stream_kind=pose"
     );
 }
+
+#[test]
+fn route_pose_returns_empty_when_only_sender_present() {
+    let sender = ParticipantId::new();
+    let participants = vec![sender.clone()];
+
+    let router = Router::new();
+    let outbound = router.route_pose(&sender, sample_pose(), &participants);
+
+    assert!(outbound.is_empty(), "should not send pose back to self");
+}
