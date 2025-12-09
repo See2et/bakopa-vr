@@ -1,9 +1,11 @@
 use bloom_core::{ParticipantId, RoomId};
 
 use crate::{
-    messages::ChatMessage, participant_table::ParticipantTable, Pose, StreamKind, SyncerEvent,
-    TracingContext,
+    messages::ChatMessage, messages::SyncMessageError, participant_table::ParticipantTable, Pose,
+    StreamKind, SyncerEvent, TracingContext, TransportPayload,
 };
+use crate::messages::{SyncMessageEnvelope, reason};
+use serde_json;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutboundPayload {
@@ -45,6 +47,21 @@ impl Outbound {
             },
             OutboundPayload::Chat(chat) => SyncerEvent::ChatReceived { chat, ctx },
         }
+    }
+
+    /// Serialize Outbound payload into TransportPayload bytes wrapped in SyncMessageEnvelope.
+    pub fn into_transport_payload(&self) -> Result<TransportPayload, SyncMessageError> {
+        let envelope = match &self.payload {
+            OutboundPayload::Pose(pose) => SyncMessageEnvelope::from_pose(pose.clone())?,
+            OutboundPayload::Chat(chat) => SyncMessageEnvelope::from_chat(chat.clone())?,
+        };
+
+        let bytes = serde_json::to_vec(&envelope).map_err(|_| SyncMessageError::SchemaViolation {
+            kind: self.stream_kind.as_str().to_string(),
+            reason: reason::SERIALIZE_FAILED,
+        })?;
+
+        Ok(TransportPayload::Bytes(bytes))
     }
 }
 
