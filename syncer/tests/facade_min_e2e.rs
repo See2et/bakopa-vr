@@ -1,70 +1,10 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 mod common;
 
 use bloom_core::{ParticipantId, RoomId};
 use common::{sample_chat, sample_pose, sample_tracing_context};
-use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest, Transport, TransportEvent, TransportPayload};
+use common::bus_transport::{new_bus, BusTransport};
+use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest};
 
-#[derive(Default)]
-struct Bus {
-    registered: Vec<ParticipantId>,
-    messages: Vec<(ParticipantId, ParticipantId, TransportPayload)>,
-}
-
-struct BusTransport {
-    me: ParticipantId,
-    bus: Rc<RefCell<Bus>>,
-}
-
-impl BusTransport {
-    fn new(me: ParticipantId, bus: Rc<RefCell<Bus>>) -> Self {
-        Self { me, bus }
-    }
-}
-
-impl Transport for BusTransport {
-    fn register_participant(&mut self, participant: ParticipantId) {
-        let mut bus = self.bus.borrow_mut();
-        if !bus.registered.iter().any(|p| p == &participant) {
-            bus.registered.push(participant);
-        }
-    }
-
-    fn send(&mut self, to: ParticipantId, payload: TransportPayload) {
-        let recipients: Vec<ParticipantId> = {
-            let bus = self.bus.borrow();
-            bus.registered
-                .iter()
-                .filter(|p| *p != &self.me)
-                .cloned()
-                .collect()
-        };
-
-        let mut bus = self.bus.borrow_mut();
-        for r in recipients {
-            bus.messages.push((r, self.me.clone(), payload.clone()));
-        }
-
-        let _ = to;
-    }
-
-    fn poll(&mut self) -> Vec<TransportEvent> {
-        let mut bus = self.bus.borrow_mut();
-        let mut out = Vec::new();
-        let mut i = 0;
-        while i < bus.messages.len() {
-            if bus.messages[i].0 == self.me {
-                let (_to, from, payload) = bus.messages.remove(i);
-                out.push(TransportEvent::Received { from, payload });
-            } else {
-                i += 1;
-            }
-        }
-        out
-    }
-}
 
 #[test]
 fn pose_flow_delivers_once_to_peer() {
@@ -72,7 +12,7 @@ fn pose_flow_delivers_once_to_peer() {
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
-    let bus = Rc::new(RefCell::new(Bus::default()));
+    let bus = new_bus();
 
     let ta = BusTransport::new(a.clone(), bus.clone());
     let tb = BusTransport::new(b.clone(), bus.clone());
@@ -129,7 +69,7 @@ fn chat_flow_delivers_once_to_peer_with_tracing() {
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
-    let bus = Rc::new(RefCell::new(Bus::default()));
+    let bus = new_bus();
 
     let ta = BusTransport::new(a.clone(), bus.clone());
     let tb = BusTransport::new(b.clone(), bus.clone());

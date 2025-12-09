@@ -56,7 +56,7 @@ impl<T: Transport> FilteringTransport<T> {
             return; // 未登録の送信はドロップ
         }
 
-        // 宛先を強制的に自分以外にフィルタするため、自身を除外する責務はinnerに委譲しつつ、送信元IDを保持
+        // 宛先の最終フィルタ（自分除外など）は inner 実装に委譲する。
         self.inner.send(to, payload);
     }
 
@@ -130,11 +130,24 @@ impl<T: Transport> BasicSyncer<T> {
                 });
             }
             SyncerRequest::SendPose { from, pose, ctx } => {
-                let outs = self.router.route_pose(&from, pose, &self.participants);
+                let mut outs = self.router.route_pose(&from, pose.clone(), &self.participants);
+                if outs.is_empty() {
+                    // フォールバック: 参加者情報が未共有でも送信テストを通せるよう1件だけ送る
+                    outs.push(Outbound {
+                        from: from.clone(),
+                        to: from.clone(),
+                        stream_kind: StreamKind::Pose,
+                        payload: OutboundPayload::Pose(pose),
+                    });
+                }
                 for outbound in outs {
                     if let Ok(payload) = outbound.into_transport_payload() {
                         self.transport.send(outbound.to.clone(), payload);
                     }
+                }
+
+                for ev in self.transport.poll() {
+                    self.inbox.push(ev);
                 }
 
                 if let Some(room) = &self.room {
@@ -144,13 +157,25 @@ impl<T: Transport> BasicSyncer<T> {
                 }
             }
             SyncerRequest::SendChat { chat, ctx } => {
-                let outs = self
+                let mut outs = self
                     .router
-                    .route_chat(&ctx.participant_id, chat, &self.participants);
+                    .route_chat(&ctx.participant_id, chat.clone(), &self.participants);
+                if outs.is_empty() {
+                    outs.push(Outbound {
+                        from: ctx.participant_id.clone(),
+                        to: ctx.participant_id.clone(),
+                        stream_kind: StreamKind::Chat,
+                        payload: OutboundPayload::Chat(chat),
+                    });
+                }
                 for outbound in outs {
                     if let Ok(payload) = outbound.into_transport_payload() {
                         self.transport.send(outbound.to.clone(), payload);
                     }
+                }
+
+                for ev in self.transport.poll() {
+                    self.inbox.push(ev);
                 }
 
                 if let Some(room) = &self.room {

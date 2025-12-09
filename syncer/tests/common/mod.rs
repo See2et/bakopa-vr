@@ -2,6 +2,7 @@ use bloom_core::{ParticipantId, RoomId};
 use syncer::{messages::ChatMessage, Pose, PoseTransform, StreamKind, TracingContext};
 
 pub mod fake_clock;
+pub mod bus_transport;
 
 #[allow(dead_code)]
 pub fn sample_pose() -> Pose {

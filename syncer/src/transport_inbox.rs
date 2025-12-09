@@ -64,17 +64,8 @@ impl TransportInbox {
                                     SyncMessage::Chat(chat) => {
                                         out.push(SyncerEvent::ChatReceived { chat, ctx })
                                     }
-                                    SyncMessage::Control(_) | SyncMessage::Signaling(_) => {
-                                        out.push(SyncerEvent::Error {
-                                            kind: SyncerError::InvalidPayload(
-                                                crate::messages::SyncMessageError::UnknownKind {
-                                                    value:
-                                                        "control_or_signaling_in_data_channel"
-                                                            .to_string(),
-                                                },
-                                            ),
-                                        })
-                                    }
+                                    SyncMessage::Control(_) | SyncMessage::Signaling(_) => out
+                                        .push(control_or_signaling_error()),
                                 }
                             }
                             Err(err) => out.push(SyncerEvent::Error {
@@ -96,5 +87,13 @@ fn stream_kind_of(msg: &SyncMessage) -> StreamKind {
         SyncMessage::Chat(_) => StreamKind::Chat,
         SyncMessage::Control(control) => control.kind_stream(),
         SyncMessage::Signaling(signaling) => signaling.kind_stream(),
+    }
+}
+
+fn control_or_signaling_error() -> SyncerEvent {
+    SyncerEvent::Error {
+        kind: SyncerError::InvalidPayload(crate::messages::SyncMessageError::UnknownKind {
+            value: "control_or_signaling_in_data_channel".to_string(),
+        }),
     }
 }

@@ -1,71 +1,13 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+mod common;
 
 use bloom_core::ParticipantId;
-use syncer::{Transport, TransportEvent, TransportPayload};
+use syncer::{Transport, TransportPayload};
 
-#[derive(Default)]
-struct Bus {
-    registered: Vec<ParticipantId>,
-    messages: Vec<(ParticipantId, ParticipantId, TransportPayload)>,
-}
-
-struct BusTransport {
-    me: ParticipantId,
-    bus: Rc<RefCell<Bus>>,
-}
-
-impl BusTransport {
-    fn new(me: ParticipantId, bus: Rc<RefCell<Bus>>) -> Self {
-        Self { me, bus }
-    }
-}
-
-impl Transport for BusTransport {
-    fn register_participant(&mut self, participant: ParticipantId) {
-        let mut bus = self.bus.borrow_mut();
-        if !bus.registered.iter().any(|p| p == &participant) {
-            bus.registered.push(participant);
-        }
-    }
-
-    fn send(&mut self, to: ParticipantId, payload: TransportPayload) {
-        let bus = self.bus.borrow();
-        let recipients: Vec<ParticipantId> = bus
-            .registered
-            .iter()
-            .filter(|p| *p != &self.me) // 自分以外
-            .cloned()
-            .collect();
-        drop(bus);
-
-        let mut bus = self.bus.borrow_mut();
-        for r in recipients {
-            bus.messages.push((r, self.me.clone(), payload.clone()));
-        }
-
-        let _ = to; // signature維持
-    }
-
-    fn poll(&mut self) -> Vec<TransportEvent> {
-        let mut bus = self.bus.borrow_mut();
-        let mut out = Vec::new();
-        let mut i = 0;
-        while i < bus.messages.len() {
-            if bus.messages[i].0 == self.me {
-                let (_to, from, payload) = bus.messages.remove(i);
-                out.push(TransportEvent::Received { from, payload });
-            } else {
-                i += 1;
-            }
-        }
-        out
-    }
-}
+use common::bus_transport::{new_bus, BusTransport};
 
 #[test]
 fn send_reaches_everyone_except_sender() {
-    let bus = Rc::new(RefCell::new(Bus::default()));
+    let bus = new_bus();
     let a = ParticipantId::new();
     let b = ParticipantId::new();
     let c = ParticipantId::new();
@@ -95,7 +37,7 @@ fn send_reaches_everyone_except_sender() {
 
 #[test]
 fn nothing_delivered_before_registration() {
-    let bus = Rc::new(RefCell::new(Bus::default()));
+    let bus = new_bus();
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
