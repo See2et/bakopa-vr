@@ -17,7 +17,7 @@ struct WebrtcBus {
 struct WebrtcState {
     sent_params: Vec<crate::TransportSendParams>,
     pending: Vec<crate::TransportEvent>,
-    fail_on_send: bool,
+    inject_failure_once: bool,
 }
 
 /// 最小動作のためのin-process WebRTC風Transport。
@@ -31,8 +31,26 @@ pub struct WebrtcTransport {
     state: Rc<RefCell<WebrtcState>>, // テスト用の観測ポイント
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct WebrtcTransportOptions {
+    pub inject_failure_once: bool,
+}
+
+impl Default for WebrtcTransportOptions {
+    fn default() -> Self {
+        Self {
+            inject_failure_once: false,
+        }
+    }
+}
+
 impl WebrtcTransport {
-    fn new(me: ParticipantId, peer: ParticipantId, bus: Rc<RefCell<WebrtcBus>>) -> Self {
+    fn new(
+        me: ParticipantId,
+        peer: ParticipantId,
+        bus: Rc<RefCell<WebrtcBus>>,
+        opts: WebrtcTransportOptions,
+    ) -> Self {
         Self {
             me,
             peer,
@@ -41,7 +59,7 @@ impl WebrtcTransport {
             state: Rc::new(RefCell::new(WebrtcState {
                 sent_params: Vec::new(),
                 pending: Vec::new(),
-                fail_on_send: true, // 初回送信で失敗を注入（テスト用）
+                inject_failure_once: opts.inject_failure_once,
             })),
         }
     }
@@ -49,25 +67,19 @@ impl WebrtcTransport {
     /// in-processで2ピア分のTransportを生成するためのヘルパー。
     /// 将来、ここを実WebRTC初期化に置き換える。
     pub fn pair(a: ParticipantId, b: ParticipantId) -> (Self, Self) {
-        let bus = Rc::new(RefCell::new(WebrtcBus::default()));
-        let ta_state = Rc::new(RefCell::new(WebrtcState::default()));
-        let tb_state = Rc::new(RefCell::new(WebrtcState::default()));
+        Self::pair_with_options(a, b, WebrtcTransportOptions::default(), WebrtcTransportOptions::default())
+    }
 
+    pub fn pair_with_options(
+        a: ParticipantId,
+        b: ParticipantId,
+        opts_a: WebrtcTransportOptions,
+        opts_b: WebrtcTransportOptions,
+    ) -> (Self, Self) {
+        let bus = Rc::new(RefCell::new(WebrtcBus::default()));
         (
-            Self {
-                me: a.clone(),
-                peer: b.clone(),
-                bus: bus.clone(),
-                registered: false,
-                state: ta_state,
-            },
-            Self {
-                me: b,
-                peer: a,
-                bus,
-                registered: false,
-                state: tb_state,
-            },
+            Self::new(a.clone(), b.clone(), bus.clone(), opts_a),
+            Self::new(b, a, bus, opts_b),
         )
     }
 
@@ -98,25 +110,22 @@ impl Transport for WebrtcTransport {
         }
     }
 
-    fn send(&mut self, _to: ParticipantId, payload: TransportPayload) {
+    fn send(&mut self, _to: ParticipantId, payload: TransportPayload, params: TransportSendParams) {
         if !self.registered {
             return; // 登録前は送信しない（FilteringTransportと整合）
         }
 
-        // ペイロードから StreamKind を推定し、送信用パラメータを記録する。
-        if let Some(kind) = stream_kind_from_payload(&payload) {
-            let params = TransportSendParams::for_stream(kind);
-            self.state.borrow_mut().sent_params.push(params);
-        }
+        // 渡された送信パラメータを記録
+        self.state.borrow_mut().sent_params.push(params);
 
         // 初回送信時に通信失敗をシミュレートし、自分宛にFailureイベントを積む。
         {
             let mut state = self.state.borrow_mut();
-            if state.fail_on_send {
+            if state.inject_failure_once {
                 state.pending.push(crate::TransportEvent::Failure {
                     peer: self.peer.clone(),
                 });
-                state.fail_on_send = false;
+                state.inject_failure_once = false;
             }
         }
 

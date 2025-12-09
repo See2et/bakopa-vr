@@ -1,9 +1,7 @@
 mod common;
 
-use std::time::Duration;
-
 use bloom_core::{ParticipantId, RoomId};
-use common::sample_chat;
+use common::{sample_chat, timeouts};
 use syncer::{
     webrtc_transport::WebrtcTransport, BasicSyncer, Syncer, SyncerEvent, SyncerRequest,
     TracingContext,
@@ -38,7 +36,7 @@ async fn chat_roundtrip_over_webrtc_transport() {
     });
 
     // B 側で受信を待つ（短時間タイムアウト）
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(200);
+    let deadline = tokio::time::Instant::now() + timeouts::WAIT_TIMEOUT;
     let mut received = None;
     while tokio::time::Instant::now() < deadline {
         let events = syncer_b.handle(SyncerRequest::SendChat {
@@ -54,7 +52,7 @@ async fn chat_roundtrip_over_webrtc_transport() {
             break;
         }
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(timeouts::POLL_INTERVAL).await;
     }
 
     let (chat, ctx) = received.expect("chat should be delivered over WebRTC transport");

@@ -82,6 +82,14 @@ impl ParticipantTable {
         self.sessions.contains_key(participant)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.sessions.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.sessions.len()
+    }
+
     /// Returns a snapshot of the registered participants, preserving the original join order.
     pub fn participants(&self) -> Vec<ParticipantId> {
         self.order.clone()

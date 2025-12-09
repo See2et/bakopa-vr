@@ -1,4 +1,5 @@
 use bloom_core::RoomId;
+use tracing::warn;
 
 use crate::{
     messages::SyncMessage,
@@ -75,6 +76,7 @@ impl TransportInbox {
                     }
                 },
                 TransportEvent::Failure { peer } => {
+                    warn!(room_id = %room_id, participant_id = %peer, "transport failure observed; cleaning up peer");
                     // 通信失敗としてPeerLeftを発火し、参加者テーブルから除去する。
                     let mut evs = participants.apply_leave(peer.clone());
                     if evs.is_empty() {

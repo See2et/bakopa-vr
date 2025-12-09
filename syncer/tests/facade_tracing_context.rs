@@ -34,7 +34,7 @@ impl Transport for FakeTransport {
         }
     }
 
-    fn send(&mut self, to: ParticipantId, payload: TransportPayload) {
+    fn send(&mut self, to: ParticipantId, payload: TransportPayload, _params: syncer::TransportSendParams) {
         let recipients: Vec<ParticipantId> = {
             let bus = self.bus.borrow();
             bus.participants
@@ -116,8 +116,11 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
                 pose: _,
                 ctx: _,
             } => {
-                self.transport
-                    .send(from.clone(), TransportPayload::Bytes(Vec::new()));
+                self.transport.send(
+                    from.clone(),
+                    TransportPayload::Bytes(Vec::new()),
+                    syncer::TransportSendParams::for_stream(StreamKind::Pose),
+                );
             }
             SyncerRequest::SendChat { .. } => {}
         }

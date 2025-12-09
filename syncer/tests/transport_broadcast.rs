@@ -1,7 +1,7 @@
 mod common;
 
 use bloom_core::ParticipantId;
-use syncer::{Transport, TransportPayload};
+use syncer::{Transport, TransportPayload, TransportSendParams};
 
 use common::bus_transport::{new_bus, BusTransport};
 
@@ -21,7 +21,11 @@ fn send_reaches_everyone_except_sender() {
     tc.register_participant(c.clone());
 
     // A sends once
-    ta.send(b.clone(), TransportPayload::Bytes(vec![1]));
+    ta.send(
+        b.clone(),
+        TransportPayload::Bytes(vec![1]),
+        TransportSendParams::for_stream(syncer::StreamKind::Chat),
+    );
 
     // B and C should receive, A should not
     let received_b = tb.poll();
@@ -45,7 +49,11 @@ fn nothing_delivered_before_registration() {
     let mut tb = BusTransport::new(b.clone(), bus.clone());
 
     // send before register -> should be dropped
-    ta.send(b.clone(), TransportPayload::Bytes(vec![1]));
+    ta.send(
+        b.clone(),
+        TransportPayload::Bytes(vec![1]),
+        TransportSendParams::for_stream(syncer::StreamKind::Chat),
+    );
 
     let received_b = tb.poll();
     assert!(received_b.is_empty(), "unregistered peers should not receive");
@@ -53,7 +61,11 @@ fn nothing_delivered_before_registration() {
     // after register, message should flow
     tb.register_participant(b.clone());
     ta.register_participant(a.clone());
-    ta.send(b.clone(), TransportPayload::Bytes(vec![2]));
+    ta.send(
+        b.clone(),
+        TransportPayload::Bytes(vec![2]),
+        TransportSendParams::for_stream(syncer::StreamKind::Chat),
+    );
 
     let received_b = tb.poll();
     assert_eq!(received_b.len(), 1, "registered peer should receive after register");

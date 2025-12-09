@@ -2,8 +2,8 @@ mod common;
 
 use bloom_core::{ParticipantId, RoomId};
 use syncer::{
-    webrtc_transport::WebrtcTransport, BasicSyncer, Syncer, SyncerEvent, SyncerRequest,
-    TracingContext,
+    webrtc_transport::{WebrtcTransport, WebrtcTransportOptions},
+    BasicSyncer, Syncer, SyncerEvent, SyncerRequest, TracingContext,
 };
 
 #[test]
@@ -12,7 +12,10 @@ fn failure_emits_peer_left_and_clears_participants() {
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
-    let (ta, tb) = WebrtcTransport::pair(a.clone(), b.clone());
+    let opts = WebrtcTransportOptions {
+        inject_failure_once: true,
+    };
+    let (ta, tb) = WebrtcTransport::pair_with_options(a.clone(), b.clone(), opts, WebrtcTransportOptions::default());
 
     let mut syncer_a = BasicSyncer::new(a.clone(), ta);
     let mut syncer_b = BasicSyncer::new(b.clone(), tb);

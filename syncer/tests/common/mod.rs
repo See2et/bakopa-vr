@@ -3,6 +3,7 @@ use syncer::{messages::ChatMessage, Pose, PoseTransform, StreamKind, TracingCont
 
 pub mod fake_clock;
 pub mod bus_transport;
+pub mod timeouts;
 
 #[allow(dead_code)]
 pub fn sample_pose() -> Pose {

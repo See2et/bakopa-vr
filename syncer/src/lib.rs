@@ -25,7 +25,7 @@ pub trait Syncer {
 /// WebRTC/DataChannel等の下位トランスポートを抽象化するためのtrait。
 pub trait Transport {
     fn register_participant(&mut self, participant: ParticipantId);
-    fn send(&mut self, to: ParticipantId, payload: TransportPayload);
+    fn send(&mut self, to: ParticipantId, payload: TransportPayload, params: TransportSendParams);
     fn poll(&mut self) -> Vec<TransportEvent>;
 }
 
@@ -52,13 +52,13 @@ impl<T: Transport> FilteringTransport<T> {
         self.inner.register_participant(self.me.clone());
     }
 
-    pub fn send(&mut self, to: ParticipantId, payload: TransportPayload) {
+    pub fn send(&mut self, to: ParticipantId, payload: TransportPayload, params: TransportSendParams) {
         if !self.registered {
             return; // 未登録の送信はドロップ
         }
 
         // 宛先の最終フィルタ（自分除外など）は inner 実装に委譲する。
-        self.inner.send(to, payload);
+        self.inner.send(to, payload, params);
     }
 
     pub fn poll(&mut self) -> Vec<TransportEvent> {
@@ -88,7 +88,20 @@ impl<T: Transport> BasicSyncer<T> {
 
     /// テスト用: 生のTransportPayloadを送信する（音声プレースホルダなど）。
     pub fn send_transport_payload(&mut self, to: ParticipantId, payload: TransportPayload) {
-        self.transport.send(to, payload);
+        let params = TransportSendParams::for_payload(&payload);
+        self.transport.send(to, payload, params);
+    }
+
+    fn drain_transport_events(&mut self) -> Vec<SyncerEvent> {
+        let mut aggregated = Vec::new();
+        if let Some(room) = &self.room {
+            for ev in self.transport.poll() {
+                self.inbox.push(ev);
+            }
+
+            aggregated.extend(self.inbox.drain_into_events(room, &mut self.participants));
+        }
+        aggregated
     }
 }
 
@@ -143,19 +156,14 @@ impl<T: Transport> BasicSyncer<T> {
                 }
                 for outbound in outs {
                     if let Ok(payload) = outbound.into_transport_payload() {
-                        self.transport.send(outbound.to.clone(), payload);
+                        let params = TransportSendParams::for_stream(outbound.stream_kind);
+                        self.transport
+                            .send(outbound.to.clone(), payload, params);
                     }
                 }
 
-                for ev in self.transport.poll() {
-                    self.inbox.push(ev);
-                }
-
-                if let Some(room) = &self.room {
-                    events.extend(self.inbox.drain_into_events(room, &mut self.participants));
-                } else {
-                    let _ = ctx;
-                }
+                events.extend(self.drain_transport_events());
+                let _ = ctx;
             }
             SyncerRequest::SendChat { chat, ctx } => {
                 let mut outs = self
@@ -171,19 +179,14 @@ impl<T: Transport> BasicSyncer<T> {
                 }
                 for outbound in outs {
                     if let Ok(payload) = outbound.into_transport_payload() {
-                        self.transport.send(outbound.to.clone(), payload);
+                        let params = TransportSendParams::for_stream(outbound.stream_kind);
+                        self.transport
+                            .send(outbound.to.clone(), payload, params);
                     }
                 }
 
-                for ev in self.transport.poll() {
-                    self.inbox.push(ev);
-                }
-
-                if let Some(room) = &self.room {
-                    events.extend(self.inbox.drain_into_events(room, &mut self.participants));
-                } else {
-                    let _ = ctx;
-                }
+                events.extend(self.drain_transport_events());
+                let _ = ctx;
             }
         }
 
@@ -227,6 +230,26 @@ impl TransportSendParams {
                 label: "sutera-data",
             },
             StreamKind::Voice => Self::AudioTrack,
+        }
+    }
+
+    /// TransportPayloadから推定されるStreamKindに基づいてチャネル設定を返す。
+    pub fn for_payload(payload: &TransportPayload) -> Self {
+        match payload {
+            TransportPayload::AudioFrame(_) => Self::AudioTrack,
+            TransportPayload::Bytes(bytes) => {
+                if let Ok(env) = SyncMessageEnvelope::from_slice(bytes) {
+                    if let Ok(kind) = StreamKind::parse(env.kind.as_str()) {
+                        return Self::for_stream(kind);
+                    }
+                }
+                // フォールバックは安全側でordered/reliable
+                Self::DataChannel {
+                    ordered: true,
+                    reliable: true,
+                    label: "sutera-data",
+                }
+            }
         }
     }
 }

@@ -30,7 +30,7 @@ impl Transport for BusTransport {
         }
     }
 
-    fn send(&mut self, to: ParticipantId, payload: TransportPayload) {
+    fn send(&mut self, to: ParticipantId, payload: TransportPayload, _params: syncer::TransportSendParams) {
         let recipients: Vec<ParticipantId> = {
             let bus = self.bus.borrow();
             bus.registered
