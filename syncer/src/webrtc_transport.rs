@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::collections::HashSet;
 
+mod mock_bus;
+
 use bloom_core::ParticipantId;
 use anyhow::Result;
 
@@ -48,16 +50,41 @@ pub struct RealWebrtcTransport {
     me: ParticipantId,
     pc_present: bool,
     open_channels: HashSet<String>,
+    bus: mock_bus::MockBus,
+    peer: Option<ParticipantId>,
 }
 
 impl RealWebrtcTransport {
     pub fn new(me: ParticipantId, _ice_servers: Vec<String>) -> Result<Self> {
-        // TODO: 実装時に RTCPeerConnection を初期化
+        // 本実装時にはpeerはシグナリングでセットされる。いまはNone。
+        let (bus, _peer_bus) = mock_bus::MockBus::new_shared();
         Ok(Self {
             me,
             pc_present: true,
             open_channels: HashSet::from(["sutera-data".to_string()]), // 仮でopen扱い
+            bus,
+            peer: None,
         })
+    }
+
+    pub fn pair_for_tests(a: ParticipantId, b: ParticipantId) -> (Self, Self) {
+        let (bus_a, bus_b) = mock_bus::MockBus::new_shared();
+        (
+            Self {
+                me: a.clone(),
+                pc_present: true,
+                open_channels: HashSet::from(["sutera-data".to_string()]),
+                bus: bus_a,
+                peer: Some(b.clone()),
+            },
+            Self {
+                me: b,
+                pc_present: true,
+                open_channels: HashSet::from(["sutera-data".to_string()]),
+                bus: bus_b,
+                peer: Some(a),
+            },
+        )
     }
 
     pub fn has_peer_connection(&self) -> bool {
@@ -75,12 +102,16 @@ impl Transport for RealWebrtcTransport {
         // TODO: 実装時にPCへの登録などを行う
     }
 
-    fn send(&mut self, _to: ParticipantId, _payload: TransportPayload, _params: TransportSendParams) {
-        // TODO: DataChannel/Track経由で送信
+    fn send(&mut self, to: ParticipantId, payload: TransportPayload, _params: TransportSendParams) {
+        if let Some(peer) = &self.peer {
+            if &to == peer {
+                self.bus.push(to, self.me.clone(), payload);
+            }
+        }
     }
 
     fn poll(&mut self) -> Vec<TransportEvent> {
-        Vec::new()
+        self.bus.drain_for(&self.me)
     }
 }
 
