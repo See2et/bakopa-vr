@@ -1,5 +1,5 @@
 use serde_json::json;
-use syncer::messages::{SignalingMessage, SignalingOffer, SignalingAnswer, SyncMessageError};
+use syncer::messages::{SignalingAnswer, SignalingMessage, SignalingOffer, SyncMessageError};
 
 fn sample_offer() -> SignalingOffer {
     SignalingOffer {
@@ -53,8 +53,7 @@ fn missing_room_id_causes_schema_violation() {
         "sdp": "v=0\n"
     });
 
-    let err = SignalingMessage::from_json_body(&raw)
-        .expect_err("room_id is required");
+    let err = SignalingMessage::from_json_body(&raw).expect_err("room_id is required");
 
     assert!(matches!(
         err,
@@ -73,8 +72,7 @@ fn missing_auth_token_causes_schema_violation() {
         "sdp": "v=0\n"
     });
 
-    let err = SignalingMessage::from_json_body(&raw)
-        .expect_err("auth token is required");
+    let err = SignalingMessage::from_json_body(&raw).expect_err("auth token is required");
 
     assert!(matches!(
         err,

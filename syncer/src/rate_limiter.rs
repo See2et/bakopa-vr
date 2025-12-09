@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    num::NonZeroU32,
     time::{Duration, Instant},
 };
 
@@ -32,10 +33,16 @@ struct WindowCounter {
     count: u32,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct RateLimitConfig {
+    pub limit_per_window: NonZeroU32,
+    pub window: Duration,
+}
+
 /// デフォルトで `RealClock` を用いるが、テストでは型パラメータでクロックを差し替えられる。
 #[derive(Debug)]
 pub struct RateLimiter<C: Clock = RealClock> {
-    limit: u32,
+    limit: NonZeroU32,
     window: Duration,
     sessions: HashMap<String, WindowCounter>,
     clock: C,
@@ -43,6 +50,7 @@ pub struct RateLimiter<C: Clock = RealClock> {
 
 impl RateLimiter<RealClock> {
     pub fn new(limit: u32, window: Duration) -> Self {
+        let limit = NonZeroU32::new(limit).expect("limit must be greater than zero");
         Self {
             limit,
             window,
@@ -50,10 +58,27 @@ impl RateLimiter<RealClock> {
             clock: RealClock,
         }
     }
+
+    pub fn from_config(config: RateLimitConfig) -> Self {
+        Self {
+            limit: config.limit_per_window,
+            window: config.window,
+            sessions: HashMap::new(),
+            clock: RealClock,
+        }
+    }
+
+    pub fn config(&self) -> RateLimitConfig {
+        RateLimitConfig {
+            limit_per_window: self.limit,
+            window: self.window,
+        }
+    }
 }
 
 impl<C: Clock> RateLimiter<C> {
     pub fn with_clock(limit: u32, window: Duration, clock: C) -> Self {
+        let limit = NonZeroU32::new(limit).expect("limit must be greater than zero");
         Self {
             limit,
             window,
@@ -70,16 +95,6 @@ impl<C: Clock> RateLimiter<C> {
         self.check_and_record_inner(session_id.as_ref(), stream_kind, self.clock.now())
     }
 
-    /// テスト用: 呼び出し側でクロックを明示できるAPI。
-    pub fn check_and_record_with_clock(
-        &mut self,
-        session_id: impl AsRef<str>,
-        stream_kind: StreamKind,
-        clock: C,
-    ) -> RateLimitDecision {
-        self.check_and_record_inner(session_id.as_ref(), stream_kind, clock.now())
-    }
-
     fn check_and_record_inner(
         &mut self,
         session_id: &str,
@@ -94,17 +109,28 @@ impl<C: Clock> RateLimiter<C> {
                 count: 0,
             });
 
-        // ウィンドウ経過でリセット
-        if now.duration_since(counter.window_start) >= self.window {
+        if Self::should_reset(counter, now, self.window) {
             counter.window_start = now;
             counter.count = 0;
         }
 
-        if counter.count < self.limit {
+        if counter.count < self.limit.get() {
             counter.count += 1;
             RateLimitDecision::Allowed
         } else {
             RateLimitDecision::RateLimited { stream_kind }
         }
+    }
+
+    fn should_reset(counter: &WindowCounter, now: Instant, window: Duration) -> bool {
+        now.duration_since(counter.window_start) >= window
+    }
+
+    /// オプション: 一定時間経過したセッションのカウンタをクリーンアップする。
+    /// windowを超えてカウントが0のものを削除することでメモリ膨張を防ぐ。
+    pub fn purge_inactive(&mut self, now: Instant) {
+        self.sessions.retain(|_, counter| {
+            !Self::should_reset(counter, now, self.window) || counter.count > 0
+        });
     }
 }

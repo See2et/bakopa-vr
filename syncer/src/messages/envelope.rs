@@ -41,34 +41,42 @@ impl SyncMessageEnvelope {
             })?;
 
         let version_value = envelope.get("v").ok_or(SyncMessageError::MissingVersion)?;
-        let version_u64 = version_value.as_u64().ok_or_else(|| {
-            SyncMessageError::SchemaViolation {
+        let version_u64 =
+            version_value
+                .as_u64()
+                .ok_or_else(|| SyncMessageError::SchemaViolation {
+                    kind: "envelope".to_string(),
+                    reason: reason::VERSION_NOT_U32,
+                })?;
+        let version =
+            u32::try_from(version_u64).map_err(|_| SyncMessageError::SchemaViolation {
                 kind: "envelope".to_string(),
                 reason: reason::VERSION_NOT_U32,
-            }
-        })?;
-        let version = u32::try_from(version_u64).map_err(|_| SyncMessageError::SchemaViolation {
-            kind: "envelope".to_string(),
-            reason: reason::VERSION_NOT_U32,
-        })?;
+            })?;
         if version != 1 {
             return Err(SyncMessageError::UnsupportedVersion { received: version });
         }
 
-        let kind_value = envelope.get("kind").ok_or_else(|| SyncMessageError::SchemaViolation {
-            kind: "envelope".to_string(),
-            reason: reason::MISSING_KIND,
-        })?;
-        let kind_str = kind_value.as_str().ok_or_else(|| SyncMessageError::SchemaViolation {
-            kind: "envelope".to_string(),
-            reason: reason::KIND_NOT_STRING,
-        })?;
+        let kind_value = envelope
+            .get("kind")
+            .ok_or_else(|| SyncMessageError::SchemaViolation {
+                kind: "envelope".to_string(),
+                reason: reason::MISSING_KIND,
+            })?;
+        let kind_str = kind_value
+            .as_str()
+            .ok_or_else(|| SyncMessageError::SchemaViolation {
+                kind: "envelope".to_string(),
+                reason: reason::KIND_NOT_STRING,
+            })?;
         let kind = StreamKind::parse(kind_str)?;
 
-        let body_value = envelope.get("body").ok_or_else(|| SyncMessageError::SchemaViolation {
-            kind: kind.as_str().to_string(),
-            reason: reason::MISSING_BODY,
-        })?;
+        let body_value = envelope
+            .get("body")
+            .ok_or_else(|| SyncMessageError::SchemaViolation {
+                kind: kind.as_str().to_string(),
+                reason: reason::MISSING_BODY,
+            })?;
         if !body_value.is_object() {
             return Err(SyncMessageError::SchemaViolation {
                 kind: kind.as_str().to_string(),

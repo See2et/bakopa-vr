@@ -26,13 +26,12 @@ impl SignalingMessage {
         }
 
         let obj = value.as_object().expect("checked is_object");
-        let signaling_type = obj
-            .get("type")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| SyncMessageError::SchemaViolation {
+        let signaling_type = obj.get("type").and_then(|v| v.as_str()).ok_or_else(|| {
+            SyncMessageError::SchemaViolation {
                 kind: "signaling".to_string(),
                 reason: reason::MISSING_TYPE,
-            })?;
+            }
+        })?;
 
         let message: SignalingMessage = match signaling_type {
             "offer" => {
@@ -40,27 +39,33 @@ impl SignalingMessage {
                 Self::ensure_field(obj, "authToken", reason::MISSING_AUTH_TOKEN)?;
                 Self::ensure_field(obj, "icePolicy", reason::MISSING_ICE_POLICY)?;
                 Self::ensure_field(obj, "sdp", reason::MISSING_SDP)?;
-                serde_json::from_value(value.clone()).map_err(|_| SyncMessageError::SchemaViolation {
-                    kind: "signaling".to_string(),
-                    reason: reason::INVALID_OFFER,
+                serde_json::from_value(value.clone()).map_err(|_| {
+                    SyncMessageError::SchemaViolation {
+                        kind: "signaling".to_string(),
+                        reason: reason::INVALID_OFFER,
+                    }
                 })?
             }
             "answer" => {
                 Self::ensure_field(obj, "roomId", reason::MISSING_ROOM_ID)?;
                 Self::ensure_field(obj, "authToken", reason::MISSING_AUTH_TOKEN)?;
                 Self::ensure_field(obj, "sdp", reason::MISSING_SDP)?;
-                serde_json::from_value(value.clone()).map_err(|_| SyncMessageError::SchemaViolation {
-                    kind: "signaling".to_string(),
-                    reason: reason::INVALID_ANSWER,
+                serde_json::from_value(value.clone()).map_err(|_| {
+                    SyncMessageError::SchemaViolation {
+                        kind: "signaling".to_string(),
+                        reason: reason::INVALID_ANSWER,
+                    }
                 })?
             }
             "ice" => {
                 Self::ensure_field(obj, "roomId", reason::MISSING_ROOM_ID)?;
                 Self::ensure_field(obj, "authToken", reason::MISSING_AUTH_TOKEN)?;
                 Self::ensure_field(obj, "candidate", reason::MISSING_CANDIDATE)?;
-                serde_json::from_value(value.clone()).map_err(|_| SyncMessageError::SchemaViolation {
-                    kind: "signaling".to_string(),
-                    reason: reason::INVALID_ICE,
+                serde_json::from_value(value.clone()).map_err(|_| {
+                    SyncMessageError::SchemaViolation {
+                        kind: "signaling".to_string(),
+                        reason: reason::INVALID_ICE,
+                    }
                 })?
             }
             _ => {

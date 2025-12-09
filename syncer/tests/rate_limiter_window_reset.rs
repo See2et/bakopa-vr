@@ -1,34 +1,19 @@
 use std::time::{Duration, Instant};
 
+mod common;
+
 use syncer::{
-    rate_limiter::{Clock, RateLimitDecision, RateLimiter},
+    rate_limiter::{RateLimitDecision, RateLimiter},
     StreamKind,
 };
 
-#[derive(Clone)]
-struct FakeClock {
-    now: Instant,
-}
-
-impl Clock for FakeClock {
-    fn now(&self) -> Instant {
-        self.now
-    }
-}
-
-impl FakeClock {
-    fn advance(&mut self, delta: Duration) {
-        self.now += delta;
-    }
-}
+use crate::common::fake_clock::FakeClock;
 
 #[test]
 fn resets_after_window_elapsed_on_same_session() {
     // 20件まで許容 → 21件目でRateLimited → 1秒経過後に再び許容されること。
-    let start = Instant::now();
-    let mut clock = FakeClock { now: start };
-    let shared_clock = clock.clone();
-    let mut limiter = RateLimiter::with_clock(20, Duration::from_secs(1), shared_clock);
+    let clock = FakeClock::new(Instant::now());
+    let mut limiter = RateLimiter::with_clock(20, Duration::from_secs(1), clock.clone());
     let session_id = "ipc-session-1";
 
     for _ in 0..20 {
@@ -48,7 +33,7 @@ fn resets_after_window_elapsed_on_same_session() {
     clock.advance(Duration::from_millis(1100));
 
     assert_eq!(
-        limiter.check_and_record_with_clock(session_id, StreamKind::Pose, clock.clone()),
+        limiter.check_and_record(session_id, StreamKind::Pose),
         RateLimitDecision::Allowed,
         "after window elapses, counter should reset and allow again"
     );

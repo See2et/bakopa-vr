@@ -32,9 +32,7 @@ impl SyncMessage {
             StreamKind::ControlJoin | StreamKind::ControlLeave => {
                 ControlMessage::try_from(envelope).map(SyncMessage::Control)
             }
-            StreamKind::SignalingOffer
-            | StreamKind::SignalingAnswer
-            | StreamKind::SignalingIce => {
+            StreamKind::SignalingOffer | StreamKind::SignalingAnswer | StreamKind::SignalingIce => {
                 SignalingMessage::try_from(envelope).map(SyncMessage::Signaling)
             }
             other => Err(SyncMessageError::UnknownKind {

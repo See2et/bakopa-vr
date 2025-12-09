@@ -36,7 +36,10 @@ fn apply_leave_is_idempotent_for_missing_participant() {
 
     let events = table.apply_leave(alice.clone());
 
-    assert!(events.is_empty(), "no events should be emitted for already removed participant");
+    assert!(
+        events.is_empty(),
+        "no events should be emitted for already removed participant"
+    );
     assert!(
         !table.is_registered(&alice),
         "alice must remain unregistered after redundant leave"

@@ -1,6 +1,9 @@
 use bloom_core::{ParticipantId, RoomId};
 use syncer::{Pose, PoseTransform, StreamKind, TracingContext};
 
+pub mod fake_clock;
+
+#[allow(dead_code)]
 pub fn sample_pose() -> Pose {
     Pose {
         version: 1,
@@ -14,6 +17,7 @@ pub fn sample_pose() -> Pose {
     }
 }
 
+#[allow(dead_code)]
 pub fn sample_tracing_context(room_id: &RoomId, participant_id: &ParticipantId) -> TracingContext {
     TracingContext {
         room_id: room_id.clone(),

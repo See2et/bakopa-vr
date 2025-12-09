@@ -114,7 +114,11 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
                 self.transport.register_participant(participant_id.clone());
                 self.me = Some(participant_id);
             }
-            SyncerRequest::SendPose { from, pose: _pose, ctx: _ctx } => {
+            SyncerRequest::SendPose {
+                from,
+                pose: _pose,
+                ctx: _ctx,
+            } => {
                 self.transport
                     .send(from.clone(), TransportPayload::Bytes(Vec::new()));
             }

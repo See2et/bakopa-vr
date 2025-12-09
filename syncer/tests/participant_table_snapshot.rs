@@ -39,5 +39,9 @@ fn participants_preserve_join_order_for_active_members() {
 
     let snapshot = table.participants();
 
-    assert_eq!(snapshot, vec![alice, charlie], "join order should be preserved for active participants");
+    assert_eq!(
+        snapshot,
+        vec![alice, charlie],
+        "join order should be preserved for active participants"
+    );
 }

@@ -1,35 +1,20 @@
 use std::time::{Duration, Instant};
 
+mod common;
+
 use syncer::{
-    rate_limiter::{Clock, RateLimitDecision, RateLimiter},
+    rate_limiter::{RateLimitDecision, RateLimiter},
     StreamKind,
 };
 
-#[derive(Clone)]
-struct FakeClock {
-    now: Instant,
-}
-
-impl Clock for FakeClock {
-    fn now(&self) -> Instant {
-        self.now
-    }
-}
-
-impl FakeClock {
-    fn advance(&mut self, delta: Duration) {
-        self.now += delta;
-    }
-}
+use crate::common::fake_clock::FakeClock;
 
 #[test]
 fn windows_progress_independently_per_session() {
     // Aはt=0で上限到達、Bはt=0.5sで上限到達。
     // t=1.1s時点ではAのウィンドウはリセット済みでAllowed、BはまだRateLimitedのまま。
-    let start = Instant::now();
-    let mut clock = FakeClock { now: start };
-    let shared_clock = clock.clone();
-    let mut limiter = RateLimiter::with_clock(20, Duration::from_secs(1), shared_clock);
+    let clock = FakeClock::new(Instant::now());
+    let mut limiter = RateLimiter::with_clock(20, Duration::from_secs(1), clock.clone());
 
     let session_a = "ipc-session-a";
     let session_b = "ipc-session-b";
@@ -37,12 +22,12 @@ fn windows_progress_independently_per_session() {
     // A: t=0 で20件消費し、21件目でRateLimited
     for _ in 0..20 {
         assert_eq!(
-            limiter.check_and_record_with_clock(session_a, StreamKind::Pose, clock.clone()),
+            limiter.check_and_record(session_a, StreamKind::Pose),
             RateLimitDecision::Allowed
         );
     }
     assert_eq!(
-        limiter.check_and_record_with_clock(session_a, StreamKind::Pose, clock.clone()),
+        limiter.check_and_record(session_a, StreamKind::Pose),
         RateLimitDecision::RateLimited {
             stream_kind: StreamKind::Pose
         }
@@ -52,12 +37,12 @@ fn windows_progress_independently_per_session() {
     clock.advance(Duration::from_millis(500));
     for _ in 0..20 {
         assert_eq!(
-            limiter.check_and_record_with_clock(session_b, StreamKind::Chat, clock.clone()),
+            limiter.check_and_record(session_b, StreamKind::Chat),
             RateLimitDecision::Allowed
         );
     }
     assert_eq!(
-        limiter.check_and_record_with_clock(session_b, StreamKind::Chat, clock.clone()),
+        limiter.check_and_record(session_b, StreamKind::Chat),
         RateLimitDecision::RateLimited {
             stream_kind: StreamKind::Chat
         }
@@ -67,13 +52,13 @@ fn windows_progress_independently_per_session() {
     clock.advance(Duration::from_millis(600)); // 累計1.1秒経過
 
     assert_eq!(
-        limiter.check_and_record_with_clock(session_a, StreamKind::Pose, clock.clone()),
+        limiter.check_and_record(session_a, StreamKind::Pose),
         RateLimitDecision::Allowed,
         "session A should be reset after its 1s window"
     );
 
     assert_eq!(
-        limiter.check_and_record_with_clock(session_b, StreamKind::Chat, clock.clone()),
+        limiter.check_and_record(session_b, StreamKind::Chat),
         RateLimitDecision::RateLimited {
             stream_kind: StreamKind::Chat
         },
