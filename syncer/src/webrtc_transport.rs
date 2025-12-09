@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use bloom_core::ParticipantId;
+use anyhow::Result;
 
 use crate::{Transport, TransportEvent, TransportPayload, TransportSendParams};
 
@@ -38,6 +39,40 @@ impl Default for WebrtcTransportOptions {
         Self {
             inject_failure_once: false,
         }
+    }
+}
+
+/// 実WebRTC実装の土台となるアダプタ。現時点ではPCを保持するだけのスタブ。
+pub struct RealWebrtcTransport {
+    me: ParticipantId,
+    pc_present: bool,
+}
+
+impl RealWebrtcTransport {
+    pub fn new(me: ParticipantId, _ice_servers: Vec<String>) -> Result<Self> {
+        // TODO: 実装時に RTCPeerConnection を初期化
+        Ok(Self {
+            me,
+            pc_present: true,
+        })
+    }
+
+    pub fn has_peer_connection(&self) -> bool {
+        self.pc_present
+    }
+}
+
+impl Transport for RealWebrtcTransport {
+    fn register_participant(&mut self, _participant: ParticipantId) {
+        // TODO: 実装時にPCへの登録などを行う
+    }
+
+    fn send(&mut self, _to: ParticipantId, _payload: TransportPayload, _params: TransportSendParams) {
+        // TODO: DataChannel/Track経由で送信
+    }
+
+    fn poll(&mut self) -> Vec<TransportEvent> {
+        Vec::new()
     }
 }
 
