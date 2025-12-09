@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
 
 use bloom_core::ParticipantId;
 
@@ -18,9 +19,9 @@ pub struct SignalMessage {
 }
 
 /// シンプルなin-memoryシグナリングハブ。登録済みピア宛てにメッセージをキューする。
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct InMemorySignalingHub {
-    queues: HashMap<ParticipantId, VecDeque<SignalMessage>>,
+    inner: Arc<Mutex<HashMap<ParticipantId, VecDeque<SignalMessage>>>>,
 }
 
 impl InMemorySignalingHub {
@@ -28,18 +29,21 @@ impl InMemorySignalingHub {
         Self::default()
     }
 
-    pub fn register(&mut self, participant: ParticipantId) {
-        self.queues.entry(participant).or_default();
+    pub fn register(&self, participant: ParticipantId) {
+        let mut guard = self.inner.lock().unwrap();
+        guard.entry(participant).or_default();
     }
 
-    pub fn send(&mut self, msg: SignalMessage) {
-        if let Some(queue) = self.queues.get_mut(&msg.to) {
+    pub fn send(&self, msg: SignalMessage) {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(queue) = guard.get_mut(&msg.to) {
             queue.push_back(msg);
         }
     }
 
-    pub fn drain_for(&mut self, participant: &ParticipantId) -> Vec<SignalMessage> {
-        if let Some(queue) = self.queues.get_mut(participant) {
+    pub fn drain_for(&self, participant: &ParticipantId) -> Vec<SignalMessage> {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(queue) = guard.get_mut(participant) {
             return queue.drain(..).collect();
         }
         Vec::new()

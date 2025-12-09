@@ -6,7 +6,7 @@ fn signaling_hub_exchanges_offer_answer_ice() {
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
-    let mut hub = InMemorySignalingHub::new();
+    let hub = InMemorySignalingHub::new();
     hub.register(a.clone());
     hub.register(b.clone());
 
