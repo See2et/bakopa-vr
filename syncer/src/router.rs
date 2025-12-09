@@ -41,4 +41,23 @@ impl Router {
             })
             .collect()
     }
+
+    /// Chatの配送先を計算する。送信者自身は除外し、残り参加者にチャットを配布する。
+    pub fn route_chat(
+        &self,
+        from: &ParticipantId,
+        chat: ChatMessage,
+        participants: &ParticipantTable,
+    ) -> Vec<Outbound> {
+        participants
+            .participants()
+            .into_iter()
+            .filter(|p| p != from)
+            .map(|to| Outbound {
+                to,
+                stream_kind: StreamKind::Chat,
+                payload: OutboundPayload::Chat(chat.clone()),
+            })
+            .collect()
+    }
 }
