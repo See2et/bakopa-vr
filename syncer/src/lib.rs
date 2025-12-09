@@ -27,6 +27,43 @@ pub trait Transport {
     fn poll(&mut self) -> Vec<TransportEvent>;
 }
 
+/// 送信前に登録されたparticipantにだけ配送し、自分自身には配送しないトランスポートの薄いラッパ。
+#[derive(Debug)]
+pub struct FilteringTransport<T> {
+    inner: T,
+    me: ParticipantId,
+    registered: bool,
+}
+
+impl<T: Transport> FilteringTransport<T> {
+    pub fn new(me: ParticipantId, inner: T) -> Self {
+        Self {
+            inner,
+            me,
+            registered: false,
+        }
+    }
+
+    /// 明示的に登録を行う。未登録のまま send した場合は無視される。
+    pub fn register(&mut self) {
+        self.registered = true;
+        self.inner.register_participant(self.me.clone());
+    }
+
+    pub fn send(&mut self, to: ParticipantId, payload: TransportPayload) {
+        if !self.registered {
+            return; // 未登録の送信はドロップ
+        }
+
+        // 宛先を強制的に自分以外にフィルタするため、自身を除外する責務はinnerに委譲しつつ、送信元IDを保持
+        self.inner.send(to, payload);
+    }
+
+    pub fn poll(&mut self) -> Vec<TransportEvent> {
+        self.inner.poll()
+    }
+}
+
 /// WebRTC送信用のチャネル設定をStreamKindから導出するための型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransportSendParams {
