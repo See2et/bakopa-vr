@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::collections::HashSet;
 
 use bloom_core::ParticipantId;
 use anyhow::Result;
@@ -46,6 +47,7 @@ impl Default for WebrtcTransportOptions {
 pub struct RealWebrtcTransport {
     me: ParticipantId,
     pc_present: bool,
+    open_channels: HashSet<String>,
 }
 
 impl RealWebrtcTransport {
@@ -54,11 +56,17 @@ impl RealWebrtcTransport {
         Ok(Self {
             me,
             pc_present: true,
+            open_channels: HashSet::from(["sutera-data".to_string()]), // 仮でopen扱い
         })
     }
 
     pub fn has_peer_connection(&self) -> bool {
         self.pc_present
+    }
+
+    /// 仮実装: sutera-dataチャネルがopen済みかを返す（現状は即true）。
+    pub fn has_data_channel_open(&self, label: &str) -> bool {
+        self.open_channels.contains(label)
     }
 }
 
