@@ -6,8 +6,8 @@ use std::io;
 use std::str::FromStr;
 
 use crate::messages::{SignalingAnswer, SignalingIce, SignalingOffer};
-use crate::messages::{SignalingMessage, SyncMessageEnvelope};
-use crate::{SyncerEvent, TransportPayload};
+use crate::messages::{SignalingMessage, SyncMessageEnvelope, SyncMessageError};
+use crate::{SyncerError, SyncerEvent, TransportPayload};
 
 /// Bloom WebSocketシグナリングとの境界を抽象化するための最小trait。
 pub trait SignalingAdapter {
@@ -111,8 +111,12 @@ where
         let mut payloads: Vec<TransportPayload> = Vec::new();
 
         for msg in messages {
-            if let Ok(payload) = self.shape_incoming(msg) {
-                payloads.push(payload);
+            match self.shape_incoming(msg) {
+                Ok(Some(payload)) => payloads.push(payload),
+                Ok(None) => {}
+                Err(_) => {
+                    // 直列化失敗はここでは無視（重大ではない）。将来ログに出す場合はここにhook。
+                }
             }
         }
 
@@ -120,41 +124,76 @@ where
         (payloads, events)
     }
 
-    fn shape_incoming(&mut self, message: ServerToClient) -> Result<TransportPayload, serde_json::Error> {
+    fn shape_incoming(
+        &mut self,
+        message: ServerToClient,
+    ) -> Result<Option<TransportPayload>, serde_json::Error> {
         let envelope = match message {
             ServerToClient::Offer { from, payload } => {
-                self.on_reoffer(&from);
+                let existing = self.on_reoffer(&from);
                 let offer = SignalingOffer {
                     version: 1,
                     room_id: self.context.room_id.clone(),
-                    participant_id: from,
+                    participant_id: from.clone(),
                     auth_token: self.context.auth_token.clone(),
                     ice_policy: self.context.ice_policy.clone(),
                     sdp: payload.sdp,
                 };
-                SyncMessageEnvelope::from_signaling(SignalingMessage::Offer(offer)).expect("validate offer")
+                let existing = existing;
+                match SyncMessageEnvelope::from_signaling(SignalingMessage::Offer(offer)) {
+                    Ok(env) => {
+                        if let Some(ref pid) = existing {
+                            self.close_and_emit_peer_left(&pid);
+                        }
+                        env
+                    }
+                    Err(err) => {
+                        self.emit_invalid(&from, err, existing.is_some());
+                        return Ok(None);
+                    }
+                }
             }
             ServerToClient::Answer { from, payload } => {
                 let answer = SignalingAnswer {
                     version: 1,
                     room_id: self.context.room_id.clone(),
-                    participant_id: from,
+                    participant_id: from.clone(),
                     auth_token: self.context.auth_token.clone(),
                     sdp: payload.sdp,
                 };
-                SyncMessageEnvelope::from_signaling(SignalingMessage::Answer(answer)).expect("validate answer")
+                match SyncMessageEnvelope::from_signaling(SignalingMessage::Answer(answer)) {
+                    Ok(env) => env,
+                    Err(err) => {
+                        let existing = self.on_reoffer(&from);
+                        if let Some(ref pid) = existing {
+                            self.close_and_emit_peer_left(&pid);
+                        }
+                        self.emit_invalid(&from, err, existing.is_some());
+                        return Ok(None);
+                    }
+                }
             }
             ServerToClient::IceCandidate { from, payload } => {
                 let ice = SignalingIce {
                     version: 1,
                     room_id: self.context.room_id.clone(),
-                    participant_id: from,
+                    participant_id: from.clone(),
                     auth_token: self.context.auth_token.clone(),
                     candidate: payload.candidate,
                     sdp_mid: None,
                     sdp_mline_index: None,
                 };
-                SyncMessageEnvelope::from_signaling(SignalingMessage::Ice(ice)).expect("validate ice")
+                match SyncMessageEnvelope::from_signaling(SignalingMessage::Ice(ice)) {
+                    Ok(env) => env,
+                    Err(err) => {
+                        let existing = self.on_reoffer(&from);
+                        if let Some(ref pid) = existing {
+                            self.close_and_emit_peer_left(&pid);
+                        }
+                        self.emit_invalid(&from, err, existing.is_some());
+                        return Ok(None);
+                    }
+                }
             }
             _ => {
                 return Err(serde_json::Error::io(io::Error::new(
@@ -165,20 +204,41 @@ where
         };
 
         let bytes = serde_json::to_vec(&envelope)?;
-        Ok(TransportPayload::Bytes(bytes))
+        Ok(Some(TransportPayload::Bytes(bytes)))
     }
 
-    fn on_reoffer(&mut self, participant: &str) {
+    /// Returns Some(pid) when the participant already had an active session (re-offer case).
+    fn on_reoffer(&mut self, participant: &str) -> Option<ParticipantId> {
         let Ok(pid) = ParticipantId::from_str(participant) else {
-            return;
+            return None;
         };
 
         if !self.active_participants.insert(pid.clone()) {
-            // 既存セッションがある場合はPeerLeftを発火させ、Closerに通知する。
-            self.closer.close(&pid);
-            self.events.push(SyncerEvent::PeerLeft {
-                participant_id: pid.clone(),
-            });
+            // already existed
+            Some(pid)
+        } else {
+            None
+        }
+    }
+
+    fn close_and_emit_peer_left(&mut self, pid: &ParticipantId) {
+        self.closer.close(pid);
+        self.events.push(SyncerEvent::PeerLeft {
+            participant_id: pid.clone(),
+        });
+    }
+
+    fn emit_invalid(&mut self, participant: &str, error: SyncMessageError, existing: bool) {
+        self.events.push(SyncerEvent::Error {
+            kind: SyncerError::InvalidPayload(error.clone()),
+        });
+
+        if existing {
+            if let Ok(pid) = ParticipantId::from_str(participant) {
+                if self.active_participants.remove(&pid) {
+                    self.close_and_emit_peer_left(&pid);
+                }
+            }
         }
     }
 }

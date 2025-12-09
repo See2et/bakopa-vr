@@ -104,6 +104,7 @@ pub enum SyncerEvent {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SyncerError {
     InvalidParticipantId { raw_value: String },
+    InvalidPayload(SyncMessageError),
 }
 
 #[derive(Debug, Clone, PartialEq)]
