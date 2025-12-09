@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::collections::HashSet;
 
 mod mock_bus;
+pub mod signaling_hub;
 
 use bloom_core::ParticipantId;
 use anyhow::Result;
