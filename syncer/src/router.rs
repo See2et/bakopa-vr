@@ -1,4 +1,4 @@
-use bloom_core::ParticipantId;
+use bloom_core::{ParticipantId, RoomId};
 
 use crate::{messages::ChatMessage, participant_table::ParticipantTable, Pose, StreamKind};
 
@@ -13,6 +13,26 @@ pub struct Outbound {
     pub to: ParticipantId,
     pub stream_kind: StreamKind,
     pub payload: OutboundPayload,
+}
+
+impl Outbound {
+    /// Convert Outbound into SyncerEvent with tracing context populated.
+    pub fn into_event(self, from: &ParticipantId, room_id: &RoomId) -> crate::SyncerEvent {
+        let ctx = crate::TracingContext {
+            room_id: room_id.clone(),
+            participant_id: from.clone(),
+            stream_kind: self.stream_kind,
+        };
+
+        match self.payload {
+            OutboundPayload::Pose(pose) => crate::SyncerEvent::PoseReceived {
+                from: from.clone(),
+                pose,
+                ctx,
+            },
+            OutboundPayload::Chat(chat) => crate::SyncerEvent::ChatReceived { chat, ctx },
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone)]
