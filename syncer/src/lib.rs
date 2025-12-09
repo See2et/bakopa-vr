@@ -25,6 +25,46 @@ pub trait Transport {
     fn poll(&mut self) -> Vec<TransportEvent>;
 }
 
+/// WebRTC送信用のチャネル設定をStreamKindから導出するための型。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransportSendParams {
+    /// DataChannelで送る場合の設定。
+    DataChannel {
+        /// ordered=true なら順序保証。
+        ordered: bool,
+        /// reliable=true なら再送あり。
+        reliable: bool,
+        /// 使用するDataChannelのlabel。
+        label: &'static str,
+    },
+    /// AudioTrackで送る場合（Voice専用）。
+    AudioTrack,
+}
+
+impl TransportSendParams {
+    /// StreamKindに応じた送信チャネル設定を返す。
+    pub fn for_stream(kind: StreamKind) -> Self {
+        match kind {
+            StreamKind::Pose => Self::DataChannel {
+                ordered: false,
+                reliable: false,
+                label: "sutera-data",
+            },
+            StreamKind::Chat
+            | StreamKind::ControlJoin
+            | StreamKind::ControlLeave
+            | StreamKind::SignalingOffer
+            | StreamKind::SignalingAnswer
+            | StreamKind::SignalingIce => Self::DataChannel {
+                ordered: true,
+                reliable: true,
+                label: "sutera-data",
+            },
+            StreamKind::Voice => Self::AudioTrack,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TransportPayload {
     Bytes(Vec<u8>),
