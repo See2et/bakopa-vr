@@ -29,7 +29,7 @@ impl TransportInbox {
     pub fn drain_into_events(
         &mut self,
         room_id: &RoomId,
-        _participants: &ParticipantTable,
+        participants: &mut ParticipantTable,
     ) -> Vec<SyncerEvent> {
         let mut out = Vec::new();
 
@@ -74,6 +74,16 @@ impl TransportInbox {
                         }
                     }
                 },
+                TransportEvent::Failure { peer } => {
+                    // 通信失敗としてPeerLeftを発火し、参加者テーブルから除去する。
+                    let mut evs = participants.apply_leave(peer.clone());
+                    if evs.is_empty() {
+                        evs.push(SyncerEvent::PeerLeft {
+                            participant_id: peer,
+                        });
+                    }
+                    out.extend(evs);
+                }
             }
         }
 

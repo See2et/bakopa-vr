@@ -89,8 +89,8 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
             .transport
             .poll()
             .into_iter()
-            .map(|ev| match ev {
-                TransportEvent::Received { from, payload: _ } => SyncerEvent::PoseReceived {
+            .filter_map(|ev| match ev {
+                TransportEvent::Received { from, payload: _ } => Some(SyncerEvent::PoseReceived {
                     ctx: TracingContext {
                         room_id: self
                             .room
@@ -101,7 +101,8 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
                     },
                     from,
                     pose: sample_pose(),
-                },
+                }),
+                TransportEvent::Failure { .. } => None,
             })
             .collect();
 

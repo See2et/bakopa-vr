@@ -100,7 +100,7 @@ impl<T: Transport> Syncer for BasicSyncer<T> {
                 self.inbox.push(ev);
             }
 
-            let inbound = self.inbox.drain_into_events(room, &self.participants);
+            let inbound = self.inbox.drain_into_events(room, &mut self.participants);
             if !inbound.is_empty() {
                 // inbound events are returned along with those produced by request handling
                 let mut events = inbound;
@@ -152,7 +152,7 @@ impl<T: Transport> BasicSyncer<T> {
                 }
 
                 if let Some(room) = &self.room {
-                    events.extend(self.inbox.drain_into_events(room, &self.participants));
+                    events.extend(self.inbox.drain_into_events(room, &mut self.participants));
                 } else {
                     let _ = ctx;
                 }
@@ -180,7 +180,7 @@ impl<T: Transport> BasicSyncer<T> {
                 }
 
                 if let Some(room) = &self.room {
-                    events.extend(self.inbox.drain_into_events(room, &self.participants));
+                    events.extend(self.inbox.drain_into_events(room, &mut self.participants));
                 } else {
                     let _ = ctx;
                 }
@@ -266,6 +266,10 @@ pub enum TransportEvent {
     Received {
         from: ParticipantId,
         payload: TransportPayload,
+    },
+    /// 接続失敗やDTLS/ICEエラーなど、相手peerとの通信が成立しなかったことを示す。
+    Failure {
+        peer: ParticipantId,
     },
 }
 

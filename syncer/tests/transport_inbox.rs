@@ -21,7 +21,7 @@ fn setup_participants() -> (RoomId, ParticipantId, ParticipantId, ParticipantTab
 
 #[test]
 fn pose_received_is_parsed_with_tracing_context() {
-    let (room_id, from, to, participants) = setup_participants();
+    let (room_id, from, to, mut participants) = setup_participants();
 
     let outbound = Outbound {
         from: from.clone(),
@@ -35,7 +35,7 @@ fn pose_received_is_parsed_with_tracing_context() {
         .expect("serialize outbound");
 
     let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received { from: from.clone(), payload }]);
-    let events = inbox.drain_into_events(&room_id, &participants);
+    let events = inbox.drain_into_events(&room_id, &mut participants);
 
     let pose = events
         .into_iter()
@@ -53,7 +53,7 @@ fn pose_received_is_parsed_with_tracing_context() {
 
 #[test]
 fn chat_received_is_parsed_with_tracing_context() {
-    let (room_id, from, to, participants) = setup_participants();
+    let (room_id, from, to, mut participants) = setup_participants();
 
     let outbound = Outbound {
         from: from.clone(),
@@ -67,7 +67,7 @@ fn chat_received_is_parsed_with_tracing_context() {
         .expect("serialize outbound");
 
     let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received { from: from.clone(), payload }]);
-    let events = inbox.drain_into_events(&room_id, &participants);
+    let events = inbox.drain_into_events(&room_id, &mut participants);
 
     let chat = events
         .into_iter()
@@ -85,12 +85,12 @@ fn chat_received_is_parsed_with_tracing_context() {
 
 #[test]
 fn invalid_payload_is_reported_as_error_event() {
-    let (room_id, from, _to, participants) = setup_participants();
+    let (room_id, from, _to, mut participants) = setup_participants();
 
     let invalid_payload = syncer::TransportPayload::Bytes(vec![]);
 
     let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received { from, payload: invalid_payload }]);
-    let events = inbox.drain_into_events(&room_id, &participants);
+    let events = inbox.drain_into_events(&room_id, &mut participants);
 
     assert!(events
         .iter()

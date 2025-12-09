@@ -16,6 +16,8 @@ struct WebrtcBus {
 #[derive(Default, Debug)]
 struct WebrtcState {
     sent_params: Vec<crate::TransportSendParams>,
+    pending: Vec<crate::TransportEvent>,
+    fail_on_send: bool,
 }
 
 /// 最小動作のためのin-process WebRTC風Transport。
@@ -36,7 +38,11 @@ impl WebrtcTransport {
             peer,
             bus,
             registered: false,
-            state: Rc::new(RefCell::new(WebrtcState::default())),
+            state: Rc::new(RefCell::new(WebrtcState {
+                sent_params: Vec::new(),
+                pending: Vec::new(),
+                fail_on_send: true, // 初回送信で失敗を注入（テスト用）
+            })),
         }
     }
 
@@ -103,6 +109,17 @@ impl Transport for WebrtcTransport {
             self.state.borrow_mut().sent_params.push(params);
         }
 
+        // 初回送信時に通信失敗をシミュレートし、自分宛にFailureイベントを積む。
+        {
+            let mut state = self.state.borrow_mut();
+            if state.fail_on_send {
+                state.pending.push(crate::TransportEvent::Failure {
+                    peer: self.peer.clone(),
+                });
+                state.fail_on_send = false;
+            }
+        }
+
         // 相手ピアに無条件で配送する（現段階では単一ピアのみサポート）。
         let mut bus = self.bus.borrow_mut();
         bus.messages
@@ -114,8 +131,12 @@ impl Transport for WebrtcTransport {
             return Vec::new();
         }
 
+        let mut out = {
+            let mut state = self.state.borrow_mut();
+            std::mem::take(&mut state.pending)
+        };
+
         let mut bus = self.bus.borrow_mut();
-        let mut out = Vec::new();
         let mut i = 0;
         while i < bus.messages.len() {
             if bus.messages[i].0 == self.me {
