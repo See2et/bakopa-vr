@@ -662,6 +662,7 @@ dependencies = [
  "lazy_static",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

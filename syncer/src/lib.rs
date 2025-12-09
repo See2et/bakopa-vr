@@ -4,6 +4,7 @@ pub mod rate_limiter;
 pub mod router;
 pub mod signaling_adapter;
 pub mod transport_inbox;
+pub mod webrtc_transport;
 
 pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, PoseTransform};
 pub use crate::router::{Outbound, OutboundPayload, Router};
