@@ -11,7 +11,7 @@ use bloom_core::ParticipantId;
 use anyhow::Result;
 use tokio::sync::{mpsc, oneshot};
 use bytes::Bytes;
-use webrtc::api::media_engine::MediaEngine;
+use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS};
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::setting_engine::SettingEngine;
 use webrtc::api::APIBuilder;
@@ -22,6 +22,12 @@ use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::interceptor::registry::Registry;
+use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
+use webrtc::rtp_transceiver::RTCRtpTransceiver;
+use webrtc_media::Sample;
+use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
+use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
+use webrtc::track::track_remote::TrackRemote;
 
 use crate::{Transport, TransportEvent, TransportPayload, TransportSendParams};
 
@@ -73,6 +79,8 @@ pub struct RealWebrtcTransport {
     pc: Option<Arc<RTCPeerConnection>>,
     data_channels: Arc<Mutex<Vec<Arc<RTCDataChannel>>>>,
     pending: Arc<Mutex<Vec<TransportEvent>>>,
+    audio_track: Arc<Mutex<Option<Arc<TrackLocalStaticSample>>>>,
+    peer_pc: Option<Arc<RTCPeerConnection>>, // for renegotiation (pair setup only)
     open_rx: Option<oneshot::Receiver<()>>,
 }
 
@@ -89,6 +97,8 @@ impl RealWebrtcTransport {
             pc: None,
             data_channels: Arc::new(Mutex::new(Vec::new())),
             pending: Arc::new(Mutex::new(Vec::new())),
+            audio_track: Arc::new(Mutex::new(None)),
+            peer_pc: None,
             open_rx: None,
         })
     }
@@ -105,6 +115,8 @@ impl RealWebrtcTransport {
                 pc: None,
                 data_channels: Arc::new(Mutex::new(Vec::new())),
                 pending: Arc::new(Mutex::new(Vec::new())),
+                audio_track: Arc::new(Mutex::new(None)),
+                peer_pc: None,
                 open_rx: None,
             },
             Self {
@@ -116,6 +128,8 @@ impl RealWebrtcTransport {
                 pc: None,
                 data_channels: Arc::new(Mutex::new(Vec::new())),
                 pending: Arc::new(Mutex::new(Vec::new())),
+                audio_track: Arc::new(Mutex::new(None)),
+                peer_pc: None,
                 open_rx: None,
             },
         )
@@ -199,6 +213,8 @@ impl RealWebrtcTransport {
         let data_channels2 = Arc::new(Mutex::new(Vec::<Arc<RTCDataChannel>>::new()));
         let pending1 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
         let pending2 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
+        let audio_track1 = Arc::new(Mutex::new(None::<Arc<TrackLocalStaticSample>>));
+        let audio_track2 = Arc::new(Mutex::new(None::<Arc<TrackLocalStaticSample>>));
 
         let dc1 = pc1.create_data_channel("sutera-data", None).await?;
         data_channels1.lock().unwrap().push(dc1.clone());
@@ -260,6 +276,54 @@ impl RealWebrtcTransport {
             })
         }));
 
+        // 音声受信: pc1が受け取る場合（from b）
+        let pending1_audio = pending1.clone();
+        let from_b = b.clone();
+        pc1.on_track(Box::new(move |track: Arc<TrackRemote>, _recv: Arc<RTCRtpReceiver>, _tx: Arc<RTCRtpTransceiver>| {
+            let pending1_audio = pending1_audio.clone();
+            let from_b = from_b.clone();
+            Box::pin(async move {
+                let t = track.clone();
+                tokio::spawn(async move {
+                    loop {
+                        match t.read_rtp().await {
+                            Ok((packet, _)) => {
+                                pending1_audio.lock().unwrap().push(TransportEvent::Received {
+                                    from: from_b.clone(),
+                                    payload: TransportPayload::AudioFrame(packet.payload.to_vec()),
+                                });
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                });
+            })
+        }));
+
+        // 音声受信: pc2が受け取る場合（from a）
+        let pending2_audio = pending2.clone();
+        let from_a = a.clone();
+        pc2.on_track(Box::new(move |track: Arc<TrackRemote>, _recv: Arc<RTCRtpReceiver>, _tx: Arc<RTCRtpTransceiver>| {
+            let pending2_audio = pending2_audio.clone();
+            let from_a = from_a.clone();
+            Box::pin(async move {
+                let t = track.clone();
+                tokio::spawn(async move {
+                    loop {
+                        match t.read_rtp().await {
+                            Ok((packet, _)) => {
+                                pending2_audio.lock().unwrap().push(TransportEvent::Received {
+                                    from: from_a.clone(),
+                                    payload: TransportPayload::AudioFrame(packet.payload.to_vec()),
+                                });
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                });
+            })
+        }));
+
         // Offer/Answer exchange
         let offer = pc1.create_offer(None).await?;
         pc1.set_local_description(offer.clone()).await?;
@@ -299,9 +363,11 @@ impl RealWebrtcTransport {
                 open_channels: HashSet::new(),
                 bus: bus1,
                 peer: Some(b.clone()),
-                pc: Some(pc1),
+                pc: Some(pc1.clone()),
                 data_channels: data_channels1,
                 pending: pending1,
+                audio_track: audio_track1,
+                peer_pc: Some(pc2.clone()),
                 open_rx: Some(open_rx1),
             },
             Self {
@@ -313,6 +379,8 @@ impl RealWebrtcTransport {
                 pc: Some(pc2),
                 data_channels: data_channels2, // dc arrives via on_data_channel
                 pending: pending2,
+                audio_track: audio_track2,
+                peer_pc: Some(pc1.clone()),
                 open_rx: Some(open_rx2),
             },
         ))
@@ -322,6 +390,70 @@ impl RealWebrtcTransport {
         if let Some(rx) = self.open_rx.take() {
             tokio::time::timeout(timeout, rx).await??;
         }
+        Ok(())
+    }
+
+    /// テスト用ダミー音声トラックを追加（単一トラックのみ想定）。
+    pub async fn add_dummy_audio_track(&self) -> Result<()> {
+        let pc = self
+            .pc
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("peer connection not ready"))?;
+        let peer_pc = self
+            .peer_pc
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("peer pc not available for renegotiation"))?;
+
+        let track = Arc::new(TrackLocalStaticSample::new(
+            RTCRtpCodecCapability {
+                mime_type: MIME_TYPE_OPUS.to_string(),
+                ..Default::default()
+            },
+            "audio".to_string(),
+            "sutera".to_string(),
+        ));
+
+        let sender = pc.add_track(track.clone()).await?;
+
+        // RTCP受信をドレインしておく（失敗時も無視）
+        tokio::spawn(async move {
+            loop {
+                if sender.read_rtcp().await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut guard = self.audio_track.lock().unwrap();
+        *guard = Some(track);
+
+        // 簡易リオファーでトラック追加を伝搬
+        let offer = pc.create_offer(None).await?;
+        pc.set_local_description(offer.clone()).await?;
+        peer_pc.set_remote_description(offer).await?;
+        let answer = peer_pc.create_answer(None).await?;
+        peer_pc.set_local_description(answer.clone()).await?;
+        pc.set_remote_description(answer).await?;
+
+        Ok(())
+    }
+
+    /// ダミー音声フレーム送信（Opus想定、バイト列をそのままペイロードとして送る）。
+    pub async fn send_dummy_audio_frame(&self, data: Vec<u8>) -> Result<()> {
+        let track = self
+            .audio_track
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("audio track not added"))?;
+
+        let sample = Sample {
+            data: Bytes::from(data),
+            duration: std::time::Duration::from_millis(20),
+            ..Default::default()
+        };
+
+        track.write_sample(&sample).await?;
         Ok(())
     }
 }

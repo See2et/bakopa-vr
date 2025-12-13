@@ -1763,6 +1763,7 @@ dependencies = [
  "tokio",
  "tracing",
  "webrtc",
+ "webrtc-media",
 ]
 
 [[package]]
