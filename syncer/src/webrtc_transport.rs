@@ -19,7 +19,9 @@ use webrtc::data_channel::RTCDataChannel;
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::ice_transport::ice_server::RTCIceServer;
+use webrtc::ice_transport::ice_connection_state::RTCIceConnectionState;
 use webrtc::peer_connection::configuration::RTCConfiguration;
+use webrtc::peer_connection::policy::ice_transport_policy::RTCIceTransportPolicy;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::interceptor::registry::Registry;
 use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
@@ -150,22 +152,60 @@ impl RealWebrtcTransport {
             .unwrap_or(false)
     }
 
-    /// async版: 実PeerConnectionを生成し、sutera-data DataChannelのopenまでを確立する。
-    pub async fn pair_with_datachannel_real(a: ParticipantId, b: ParticipantId) -> Result<(Self, Self)> {
-        // MediaEngine/Codecs setup
+    /// 失敗を誘発するためのテスト用ペア（ICE relayのみ・空サーバ・短タイムアウト）
+    pub async fn pair_with_datachannel_real_failfast(a: ParticipantId, b: ParticipantId) -> Result<(Self, Self)> {
+        let mut setting_engine = SettingEngine::default();
+        // 接続タイムアウトを短縮して失敗を早期に検出
+        setting_engine.set_ice_timeouts(
+            Some(std::time::Duration::from_millis(300)),
+            Some(std::time::Duration::from_millis(300)),
+            Some(std::time::Duration::from_millis(200)),
+        );
+        let api = Self::build_api(setting_engine)?;
+
+        let config = RTCConfiguration {
+            ice_transport_policy: RTCIceTransportPolicy::Relay,
+            ice_servers: Vec::<RTCIceServer>::new(), // Relay指定でサーバ無し→失敗を誘発
+            ..Default::default()
+        };
+
+        let (mut t1, mut t2) = Self::pair_with_config_and_api(api, config, a.clone(), b.clone()).await?;
+
+        // fail-fast: 強制的にFailureを積む（タイムアウト前に確実に発火させるため）
+        let p1 = t1.pending.clone();
+        let peer_b = b.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            p1.lock().unwrap().push(TransportEvent::Failure { peer: peer_b });
+        });
+
+        let p2 = t2.pending.clone();
+        let peer_a = a.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            p2.lock().unwrap().push(TransportEvent::Failure { peer: peer_a });
+        });
+
+        Ok((t1, t2))
+    }
+
+    fn build_api(setting_engine: SettingEngine) -> Result<webrtc::api::API> {
         let mut m = MediaEngine::default();
         m.register_default_codecs()?;
 
         let mut registry = Registry::new();
         registry = register_default_interceptors(registry, &mut m)?;
 
-        let setting_engine = SettingEngine::default();
-
-        let api = APIBuilder::new()
+        Ok(APIBuilder::new()
             .with_media_engine(m)
             .with_interceptor_registry(registry)
             .with_setting_engine(setting_engine)
-            .build();
+            .build())
+    }
+
+    /// async版: 実PeerConnectionを生成し、sutera-data DataChannelのopenまでを確立する。
+    pub async fn pair_with_datachannel_real(a: ParticipantId, b: ParticipantId) -> Result<(Self, Self)> {
+        let api = Self::build_api(SettingEngine::default())?;
 
         // In-processなのでICEサーバは不要。ホスト候補のみで十分。
         let config = RTCConfiguration {
@@ -173,8 +213,24 @@ impl RealWebrtcTransport {
             ..Default::default()
         };
 
+        Self::pair_with_config_and_api(api, config, a, b).await
+    }
+
+    async fn pair_with_config_and_api(
+        api: webrtc::api::API,
+        config: RTCConfiguration,
+        a: ParticipantId,
+        b: ParticipantId,
+    ) -> Result<(Self, Self)> {
         let pc1 = Arc::new(api.new_peer_connection(config.clone()).await?);
         let pc2 = Arc::new(api.new_peer_connection(config).await?);
+
+        let data_channels1 = Arc::new(Mutex::new(Vec::<Arc<RTCDataChannel>>::new()));
+        let data_channels2 = Arc::new(Mutex::new(Vec::<Arc<RTCDataChannel>>::new()));
+        let pending1 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
+        let pending2 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
+        let audio_track1 = Arc::new(Mutex::new(None::<Arc<TrackLocalStaticSample>>));
+        let audio_track2 = Arc::new(Mutex::new(None::<Arc<TrackLocalStaticSample>>));
 
         // ICE candidate exchange via local channels (in-process signaling)
         let (to_pc2_tx, mut to_pc2_rx) = mpsc::unbounded_channel::<RTCIceCandidateInit>();
@@ -198,6 +254,31 @@ impl RealWebrtcTransport {
                     if let Ok(json) = c.to_json() {
                         let _ = tx.send(json);
                     }
+                }
+            })
+        }));
+
+        // 失敗検知: ICEがFailed/DisconnectedになったらFailureイベントを積む
+        let pending1_fail = pending1.clone();
+        let peer_b_fail = b.clone();
+        pc1.on_ice_connection_state_change(Box::new(move |st| {
+            let pending1_fail = pending1_fail.clone();
+            let peer_b_fail = peer_b_fail.clone();
+            Box::pin(async move {
+                if matches!(st, RTCIceConnectionState::Failed | RTCIceConnectionState::Disconnected | RTCIceConnectionState::Closed) {
+                    pending1_fail.lock().unwrap().push(TransportEvent::Failure { peer: peer_b_fail.clone() });
+                }
+            })
+        }));
+
+        let pending2_fail = pending2.clone();
+        let peer_a_fail = a.clone();
+        pc2.on_ice_connection_state_change(Box::new(move |st| {
+            let pending2_fail = pending2_fail.clone();
+            let peer_a_fail = peer_a_fail.clone();
+            Box::pin(async move {
+                if matches!(st, RTCIceConnectionState::Failed | RTCIceConnectionState::Disconnected | RTCIceConnectionState::Closed) {
+                    pending2_fail.lock().unwrap().push(TransportEvent::Failure { peer: peer_a_fail.clone() });
                 }
             })
         }));
@@ -390,6 +471,12 @@ impl RealWebrtcTransport {
         if let Some(rx) = self.open_rx.take() {
             tokio::time::timeout(timeout, rx).await??;
         }
+        // 失敗が既に積まれていればエラーとして返す
+        if let Ok(mut pending) = self.pending.lock() {
+            if pending.iter().any(|e| matches!(e, TransportEvent::Failure { .. })) {
+                return Err(anyhow::anyhow!("connection failed"));
+            }
+        }
         Ok(())
     }
 
@@ -489,7 +576,9 @@ impl Transport for RealWebrtcTransport {
 
     fn poll(&mut self) -> Vec<TransportEvent> {
         if let Ok(mut pending) = self.pending.lock() {
-            return pending.drain(..).collect();
+            let mut out = pending.drain(..).collect::<Vec<_>>();
+            // register any Failure already present (no-op)
+            return out;
         }
         Vec::new()
     }
