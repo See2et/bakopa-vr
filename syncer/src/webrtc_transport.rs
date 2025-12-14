@@ -468,7 +468,20 @@ impl RealWebrtcTransport {
 
     pub async fn wait_data_channel_open(&mut self, timeout: std::time::Duration) -> Result<()> {
         if let Some(rx) = self.open_rx.take() {
-            tokio::time::timeout(timeout, rx).await??;
+            let res = tokio::time::timeout(timeout, rx).await;
+            match res {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => return Err(e.into()),
+                Err(_) => {
+                    // タイムアウトしたらFailureを積む
+                    if let Some(peer) = self.peer.clone() {
+                        if let Ok(mut pending) = self.pending.lock() {
+                            pending.push(TransportEvent::Failure { peer });
+                        }
+                    }
+                    return Err(anyhow::anyhow!("data channel open timeout"));
+                }
+            }
         }
         // 失敗が既に積まれていればエラーとして返す
         if let Ok(mut pending) = self.pending.lock() {
