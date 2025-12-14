@@ -32,7 +32,8 @@ use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_remote::TrackRemote;
 
-use crate::{Transport, TransportEvent, TransportPayload, TransportSendParams};
+use crate::{Transport, TransportEvent, TransportPayload, TransportSendParams, StreamKind};
+use crate::messages::SyncMessageEnvelope;
 
 #[derive(Default, Debug)]
 struct WebrtcBus {
@@ -674,14 +675,25 @@ impl Transport for WebrtcTransport {
         // 渡された送信パラメータを記録
         self.state.borrow_mut().sent_params.push(params);
 
-        // 初回送信時に通信失敗をシミュレートし、自分宛にFailureイベントを積む。
+        // 初回送信時に通信失敗をシミュレート（ControlJoin/Leaveは除外）
         {
             let mut state = self.state.borrow_mut();
             if state.inject_failure_once {
-                state.pending.push(crate::TransportEvent::Failure {
-                    peer: self.peer.clone(),
-                });
-                state.inject_failure_once = false;
+                let is_control = match &payload {
+                    TransportPayload::Bytes(b) => {
+                        SyncMessageEnvelope::from_slice(b)
+                            .map(|env| matches!(env.kind, StreamKind::ControlJoin | StreamKind::ControlLeave))
+                            .unwrap_or(false)
+                    }
+                    _ => false,
+                };
+
+                if !is_control {
+                    state.pending.push(crate::TransportEvent::Failure {
+                        peer: self.peer.clone(),
+                    });
+                    state.inject_failure_once = false;
+                }
             }
         }
 

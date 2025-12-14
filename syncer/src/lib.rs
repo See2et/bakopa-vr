@@ -170,16 +170,14 @@ impl<T: Transport> BasicSyncer<T> {
                 events.extend(self.drain_transport_events());
             }
             SyncerRequest::SendPose { from, pose, ctx } => {
-                let mut outs = self.router.route_pose(&from, pose.clone(), &self.participants);
-                if outs.is_empty() {
-                    // フォールバック: 参加者情報が未共有でも送信テストを通せるよう1件だけ送る
-                    outs.push(Outbound {
-                        from: from.clone(),
-                        to: from.clone(),
-                        stream_kind: StreamKind::Pose,
-                        payload: OutboundPayload::Pose(pose),
-                    });
+                // 未参加者からの送信は無視（ログはTransport層に任せる）。
+                if !self.participants.is_registered(&from) {
+                    events.extend(self.drain_transport_events());
+                    return events;
                 }
+
+                let mut outs = self.router.route_pose(&from, pose.clone(), &self.participants);
+
                 for outbound in outs {
                     if let Ok(payload) = outbound.into_transport_payload() {
                         let params = TransportSendParams::for_stream(outbound.stream_kind);
@@ -192,17 +190,15 @@ impl<T: Transport> BasicSyncer<T> {
                 let _ = ctx;
             }
             SyncerRequest::SendChat { chat, ctx } => {
+                if !self.participants.is_registered(&ctx.participant_id) {
+                    events.extend(self.drain_transport_events());
+                    return events;
+                }
+
                 let mut outs = self
                     .router
                     .route_chat(&ctx.participant_id, chat.clone(), &self.participants);
-                if outs.is_empty() {
-                    outs.push(Outbound {
-                        from: ctx.participant_id.clone(),
-                        to: ctx.participant_id.clone(),
-                        stream_kind: StreamKind::Chat,
-                        payload: OutboundPayload::Chat(chat),
-                    });
-                }
+
                 for outbound in outs {
                     if let Ok(payload) = outbound.into_transport_payload() {
                         let params = TransportSendParams::for_stream(outbound.stream_kind);
