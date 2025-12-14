@@ -4,7 +4,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-mod mock_bus;
 pub mod signaling_hub;
 pub mod test_helpers;
 
@@ -78,8 +77,6 @@ pub struct RealWebrtcTransport {
     me: ParticipantId,
     pc_present: bool,
     open_channels: HashSet<String>,
-    #[allow(dead_code)]
-    bus: mock_bus::MockBus,
     peer: Option<ParticipantId>,
     #[allow(dead_code)]
     pc: Option<Arc<RTCPeerConnection>>,
@@ -95,12 +92,10 @@ pub struct RealWebrtcTransport {
 impl RealWebrtcTransport {
     pub fn new(me: ParticipantId, _ice_servers: Vec<String>) -> Result<Self> {
         // 本実装時にはpeerはシグナリングでセットされる。いまはNone。
-        let (bus, _peer_bus) = mock_bus::MockBus::new_shared();
         Ok(Self {
             me,
             pc_present: true,
             open_channels: HashSet::from(["sutera-data".to_string()]), // 仮でopen扱い
-            bus,
             peer: None,
             pc: None,
             data_channels: Arc::new(Mutex::new(Vec::new())),
@@ -113,13 +108,11 @@ impl RealWebrtcTransport {
     }
 
     pub fn pair_for_tests(a: ParticipantId, b: ParticipantId) -> (Self, Self) {
-        let (bus_a, bus_b) = mock_bus::MockBus::new_shared();
         (
             Self {
                 me: a.clone(),
                 pc_present: true,
                 open_channels: HashSet::from(["sutera-data".to_string()]),
-                bus: bus_a,
                 peer: Some(b.clone()),
                 pc: None,
                 data_channels: Arc::new(Mutex::new(Vec::new())),
@@ -133,7 +126,6 @@ impl RealWebrtcTransport {
                 me: b,
                 pc_present: true,
                 open_channels: HashSet::from(["sutera-data".to_string()]),
-                bus: bus_b,
                 peer: Some(a.clone()),
                 pc: None,
                 data_channels: Arc::new(Mutex::new(Vec::new())),
@@ -463,14 +455,11 @@ impl RealWebrtcTransport {
             }
         });
 
-        let (bus1, bus2) = mock_bus::MockBus::new_shared();
-
         Ok((
             Self {
                 me: a.clone(),
                 pc_present: true,
                 open_channels: HashSet::new(),
-                bus: bus1,
                 peer: Some(b.clone()),
                 pc: Some(pc1.clone()),
                 data_channels: data_channels1,
@@ -484,7 +473,6 @@ impl RealWebrtcTransport {
                 me: b.clone(),
                 pc_present: true,
                 open_channels: HashSet::new(),
-                bus: bus2,
                 peer: Some(a),
                 pc: Some(pc2),
                 data_channels: data_channels2, // dc arrives via on_data_channel
