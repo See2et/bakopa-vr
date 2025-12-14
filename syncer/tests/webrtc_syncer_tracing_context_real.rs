@@ -35,14 +35,26 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
         participant_id: b.clone(),
     });
 
-    // Chat送信
+    // 事前に数回ポーリングしてControlJoinが行き渡るようにする
+    for _ in 0..5 {
+        let _ = syncer_a.handle(SyncerRequest::SendChat {
+            chat: common::sample_chat(&a),
+            ctx: syncer::TracingContext::for_chat(&room, &a),
+        });
+        let _ = syncer_b.handle(SyncerRequest::SendChat {
+            chat: common::sample_chat(&b),
+            ctx: syncer::TracingContext::for_chat(&room, &b),
+        });
+    }
+
+    // 本番のChat送信
     let chat = common::sample_chat(&a);
     syncer_a.handle(SyncerRequest::SendChat {
         chat: chat.clone(),
         ctx: syncer::TracingContext::for_chat(&room, &a),
     });
 
-    // Pose送信
+    // 本番のPose送信
     let pose = common::sample_pose();
     syncer_a.handle(SyncerRequest::SendPose {
         from: a.clone(),

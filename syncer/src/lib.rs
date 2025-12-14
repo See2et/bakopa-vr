@@ -176,7 +176,7 @@ impl<T: Transport> BasicSyncer<T> {
                     return events;
                 }
 
-                let mut outs = self.router.route_pose(&from, pose.clone(), &self.participants);
+                let outs = self.router.route_pose(&from, pose.clone(), &self.participants);
 
                 for outbound in outs {
                     if let Ok(payload) = outbound.into_transport_payload() {
@@ -195,7 +195,7 @@ impl<T: Transport> BasicSyncer<T> {
                     return events;
                 }
 
-                let mut outs = self
+                let outs = self
                     .router
                     .route_chat(&ctx.participant_id, chat.clone(), &self.participants);
 

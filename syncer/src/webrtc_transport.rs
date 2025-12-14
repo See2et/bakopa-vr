@@ -515,7 +515,7 @@ impl RealWebrtcTransport {
             }
         }
         // 失敗が既に積まれていればエラーとして返す
-        if let Ok(mut pending) = self.pending.lock() {
+        if let Ok(pending) = self.pending.lock() {
             if pending.iter().any(|e| matches!(e, TransportEvent::Failure { .. })) {
                 return Err(anyhow::anyhow!("connection failed"));
             }
@@ -625,7 +625,7 @@ impl Transport for RealWebrtcTransport {
             .ok()
             .map(|mut v| v.push(params.clone()));
 
-        if let Ok(mut dcs) = self.data_channels.lock() {
+        if let Ok(dcs) = self.data_channels.lock() {
             // 送信パラメータに合致するチャネルを探す
             if let Some((_, dc)) = dcs.iter().find(|(p, _)| p == &params) {
                 let bytes = Bytes::from(bytes);
@@ -640,7 +640,7 @@ impl Transport for RealWebrtcTransport {
 
     fn poll(&mut self) -> Vec<TransportEvent> {
         if let Ok(mut pending) = self.pending.lock() {
-            let mut out = pending.drain(..).collect::<Vec<_>>();
+            let out = pending.drain(..).collect::<Vec<_>>();
             // register any Failure already present (no-op)
             return out;
         }
