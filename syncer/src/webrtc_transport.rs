@@ -290,13 +290,6 @@ impl RealWebrtcTransport {
         let open_tx1_mutex = Arc::new(Mutex::new(Some(open_tx1)));
         let open_tx2_mutex = Arc::new(Mutex::new(Some(open_tx2)));
 
-        let data_channels1 = Arc::new(Mutex::new(Vec::<Arc<RTCDataChannel>>::new()));
-        let data_channels2 = Arc::new(Mutex::new(Vec::<Arc<RTCDataChannel>>::new()));
-        let pending1 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
-        let pending2 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
-        let audio_track1 = Arc::new(Mutex::new(None::<Arc<TrackLocalStaticSample>>));
-        let audio_track2 = Arc::new(Mutex::new(None::<Arc<TrackLocalStaticSample>>));
-
         let dc1 = pc1.create_data_channel("sutera-data", None).await?;
         data_channels1.lock().unwrap().push(dc1.clone());
         let open_tx1_clone = open_tx1_mutex.clone();
