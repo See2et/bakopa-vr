@@ -72,6 +72,7 @@ impl Default for WebrtcTransportOptions {
 
 /// 実WebRTC実装の土台となるアダプタ。現時点ではPCを保持するだけのスタブ。
 pub struct RealWebrtcTransport {
+    #[allow(dead_code)]
     me: ParticipantId,
     pc_present: bool,
     open_channels: HashSet<String>,
