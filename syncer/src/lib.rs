@@ -15,6 +15,7 @@ pub use crate::participant_table::ParticipantTable;
 use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::str::FromStr;
 
 /// Syncer全体のファサード。1リクエストに対して複数イベントを返す契約。
@@ -68,6 +69,7 @@ impl<T: Transport> FilteringTransport<T> {
 
 /// Router・TransportInbox を組み合わせた最小Syncer実装。
 pub struct BasicSyncer<T: Transport> {
+    me: ParticipantId,
     transport: FilteringTransport<T>,
     participants: ParticipantTable,
     router: Router,
@@ -78,6 +80,7 @@ pub struct BasicSyncer<T: Transport> {
 impl<T: Transport> BasicSyncer<T> {
     pub fn new(me: ParticipantId, transport: T) -> Self {
         Self {
+            me: me.clone(),
             transport: FilteringTransport::new(me, transport),
             participants: ParticipantTable::new(),
             router: Router::new(),
@@ -127,6 +130,26 @@ impl<T: Transport> Syncer for BasicSyncer<T> {
 }
 
 impl<T: Transport> BasicSyncer<T> {
+    fn broadcast_control_join(&mut self, participant_id: &ParticipantId) {
+        use crate::messages::{ControlMessage, ControlPayload, SyncMessageEnvelope};
+
+        let control = ControlMessage::Join(ControlPayload {
+            participant_id: participant_id.to_string(),
+            reconnect_token: None,
+            reason: None,
+        });
+
+        if let Ok(envelope) = SyncMessageEnvelope::from_control(control) {
+            if let Ok(bytes) = serde_json::to_vec(&envelope) {
+                let payload = TransportPayload::Bytes(bytes);
+                let params = TransportSendParams::for_stream(StreamKind::ControlJoin);
+                // broadcast: WebrtcTransport/BusTransport ignore `to` and deliver to peer set
+                self.transport
+                    .send(self.me.clone(), payload, params);
+            }
+        }
+    }
+
     fn handle_request(&mut self, request: SyncerRequest) -> Vec<SyncerEvent> {
         let mut events = Vec::new();
 
@@ -137,11 +160,14 @@ impl<T: Transport> BasicSyncer<T> {
             } => {
                 self.room = Some(room_id.clone());
                 self.transport.register();
+                self.broadcast_control_join(&participant_id);
                 events.extend(self.participants.apply_join(participant_id.clone()));
                 events.push(SyncerEvent::SelfJoined {
                     room_id,
                     participant_id,
                 });
+                // 参加処理と同一トランザクションで受信キューを捌き、既存参加者のJoin通知を取り込む。
+                events.extend(self.drain_transport_events());
             }
             SyncerRequest::SendPose { from, pose, ctx } => {
                 let mut outs = self.router.route_pose(&from, pose.clone(), &self.participants);

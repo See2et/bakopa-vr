@@ -65,8 +65,15 @@ impl TransportInbox {
                                     SyncMessage::Chat(chat) => {
                                         out.push(SyncerEvent::ChatReceived { chat, ctx })
                                     }
-                                    SyncMessage::Control(_) | SyncMessage::Signaling(_) => out
-                                        .push(control_or_signaling_error()),
+                                    SyncMessage::Control(control) => {
+                                        let pending = crate::PendingPeerEvent::from(control);
+                                        let mut events =
+                                            participants.apply_pending_peer_event(pending);
+                                        out.append(&mut events);
+                                    }
+                                    SyncMessage::Signaling(_) => {
+                                        out.push(control_or_signaling_error())
+                                    }
                                 }
                             }
                             Err(err) => out.push(SyncerEvent::Error {
