@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 mod mock_bus;
 pub mod signaling_hub;
+pub mod test_helpers;
 
 use bloom_core::ParticipantId;
 use anyhow::Result;
@@ -83,6 +84,7 @@ pub struct RealWebrtcTransport {
     pending: Arc<Mutex<Vec<TransportEvent>>>,
     audio_track: Arc<Mutex<Option<Arc<TrackLocalStaticSample>>>>,
     peer_pc: Option<Arc<RTCPeerConnection>>, // for renegotiation (pair setup only)
+    #[cfg_attr(not(test), allow(dead_code))]
     created_params: Arc<Mutex<Vec<TransportSendParams>>>,
     open_rx: Option<oneshot::Receiver<()>>,
 }
@@ -173,7 +175,7 @@ impl RealWebrtcTransport {
             ..Default::default()
         };
 
-        let (mut t1, mut t2) = Self::pair_with_config_and_api(api, config, a.clone(), b.clone()).await?;
+        let (t1, t2) = Self::pair_with_config_and_api(api, config, a.clone(), b.clone()).await?;
 
         // fail-fast: 強制的にFailureを積む（タイムアウト前に確実に発火させるため）
         let p1 = t1.pending.clone();
@@ -556,6 +558,7 @@ impl RealWebrtcTransport {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn debug_created_params(&self) -> Vec<TransportSendParams> {
         self.created_params
             .lock()
@@ -569,7 +572,7 @@ impl Transport for RealWebrtcTransport {
         // TODO: 実装時にPCへの登録などを行う
     }
 
-    fn send(&mut self, to: ParticipantId, payload: TransportPayload, _params: TransportSendParams) {
+    fn send(&mut self, to: ParticipantId, payload: TransportPayload, params: TransportSendParams) {
         if let Some(peer) = &self.peer {
             if &to != peer {
                 return;
@@ -587,7 +590,7 @@ impl Transport for RealWebrtcTransport {
         self.created_params
             .lock()
             .ok()
-            .map(|mut v| v.push(_params.clone()));
+            .map(|mut v| v.push(params.clone()));
 
         if let Ok(dc_opt) = self.data_channels.lock().map(|dcs| dcs.last().cloned()) {
             if let Some(dc) = dc_opt {
