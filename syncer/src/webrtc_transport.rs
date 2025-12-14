@@ -83,6 +83,7 @@ pub struct RealWebrtcTransport {
     pending: Arc<Mutex<Vec<TransportEvent>>>,
     audio_track: Arc<Mutex<Option<Arc<TrackLocalStaticSample>>>>,
     peer_pc: Option<Arc<RTCPeerConnection>>, // for renegotiation (pair setup only)
+    created_params: Arc<Mutex<Vec<TransportSendParams>>>,
     open_rx: Option<oneshot::Receiver<()>>,
 }
 
@@ -101,6 +102,7 @@ impl RealWebrtcTransport {
             pending: Arc::new(Mutex::new(Vec::new())),
             audio_track: Arc::new(Mutex::new(None)),
             peer_pc: None,
+            created_params: Arc::new(Mutex::new(Vec::new())),
             open_rx: None,
         })
     }
@@ -119,6 +121,7 @@ impl RealWebrtcTransport {
                 pending: Arc::new(Mutex::new(Vec::new())),
                 audio_track: Arc::new(Mutex::new(None)),
                 peer_pc: None,
+                created_params: Arc::new(Mutex::new(Vec::new())),
                 open_rx: None,
             },
             Self {
@@ -132,6 +135,7 @@ impl RealWebrtcTransport {
                 pending: Arc::new(Mutex::new(Vec::new())),
                 audio_track: Arc::new(Mutex::new(None)),
                 peer_pc: None,
+                created_params: Arc::new(Mutex::new(Vec::new())),
                 open_rx: None,
             },
         )
@@ -442,6 +446,7 @@ impl RealWebrtcTransport {
                 pending: pending1,
                 audio_track: audio_track1,
                 peer_pc: Some(pc2.clone()),
+                created_params: Arc::new(Mutex::new(Vec::new())),
                 open_rx: Some(open_rx1),
             },
             Self {
@@ -455,6 +460,7 @@ impl RealWebrtcTransport {
                 pending: pending2,
                 audio_track: audio_track2,
                 peer_pc: Some(pc1.clone()),
+                created_params: Arc::new(Mutex::new(Vec::new())),
                 open_rx: Some(open_rx2),
             },
         ))
@@ -536,6 +542,13 @@ impl RealWebrtcTransport {
         track.write_sample(&sample).await?;
         Ok(())
     }
+
+    pub fn debug_created_params(&self) -> Vec<TransportSendParams> {
+        self.created_params
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or_default()
+    }
 }
 
 impl Transport for RealWebrtcTransport {
@@ -556,6 +569,12 @@ impl Transport for RealWebrtcTransport {
             TransportPayload::Bytes(b) => b,
             _ => return,
         };
+
+        // 記録: 作成・送信に使われたパラメータを保存（テスト用）
+        self.created_params
+            .lock()
+            .ok()
+            .map(|mut v| v.push(_params.clone()));
 
         if let Ok(dc_opt) = self.data_channels.lock().map(|dcs| dcs.last().cloned()) {
             if let Some(dc) = dc_opt {
