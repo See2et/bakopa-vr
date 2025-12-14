@@ -14,6 +14,7 @@ async fn real_webrtc_syncer_chat_roundtrip() {
     let (mut ta, mut tb) = syncer::webrtc_transport::RealWebrtcTransport::pair_with_datachannel_real(a.clone(), b.clone())
         .await
         .expect("pc setup");
+    let params_handle = ta.created_params_handle();
 
     let timeout = std::time::Duration::from_secs(5);
     ta.wait_data_channel_open(timeout).await.expect("open a");
@@ -49,6 +50,17 @@ async fn real_webrtc_syncer_chat_roundtrip() {
         ctx: syncer::TracingContext::for_chat(&room, &a),
     });
 
+    // pose送信も行い、パラメータ順序を検証
+    syncer_a.handle(SyncerRequest::SendPose {
+        from: a.clone(),
+        pose: common::sample_pose(),
+        ctx: syncer::TracingContext {
+            room_id: room.clone(),
+            participant_id: a.clone(),
+            stream_kind: syncer::StreamKind::Pose,
+        },
+    });
+
     // 受信をポーリング
     let mut received = false;
     for _ in 0..60 {
@@ -71,4 +83,17 @@ async fn real_webrtc_syncer_chat_roundtrip() {
     }
 
     assert!(received, "chat should arrive via real webrtc transport");
+
+    // 送信パラメータがPose用unordered/unreliableとChat用ordered/reliableを含むことを確認
+    let params = params_handle.lock().unwrap().clone();
+    let pose_param = syncer::TransportSendParams::for_stream(syncer::StreamKind::Pose);
+    let chat_param = syncer::TransportSendParams::for_stream(syncer::StreamKind::Chat);
+    assert!(
+        params.contains(&pose_param),
+        "pose should use unordered/unreliable params on real transport"
+    );
+    assert!(
+        params.contains(&chat_param),
+        "chat should use ordered/reliable params on real transport"
+    );
 }

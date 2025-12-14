@@ -567,6 +567,10 @@ impl RealWebrtcTransport {
             .map(|v| v.clone())
             .unwrap_or_default()
     }
+
+    pub fn created_params_handle(&self) -> Arc<Mutex<Vec<TransportSendParams>>> {
+        self.created_params.clone()
+    }
 }
 
 impl Transport for RealWebrtcTransport {
