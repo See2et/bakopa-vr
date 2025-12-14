@@ -236,6 +236,40 @@ ParticipantTable の基本シナリオ
     - 将来のTURN導入（ice_servers/ice_policy）に備え、設定構造を後方互換的に整理
     - IPCポート/認証（固定値 INSECURE_DEV）を抽象化し、後続強化に耐える形へ
 
+## 手順9 詳細仕様（Pose/Chat配送の統合テスト）
+手順9をTDDで進めるための具体的なハッピーケースと失敗/境界ケースを明文化する。
+
+### 前提
+- Join時に `ControlMessage::Join` を DataChannel 経由で全参加者へブロードキャストし、受信側は `ParticipantTable` を更新して `PeerJoined` を発火する（手順3の再接続仕様と整合）。
+- Pose は unordered/unreliable（`ordered=false`, `reliable=false`, `label="sutera-data"`）。Chat は ordered/reliable（`ordered=true`, `reliable=true`, `label="sutera-data"`）。Transportに渡したパラメータで検証する。
+- TracingContext は受信イベント側で必須: `room_id` は Join で設定した値、`participant_id` は送信者、`stream_kind` は Pose/Chat の実種別。
+- テストのメイン経路は in-process の `WebrtcTransport::pair` を用いる。DataChannel実装パラメータの実PC確認は別テスト（RealWebrtcTransport）で行う。
+
+### ハッピーケース
+1. **相互Join同期**
+   - A/B がそれぞれ `SyncerRequest::Join` を1回ずつ呼ぶだけで、相手側に `PeerJoined` が1度だけ届く（余分な二重Join呼び出し不要）。
+   - 同一 participant_id が再接続した場合は `PeerLeft` → `PeerJoined` の順で1セット返る。
+2. **Pose配送**
+   - Join 完了後、A が Pose を送信すると B は `PoseReceived { from=A, ctx.stream_kind=pose }` をちょうど1回受信する。
+   - 送信時の `TransportSendParams` が unordered/unreliable であることを観測できる。
+3. **Chat配送**
+   - Join 完了後、A が Chat を送信すると B は `ChatReceived { chat.sender=A, ctx.stream_kind=chat }` をちょうど1回受信する。
+   - 送信時の `TransportSendParams` が ordered/reliable であることを観測できる。
+
+### 失敗/境界ケース
+1. **未Joinでの送信**
+   - `room` 未設定（Join前）で Pose/Chat を送信した場合、Transport には何も送らずイベント0件（Errorも返さない）。ログは warn でよい。
+2. **参加者不在への配送**
+   - 参加者表に宛先が存在しない場合は送信をドロップし、イベント0件。再送などの副作用なし。
+3. **TracingContext不整合**
+   - 受信イベントの `stream_kind` や `participant_id` が送信内容と異なる場合はテストを失敗とする（仕様上許容しない）。
+4. **Control/Signaling混入**
+   - DataChannel 経由で Control/Signaling が届いた場合は `SyncerEvent::Error { InvalidPayload }` として扱い、PeerJoined/PeerLeft を発火しない（既存挙動を維持）。
+
+### テスト戦略
+- in-process経路の統合テストでハッピーケース1〜3と失敗ケース1,2,3をカバー。
+- RealWebrtcTransport を用いた別テストで DataChannel パラメータ（ordered/reliable）の実PC反映を確認し、手順9の要件を現実的な経路でも満たすことを保証する。
+
 ## 未決事項 / オープンクエスチョン
 ### Q. 音声のAEC/AGCをどの層で担うか（WebRTC内蔵で足りるか要検証）。
 WebRTCのAEC/AGCをフル活用して下さい。
