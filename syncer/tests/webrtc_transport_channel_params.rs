@@ -50,10 +50,17 @@ fn pose_and_chat_use_expected_channel_params() {
         ctx: TracingContext::for_chat(&room, &a),
     });
 
-    // 送信時に使われたパラメータを観測
+    // 送信時に使われたパラメータを観測（ControlJoinブロードキャストが先に積まれるためフィルタする）
     let sent = ta_probe.sent_params();
+    let pose_then_chat: Vec<_> = sent
+        .into_iter()
+        .filter(|p| matches!(p, TransportSendParams::DataChannel { .. } | TransportSendParams::AudioTrack))
+        .filter(|p| p == &params_for(StreamKind::Pose) || p == &params_for(StreamKind::Chat))
+        .collect();
 
-    // Expect pose then chat params recorded
-    assert_eq!(sent.get(0), Some(&params_for(StreamKind::Pose)));
-    assert_eq!(sent.get(1), Some(&params_for(StreamKind::Chat)));
+    // PoseとChatがそれぞれ1回以上送られ、順序も Pose -> Chat で記録されていることを確認
+    assert!(
+        pose_then_chat.windows(2).any(|w| w[0] == params_for(StreamKind::Pose) && w[1] == params_for(StreamKind::Chat)),
+        "pose send should use unordered/unreliable params and precede chat params"
+    );
 }
