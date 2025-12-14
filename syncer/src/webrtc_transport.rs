@@ -17,6 +17,7 @@ use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::setting_engine::SettingEngine;
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::RTCDataChannel;
+use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::ice_transport::ice_server::RTCIceServer;
@@ -82,7 +83,7 @@ pub struct RealWebrtcTransport {
     peer: Option<ParticipantId>,
     #[allow(dead_code)]
     pc: Option<Arc<RTCPeerConnection>>,
-    data_channels: Arc<Mutex<Vec<Arc<RTCDataChannel>>>>,
+    data_channels: Arc<Mutex<Vec<(TransportSendParams, Arc<RTCDataChannel>)>>>,
     pending: Arc<Mutex<Vec<TransportEvent>>>,
     audio_track: Arc<Mutex<Option<Arc<TrackLocalStaticSample>>>>,
     peer_pc: Option<Arc<RTCPeerConnection>>, // for renegotiation (pair setup only)
@@ -156,7 +157,7 @@ impl RealWebrtcTransport {
         }
         self.data_channels
             .lock()
-            .map(|dcs| dcs.iter().any(|dc| dc.label() == label))
+            .map(|dcs| dcs.iter().any(|(_, dc)| dc.label() == label))
             .unwrap_or(false)
     }
 
@@ -233,8 +234,8 @@ impl RealWebrtcTransport {
         let pc1 = Arc::new(api.new_peer_connection(config.clone()).await?);
         let pc2 = Arc::new(api.new_peer_connection(config).await?);
 
-        let data_channels1 = Arc::new(Mutex::new(Vec::<Arc<RTCDataChannel>>::new()));
-        let data_channels2 = Arc::new(Mutex::new(Vec::<Arc<RTCDataChannel>>::new()));
+        let data_channels1 = Arc::new(Mutex::new(Vec::<(TransportSendParams, Arc<RTCDataChannel>)>::new()));
+        let data_channels2 = Arc::new(Mutex::new(Vec::<(TransportSendParams, Arc<RTCDataChannel>)>::new()));
         let pending1 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
         let pending2 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
         let audio_track1 = Arc::new(Mutex::new(None::<Arc<TrackLocalStaticSample>>));
@@ -299,7 +300,25 @@ impl RealWebrtcTransport {
         let open_tx2_mutex = Arc::new(Mutex::new(Some(open_tx2)));
 
         let dc1 = pc1.create_data_channel("sutera-data", None).await?;
-        data_channels1.lock().unwrap().push(dc1.clone());
+        data_channels1
+            .lock()
+            .unwrap()
+            .push((TransportSendParams::for_stream(StreamKind::Chat), dc1.clone()));
+
+        let dc1_unordered = pc1
+            .create_data_channel(
+                "sutera-data-unordered",
+                Some(RTCDataChannelInit {
+                    ordered: Some(false),
+                    max_retransmits: Some(0),
+                    ..Default::default()
+                }),
+            )
+            .await?;
+        data_channels1.lock().unwrap().push((
+            TransportSendParams::for_stream(StreamKind::Pose),
+            dc1_unordered.clone(),
+        ));
         let open_tx1_clone = open_tx1_mutex.clone();
         let pending1_clone = pending1.clone();
         let peer_b = b.clone();
@@ -334,7 +353,15 @@ impl RealWebrtcTransport {
             let pending2 = pending2_for_dc.clone();
             let peer_a = peer_a_for_dc.clone();
             Box::pin(async move {
-                data_channels2.lock().unwrap().push(dc.clone());
+                // 受信側でパラメータを推定して記録
+                let _ordered = dc.ordered();
+                let label = dc.label();
+                let params = if label == "sutera-data-unordered" {
+                    TransportSendParams::for_stream(StreamKind::Pose)
+                } else {
+                    TransportSendParams::for_stream(StreamKind::Chat)
+                };
+                data_channels2.lock().unwrap().push((params, dc.clone()));
                 dc.on_open(Box::new(move || {
                     let open_tx2_mutex = open_tx2_mutex.clone();
                     Box::pin(async move {
@@ -598,12 +625,15 @@ impl Transport for RealWebrtcTransport {
             .ok()
             .map(|mut v| v.push(params.clone()));
 
-        if let Ok(dc_opt) = self.data_channels.lock().map(|dcs| dcs.last().cloned()) {
-            if let Some(dc) = dc_opt {
+        if let Ok(mut dcs) = self.data_channels.lock() {
+            // 送信パラメータに合致するチャネルを探す
+            if let Some((_, dc)) = dcs.iter().find(|(p, _)| p == &params) {
                 let bytes = Bytes::from(bytes);
+                let dc = dc.clone();
                 tokio::spawn(async move {
                     let _ = dc.send(&bytes).await;
                 });
+                return;
             }
         }
     }
