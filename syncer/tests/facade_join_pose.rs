@@ -127,6 +127,7 @@ impl<'a> Syncer for TransportBackedSyncer<'a> {
                 );
             }
             SyncerRequest::SendChat { .. } => {}
+            SyncerRequest::SendVoiceFrame { .. } => {}
         }
 
         events

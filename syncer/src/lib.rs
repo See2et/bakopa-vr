@@ -210,6 +210,26 @@ impl<T: Transport> BasicSyncer<T> {
                 events.extend(self.drain_transport_events());
                 let _ = ctx;
             }
+            SyncerRequest::SendVoiceFrame { frame, ctx } => {
+                if !self.participants.is_registered(&ctx.participant_id) {
+                    events.extend(self.drain_transport_events());
+                    return events;
+                }
+
+                for to in self
+                    .participants
+                    .participants()
+                    .into_iter()
+                    .filter(|p| p != &ctx.participant_id)
+                {
+                    let payload = TransportPayload::AudioFrame(frame.clone());
+                    let params = TransportSendParams::for_stream(StreamKind::Voice);
+                    self.transport.send(to, payload, params);
+                }
+
+                events.extend(self.drain_transport_events());
+                let _ = ctx;
+            }
         }
 
         events
@@ -332,6 +352,10 @@ pub enum SyncerRequest {
     },
     SendChat {
         chat: ChatMessage,
+        ctx: TracingContext,
+    },
+    SendVoiceFrame {
+        frame: Vec<u8>,
         ctx: TracingContext,
     },
 }
@@ -482,6 +506,10 @@ impl Syncer for StubSyncer {
             }
             SyncerRequest::SendChat { chat, ctx } => {
                 let _ = (chat, ctx);
+                Vec::new()
+            }
+            SyncerRequest::SendVoiceFrame { frame, ctx } => {
+                let _ = (frame, ctx);
                 Vec::new()
             }
         }
