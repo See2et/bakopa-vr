@@ -602,26 +602,36 @@ impl Transport for RealWebrtcTransport {
             return;
         }
 
-        let bytes = match payload {
-            TransportPayload::Bytes(b) => b,
-            _ => return,
-        };
-
         // 記録: 作成・送信に使われたパラメータを保存（テスト用）
-        self.created_params
-            .lock()
-            .ok()
-            .map(|mut v| v.push(params.clone()));
+        if let Ok(mut v) = self.created_params.lock() {
+            v.push(params.clone());
+        }
 
-        if let Ok(dcs) = self.data_channels.lock() {
-            // 送信パラメータに合致するチャネルを探す
-            if let Some((_, dc)) = dcs.iter().find(|(p, _)| p == &params) {
-                let bytes = Bytes::from(bytes);
-                let dc = dc.clone();
-                tokio::spawn(async move {
-                    let _ = dc.send(&bytes).await;
-                });
-                return;
+        match payload {
+            TransportPayload::Bytes(b) => {
+                if let Ok(dcs) = self.data_channels.lock() {
+                    // 送信パラメータに合致するチャネルを探す
+                    if let Some((_, dc)) = dcs.iter().find(|(p, _)| p == &params) {
+                        let bytes = Bytes::from(b);
+                        let dc = dc.clone();
+                        tokio::spawn(async move {
+                            let _ = dc.send(&bytes).await;
+                        });
+                    }
+                }
+            }
+            TransportPayload::AudioFrame(data) => {
+                // audio_track がなければ無視（まだ追加されていないケース）
+                if let Ok(track_guard) = self.audio_track.lock() {
+                    if let Some(track) = track_guard.clone() {
+                        let sample = webrtc_media::Sample {
+                            data: Bytes::from(data),
+                            duration: std::time::Duration::from_millis(20),
+                            ..Default::default()
+                        };
+                        let _ = track.write_sample(&sample); // 失敗は上位で扱わない
+                    }
+                }
             }
         }
     }
