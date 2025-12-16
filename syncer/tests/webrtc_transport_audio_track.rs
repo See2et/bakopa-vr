@@ -28,8 +28,15 @@ fn audio_frame_traverses_transport_and_records_audio_params() {
         participant_id: b.clone(),
     });
 
-    // A から B へ音声フレームを送信（TransportPayloadを直接送信する暫定API）
-    syncer_a.send_transport_payload(b.clone(), TransportPayload::AudioFrame(vec![7, 8, 9]));
+    // A から B へ音声フレームを送信（正式API）
+    syncer_a.handle(SyncerRequest::SendVoiceFrame {
+        frame: vec![7, 8, 9],
+        ctx: TracingContext {
+            room_id: room.clone(),
+            participant_id: a.clone(),
+            stream_kind: StreamKind::Voice,
+        },
+    });
 
     // B 側で受信処理を促すため、適当なリクエストを投げてイベントをドレイン
     let events = syncer_b.handle(SyncerRequest::SendChat {

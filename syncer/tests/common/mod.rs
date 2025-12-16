@@ -29,6 +29,15 @@ pub fn sample_tracing_context(room_id: &RoomId, participant_id: &ParticipantId) 
 }
 
 #[allow(dead_code)]
+pub fn sample_voice_context(room_id: &RoomId, participant_id: &ParticipantId) -> TracingContext {
+    TracingContext {
+        room_id: room_id.clone(),
+        participant_id: participant_id.clone(),
+        stream_kind: StreamKind::Voice,
+    }
+}
+
+#[allow(dead_code)]
 pub fn sample_chat(sender: &ParticipantId) -> ChatMessage {
     ChatMessage {
         version: 1,

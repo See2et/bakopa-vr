@@ -28,8 +28,11 @@ fn audio_frame_is_emitted_as_voice_event_with_context() {
         participant_id: b.clone(),
     });
 
-    // A sends raw audio frame via transport directly (placeholder)
-    syncer_a.send_transport_payload(b.clone(), TransportPayload::AudioFrame(vec![1, 2, 3]));
+    // A sends audio frame via official API
+    syncer_a.handle(SyncerRequest::SendVoiceFrame {
+        frame: vec![1, 2, 3],
+        ctx: common::sample_voice_context(&room, &a),
+    });
 
     // B processes incoming; expect a VoiceFrameReceived
     let events = syncer_b.handle(SyncerRequest::SendChat {

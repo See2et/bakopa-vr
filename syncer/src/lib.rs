@@ -89,12 +89,6 @@ impl<T: Transport> BasicSyncer<T> {
         }
     }
 
-    /// テスト用: 生のTransportPayloadを送信する（音声プレースホルダなど）。
-    pub fn send_transport_payload(&mut self, to: ParticipantId, payload: TransportPayload) {
-        let params = TransportSendParams::for_payload(&payload);
-        self.transport.send(to, payload, params);
-    }
-
     fn drain_transport_events(&mut self) -> Vec<SyncerEvent> {
         let mut aggregated = Vec::new();
         if let Some(room) = &self.room {
@@ -272,26 +266,6 @@ impl TransportSendParams {
                 label: "sutera-data",
             },
             StreamKind::Voice => Self::AudioTrack,
-        }
-    }
-
-    /// TransportPayloadから推定されるStreamKindに基づいてチャネル設定を返す。
-    pub fn for_payload(payload: &TransportPayload) -> Self {
-        match payload {
-            TransportPayload::AudioFrame(_) => Self::AudioTrack,
-            TransportPayload::Bytes(bytes) => {
-                if let Ok(env) = SyncMessageEnvelope::from_slice(bytes) {
-                    if let Ok(kind) = StreamKind::parse(env.kind.as_str()) {
-                        return Self::for_stream(kind);
-                    }
-                }
-                // フォールバックは安全側でordered/reliable
-                Self::DataChannel {
-                    ordered: true,
-                    reliable: true,
-                    label: "sutera-data",
-                }
-            }
         }
     }
 }
