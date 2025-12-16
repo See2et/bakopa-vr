@@ -2,7 +2,7 @@ mod common;
 
 use bloom_core::{ParticipantId, RoomId};
 use common::bus_transport::{new_bus, BusTransport};
-use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest, TransportPayload};
+use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest};
 
 
 #[test]
