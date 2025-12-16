@@ -11,15 +11,22 @@ use crate::{
 #[derive(Default, Clone)]
 pub struct TransportInbox {
     events: Vec<TransportEvent>,
+    failure_emitted: std::collections::HashSet<bloom_core::ParticipantId>,
 }
 
 impl TransportInbox {
     pub fn new() -> Self {
-        Self { events: Vec::new() }
+        Self {
+            events: Vec::new(),
+            failure_emitted: std::collections::HashSet::new(),
+        }
     }
 
     pub fn from_events(events: Vec<TransportEvent>) -> Self {
-        Self { events }
+        Self {
+            events,
+            failure_emitted: std::collections::HashSet::new(),
+        }
     }
 
     pub fn push(&mut self, ev: TransportEvent) {
@@ -33,7 +40,6 @@ impl TransportInbox {
         participants: &mut ParticipantTable,
     ) -> Vec<SyncerEvent> {
         let mut out = Vec::new();
-
         let events = std::mem::take(&mut self.events);
 
         for event in events {
@@ -83,10 +89,16 @@ impl TransportInbox {
                     }
                 },
                 TransportEvent::Failure { peer } => {
+                    // 同一peerのFailureはInbox全体で1度だけ扱う（重複発火防止）
+                    if !self.failure_emitted.insert(peer.clone()) {
+                        continue;
+                    }
+
                     warn!(room_id = %room_id, participant_id = %peer, "transport failure observed; cleaning up peer");
-                    // 通信失敗としてPeerLeftを発火し、参加者テーブルから除去する。
+
                     let mut evs = participants.apply_leave(peer.clone());
                     if evs.is_empty() {
+                        // 未登録でも「離脱した」というシグナルは1回だけ出す
                         evs.push(SyncerEvent::PeerLeft {
                             participant_id: peer,
                         });

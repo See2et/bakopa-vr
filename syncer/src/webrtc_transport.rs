@@ -661,11 +661,6 @@ impl Transport for RealWebrtcTransport {
     fn poll(&mut self) -> Vec<TransportEvent> {
         if let Ok(mut pending) = self.pending.lock() {
             let out = pending.drain(..).collect::<Vec<_>>();
-            for ev in &out {
-                if matches!(ev, TransportEvent::Received { payload: TransportPayload::AudioFrame(_), .. }) {
-                    eprintln!("poll RealWebrtcTransport got AudioFrame");
-                }
-            }
             // register any Failure already present (no-op)
             return out;
         }
