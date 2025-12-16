@@ -27,6 +27,9 @@ async fn voice_frame_delivered_over_real_webrtc_syncer() {
         .await
         .expect("should add dummy audio track");
 
+    // トラック追加後の再ネゴシエーションが完了する時間を少し与える
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
     let mut syncer_a = BasicSyncer::new(a.clone(), ta);
     let mut syncer_b = BasicSyncer::new(b.clone(), tb);
 
@@ -39,6 +42,27 @@ async fn voice_frame_delivered_over_real_webrtc_syncer() {
         room_id: room.clone(),
         participant_id: b.clone(),
     });
+
+    // PeerJoinedが双方に行き渡るまで少しポーリング
+    let mut a_seen_b = false;
+    let mut b_seen_a = false;
+    for _ in 0..40 {
+        let ev_a = syncer_a.handle(SyncerRequest::SendChat {
+            chat: common::sample_chat(&a),
+            ctx: TracingContext::for_chat(&room, &a),
+        });
+        let ev_b = syncer_b.handle(SyncerRequest::SendChat {
+            chat: common::sample_chat(&b),
+            ctx: TracingContext::for_chat(&room, &b),
+        });
+        a_seen_b |= ev_a.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
+        b_seen_a |= ev_b.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
+        if a_seen_b && b_seen_a {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(a_seen_b && b_seen_a, "peers should observe each other's join before voice");
 
     // 送信
     let frame = vec![9u8; 160];
@@ -53,11 +77,14 @@ async fn voice_frame_delivered_over_real_webrtc_syncer() {
 
     // 受信側でイベントをポーリング
     let mut received = None;
-    for _ in 0..40 {
+    for i in 0..80 {
         let events = syncer_b.handle(SyncerRequest::SendChat {
             chat: common::sample_chat(&b),
             ctx: TracingContext::for_chat(&room, &b),
         });
+        if !events.is_empty() {
+            eprintln!("poll {} events: {:?}", i, events);
+        }
         received = events.into_iter().find_map(|ev| match ev {
             SyncerEvent::VoiceFrameReceived { from, frame: f, ctx } => Some((from, f, ctx)),
             _ => None,

@@ -30,22 +30,32 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
         room_id: room.clone(),
         participant_id: a.clone(),
     });
-    syncer_b.handle(SyncerRequest::Join {
+    let mut ev_b = syncer_b.handle(SyncerRequest::Join {
         room_id: room.clone(),
         participant_id: b.clone(),
     });
+    let mut ev_a = Vec::new();
 
-    // 事前に数回ポーリングしてControlJoinが行き渡るようにする
-    for _ in 0..5 {
-        let _ = syncer_a.handle(SyncerRequest::SendChat {
+    // 互いにPeerJoinedが届くまで軽くポーリング
+    let mut a_seen_b = ev_a.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
+    let mut b_seen_a = ev_b.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
+    for _ in 0..60 {
+        if a_seen_b && b_seen_a {
+            break;
+        }
+        ev_a = syncer_a.handle(SyncerRequest::SendChat {
             chat: common::sample_chat(&a),
             ctx: syncer::TracingContext::for_chat(&room, &a),
         });
-        let _ = syncer_b.handle(SyncerRequest::SendChat {
+        ev_b = syncer_b.handle(SyncerRequest::SendChat {
             chat: common::sample_chat(&b),
             ctx: syncer::TracingContext::for_chat(&room, &b),
         });
+        a_seen_b |= ev_a.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
+        b_seen_a |= ev_b.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
+    assert!(a_seen_b && b_seen_a, "peers should observe each other's join before messaging");
 
     // 本番のChat送信
     let chat = common::sample_chat(&a);

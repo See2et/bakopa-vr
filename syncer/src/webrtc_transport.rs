@@ -575,6 +575,23 @@ impl RealWebrtcTransport {
         Ok(())
     }
 
+    /// audio_track が未設定なら一度だけ追加する（失敗は黙殺）。
+    fn ensure_audio_track(&self) {
+        let needs_add = self
+            .audio_track
+            .lock()
+            .map(|g| g.is_none())
+            .unwrap_or(false);
+
+        if !needs_add {
+            return;
+        }
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let _ = handle.block_on(self.add_dummy_audio_track());
+        }
+    }
+
     #[cfg(test)]
     pub fn debug_created_params(&self) -> Vec<TransportSendParams> {
         self.created_params
@@ -595,7 +612,8 @@ impl Transport for RealWebrtcTransport {
 
     fn send(&mut self, to: ParticipantId, payload: TransportPayload, params: TransportSendParams) {
         if let Some(peer) = &self.peer {
-            if &to != peer {
+            // ControlJoinなど宛先無視のブロードキャストでは `to` に自分が入るので許可する。
+            if &to != peer && to != self.me {
                 return;
             }
         } else {
@@ -621,6 +639,7 @@ impl Transport for RealWebrtcTransport {
                 }
             }
             TransportPayload::AudioFrame(data) => {
+                self.ensure_audio_track();
                 // audio_track がなければ無視（まだ追加されていないケース）
                 if let Ok(track_guard) = self.audio_track.lock() {
                     if let Some(track) = track_guard.clone() {
@@ -629,7 +648,10 @@ impl Transport for RealWebrtcTransport {
                             duration: std::time::Duration::from_millis(20),
                             ..Default::default()
                         };
-                        let _ = track.write_sample(&sample); // 失敗は上位で扱わない
+                        let track_clone = track.clone();
+                        tokio::spawn(async move {
+                            let _ = track_clone.write_sample(&sample).await;
+                        });
                     }
                 }
             }
@@ -639,6 +661,11 @@ impl Transport for RealWebrtcTransport {
     fn poll(&mut self) -> Vec<TransportEvent> {
         if let Ok(mut pending) = self.pending.lock() {
             let out = pending.drain(..).collect::<Vec<_>>();
+            for ev in &out {
+                if matches!(ev, TransportEvent::Received { payload: TransportPayload::AudioFrame(_), .. }) {
+                    eprintln!("poll RealWebrtcTransport got AudioFrame");
+                }
+            }
             // register any Failure already present (no-op)
             return out;
         }
