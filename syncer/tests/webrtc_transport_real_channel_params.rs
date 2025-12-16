@@ -42,5 +42,7 @@ async fn datachannel_params_reflect_stream_kind() {
             .any(|p| matches!(p, TransportSendParams::DataChannel { ordered: true, reliable: true, .. })),
         "chat should be ordered/reliable"
     );
-}
 
+    ta.shutdown().await;
+    tb.shutdown().await;
+}

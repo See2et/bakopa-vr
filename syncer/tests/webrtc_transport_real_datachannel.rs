@@ -16,4 +16,7 @@ async fn datachannel_opens_between_two_real_webrtc_transports() {
 
     assert!(ta.has_data_channel_open("sutera-data"));
     assert!(tb.has_data_channel_open("sutera-data"));
+
+    ta.shutdown().await;
+    tb.shutdown().await;
 }

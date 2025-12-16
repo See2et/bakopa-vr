@@ -36,4 +36,7 @@ async fn chat_roundtrip_over_real_datachannel() {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     assert!(received, "chat should arrive over real datachannel");
+
+    ta.shutdown().await;
+    tb.shutdown().await;
 }

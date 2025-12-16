@@ -13,4 +13,7 @@ async fn datachannel_opens_with_real_peer_connections() {
     let timeout = std::time::Duration::from_secs(3);
     ta.wait_data_channel_open(timeout).await.expect("open a");
     tb.wait_data_channel_open(timeout).await.expect("open b");
+
+    ta.shutdown().await;
+    tb.shutdown().await;
 }

@@ -44,4 +44,7 @@ async fn audio_frame_delivered_over_real_webrtc_transport() {
     }
 
     assert!(received, "audio frame should be delivered");
+
+    ta.shutdown().await;
+    tb.shutdown().await;
 }

@@ -6,7 +6,7 @@ async fn failure_event_emitted_on_ice_or_dtls_error() {
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
-    let (mut ta, _tb) =
+    let (mut ta, tb) =
         syncer::webrtc_transport::RealWebrtcTransport::pair_with_datachannel_real_failfast(
             a.clone(),
             b.clone(),
@@ -29,4 +29,7 @@ async fn failure_event_emitted_on_ice_or_dtls_error() {
     }
 
     assert!(got, "expected failure event when ICE/DTLS fails");
+
+    ta.shutdown().await;
+    tb.shutdown().await;
 }

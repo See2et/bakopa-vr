@@ -603,6 +603,47 @@ impl RealWebrtcTransport {
     pub fn created_params_handle(&self) -> Arc<Mutex<Vec<TransportSendParams>>> {
         self.created_params.clone()
     }
+
+    /// 明示的にRTCPeerConnectionとDataChannelをクローズする（テスト用）。
+    pub async fn shutdown(&self) {
+        if let Some(pc) = &self.pc {
+            let _ = pc.close().await;
+        }
+        if let Some(pc) = &self.peer_pc {
+            let _ = pc.close().await;
+        }
+        if let Ok(dcs) = self.data_channels.lock() {
+            let clones: Vec<_> = dcs.iter().map(|(_, dc)| dc.clone()).collect();
+            drop(dcs);
+            for dc in clones {
+                let _ = dc.close().await;
+            }
+        }
+    }
+}
+
+impl Drop for RealWebrtcTransport {
+    /// RTCPeerConnection の内部タスクが中断されて webrtc-sctp が panic するのを防ぐため、
+    /// Drop 時に専用スレッドの current-thread runtime で close() を実行する。
+    fn drop(&mut self) {
+        let close_pc = |pc_opt: Option<Arc<RTCPeerConnection>>| {
+            if let Some(pc) = pc_opt {
+                std::thread::spawn(move || {
+                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        let _ = rt.block_on(async { pc.close().await });
+                    }
+                })
+                .join()
+                .ok();
+            }
+        };
+
+        close_pc(self.pc.take());
+        close_pc(self.peer_pc.take());
+    }
 }
 
 impl Transport for RealWebrtcTransport {
