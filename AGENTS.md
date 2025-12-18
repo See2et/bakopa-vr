@@ -1,9 +1,11 @@
 ## Project Overview
+
 このプロジェクトは、分散型Social-VR「SuteraVR」と呼称されるものです。従来のSocial-VRが特にインフラ／通信コストに苛まれていることに課題意識を持ち、それをFederationとP2Pによる二重分散により解決することを志向しています。
 
 詳細は`docs/product.md`と`docs/architecture.md`を参照して下さい。
 
 ## Do Test-Driven Development & Spec-Driven Development
+
 和田卓人（t-wada）氏が提唱するテスト駆動開発（TDD）と、仕様駆動開発（SDD）に則って開発を進めて下さい。
 
 - **テストが開発を駆動する:** すべてのプロダクションコードは、失敗するテストをパスさせるためだけに書かれます。テストは後付けの作業ではありません。それ自身が仕様書であり、設計の駆動役です。
@@ -24,7 +26,9 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 1. Commit: 進捗を保存する
 
 ## Rust Coding Rules
+
 ### Logging/Trace
+
 #### 使用クレートと前提
 
 - ログ／トレースはすべて `tracing` 経由で出すこと。`println!` や標準 `log` マクロを新しく追加しない。
@@ -60,16 +64,19 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 ### Error Handling (skill: rust-error-handling)
 
 このプロジェクトでは、エラー処理の基盤として **`anyhow`** と **`thiserror`**を用いる。
+
 - **ドメイン／ライブラリ層**の public API は 責務ごとの **型付き Error（thiserror）** を定義して返すこと。
 - **アプリ境界（main/CLI/HTTP入口など）**でのみ `anyhow::Result` を使用してよい。境界では必ず `.context()` / `.with_context()` で「何をしていて失敗したか」を付与すること。
 - `unwrap` / `expect` は原則禁止（テスト、明示された初期化コードなど例外を除く）。ランタイムで起こりうる失敗は `Result/Option` として扱い `?` で伝搬する。
 - エラーは「使う側が判断できる粒度」で設計する（例: InvalidInput / NotFound / Conflict / External / Internal）。曖昧な文字列エラーや握りつぶしは禁止。
 
 ### Use Strong Types, Not Primitive Obsession
+
 ❌ 全てを`String`,`u64`,`i32`などのプリミティブ型で表現
 ✅ 必要に応じて`UserID`,`Timeout`,`EmailAddress`などの意味を持った型やenumを定義
 
 ### examples
+
 ```diff
 - fn send_email(to: String, body: String) { /* ... */ }
 + pub struct EmailAddress(String);
@@ -79,11 +86,14 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 ```
 
 ### 単純な抽象 (Simple Abstractions)
+
 - 公開APIでジェネリクス・ネストを深くしない。
   - 例: `Foo<T>` までは許容、`Foo<Bar<Baz<T>>>` のような型をパブリックに出さない。
 - 特に「サービスレベル型」では、`Service<Backend<Store>>` のような多段ネスト型を公開しない。
   - 公開型は `Service` など単純な表現とし、内部で構成要素を隠蔽する。
+
 ### ラッパー型／スマートポインタ非露出
+
 - 公開APIの引数・戻り値に `Arc<T>` / `Rc<T>` / `Box<T>` / `RefCell<T>` 等を直接出ささない。
 - 原則として `T` / `&T` / `&mut T` を使わせる。
 - 共有や所有戦略はライブラリ内部に閉じ込める。

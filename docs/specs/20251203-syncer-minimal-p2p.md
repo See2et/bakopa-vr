@@ -3,9 +3,11 @@
 作成日: 2025-12-03
 
 ## 概要
+
 SyncerはBloomが提供するシグナリング結果を用い、クライアント間のリアルタイム同期（姿勢・テキスト・音声）をP2Pで成立させる。トランスポートはWebRTCを採用し、MVPでは「Syncer単体の最小E2E」を1本のPRで実装する。Sidecar/Clientは後続実装としつつ、契約インターフェースは本仕様で固定する。
 
 ## スコープ / 非スコープ
+
 - スコープ
   - WebRTCによるP2P確立（STUNのみ。TURNは未対応）。
   - 姿勢(Head/HandL/HandR)、テキストチャット、音声(Opus 48kHz/20ms)の配送。
@@ -18,12 +20,14 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
   - 永続化、録音、モデレーション、暗号鍵管理。
 
 ## 用語
+
 - room_id / participant_id: Bloomが払い出す接続・ルーム識別子。Syncerはそのままピア識別に用いる。
 - peer_id: Syncer内部でのピアキー。participant_idと同一。
 - Sidecar: Unity等クライアントとのローカルIPCブリッジ。今回未実装。
 - stream_kind: pose / chat / voice / signaling を示すログ用フィールド。
 
 ## 前提
+
 - シグナリングは Bloom WebSocket 仕様（20251125-bloom-signaling.md）に準拠。
 - トランスポートはWebRTC（DataChannel + Audio Track）。STUNサーバ一覧は設定経由で渡される。
 - 音声はOpus mono 48kHz、ptime 20ms、VAD/DTXオフ（シンプル優先）。
@@ -31,35 +35,44 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
 - レート制御は1接続あたり直近1秒20件超過でドロップ＋`RateLimited`返却。
 
 ## 機能要件
+
 1) 接続・シグナリング
+
 - SyncerはBloomへOffer/Answer/ICEを送信し、Bloomからのシグナリングを処理してPeerConnectionを確立する。
 - participant_idが重複接続で再到来した場合は旧セッションを破棄し、新セッションを有効化する。
 
 2) データ配送（DataChannel）
+
 - メッセージ種: Pose, Chat, Control(join/leave通知)。
 - Poseは最新優先で順序保証不要、Chat/Controlは順序保証。
 
 3) 音声配送
+
 - 音声トラックでOpusフレームを送受信。片方向でも到達すればMVP成立。
 
 4) 参加/離脱通知
+
 - peer切断検知時に`PeerLeft`を一度だけ発火し、状態をクリーンアップ。
 - Bloomからのjoin/leave通知を受けて内部ピア表を更新。
 
 5) レート制御
+
 - Syncer内のIPCセッション単位で1秒20メッセージ上限。超過期間は`RateLimited`のみ返す。
 
 ## 非機能要件
+
 - ロギング: すべての主要spanに`room_id`,`participant_id`（可能なら`remote_participant_id`）と`stream_kind`を付与。機密データはログ禁止。
 - エラーハンドリング: パース失敗/必須欠損はInvalidPayloadとして無視、ICE/DTLS失敗時はPeerLeftを発火しクリーンアップ。
 - テレメトリ: レート制御発火回数、接続寿命、往復遅延をメトリクス化できるフックを用意（実装は後続で可）。
 
 ## ディレクトリ構造
+
 - `syncer/`（予定）: Syncer本体。WebRTC/IPC/シグナリングアダプタを配置。
 - `bloom/` : 既存Bloomコード。今回主に `bloom/ws` 側と連携。
 - `docs/specs/20251203-syncer-minimal-p2p.md` : 本仕様。
 
 ## テスト項目
+
 1. メッセージ型JSONラウンドトリップ（Pose/Chat/Control/Offer/Answer/Ice）。
 2. 2ピア間のPose/Chat配送（DataChannel）。
 3. 音声Opusフレームが片方向で届く。
@@ -68,9 +81,11 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
 6. 切断検知: DataChannel/音声クローズ時にPeerLeftが一度だけ通知され、状態が空になる。
 
 ## Syncer API 最小仕様
+
 - 本節は 1PR/1Spec 運用のための最小API仕様。基礎契約とする。
 
 ### リクエスト/イベント列挙（案）
+
 - `SyncerRequest`
   - `Join { room_id, participant_id, ice_servers, auth_token }`
   - `SendPose { pose }`
@@ -86,25 +101,31 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
   - `Error { kind }` （InvalidPayload等を含む想定）
 
 ### 戻り値モデル（要判断）
+
 - `Syncer::handle(req) -> Vec<SyncerEvent>` で「1リクエスト→複数イベント」を同期返却。
 
 ### 非同期性
+
 - `fn handle(...)` で同期APIを保持し、非同期は Transport 抽象が吸収。フェイクTransportで即時応答を作りやすくする。
 
 ### Transport 抽象の粒度
+
 - Reliability/ordering は Transport 内部に隠蔽し、Pose用 unordered/unreliable を設定するか？
   - →API層に露出せず Transport 内部で固定。
 
 ### レート制御の返し方
+
 - `RateLimited` を Event として返す（push型）。
 
 ### エラー表現（方針）
+
 - API公開面では型付き `Error` を返却し、アプリケーション境界で anyhow に集約（既存規約に従う）。
 - `InvalidPayload` など recoverable なものは `SyncerEvent::Error` または `RateLimited` として通知し、致命エラーのみ Result の Err に載せる想定。
 
 ## メッセージエンベロープ仕様（DataChannel / Signaling 共通）
 
 ### JSON構造
+
 - すべてのDataChannelおよびBloomシグナリングメッセージは、以下の単一オブジェクトで包む。
 
 ```json
@@ -121,6 +142,7 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
 - 予約フィールド: 将来互換のため `meta`（オブジェクト）を予約するが、MVPでは省略必須。受信時に存在しても無視（ログ出力不要）。
 
 ### kind一覧と用途
+
 | kind | 用途 | body概要 |
 | --- | --- | --- |
 | `pose` | Pose配送（unordered/unreliable） | `PoseMessage`（head/hand姿勢 + バージョン）|
@@ -134,6 +156,7 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
 > 備考: Control/Signaling系は後述のセクションで詳細スキーマを追加予定。`kind` 名は将来のネームスペース衝突を避けるため `.` 区切りを許可する。
 
 #### Signalingメッセージ詳細
+
 - Offer/Answer
   - `sdp` はプレーンUTF-8文字列のまま格納し、Base64エンコードは行わない。
   - 必須フィールド: `version`(固定1) / `room_id` / `participant_id` / `auth_token` / (`ice_policy`はOfferのみ)。
@@ -144,6 +167,7 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
   - 再送（同一candidateの再通知）はBloom側の制御に委ね、Syncerは受信順にWebRTCスタックへブリッジする。冪等化が必要になった場合に備え、`participant_id`/`room_id`/`candidate`の組をハッシュ化して将来の重複検出用メタデータに活用できるよう、型の余地を残す。
 
 ### InvalidPayloadの分類と扱い
+
 - `InvalidPayload` は以下の enum バリアントを持つ。イベント/ログはこの粒度で発火。
   - `MissingVersion`: `v`欠損。
   - `UnsupportedVersion { received: u32 }`: 既知のメジャー以外。
@@ -155,17 +179,20 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
 - RateLimitカウンタには加算しない（攻撃検知は将来のテレメトリで扱う）。
 
 ### ロギングベストプラクティス
+
 - すべての `InvalidPayload` は `warn!` レベルで単発ログを出す。`room_id`, `participant_id`, `stream_kind`, `invalid_reason`, `kind`, `payload_size` をフィールドとして構造化記録する。
 - `body` の原文ログは禁止。ユーザー入力を含む恐れがあるため、最大でもSHA-256ハッシュ等のダイジェストをフィールド化する（必要になった時のみ導入）。
 - 未知 `kind` / `v` はスパム防止のため秒間1回に抑制する（将来の structured rate-limit）。MVPでは `warn!` + `debug!`（詳細原因）を1度だけ出す。
 - ログメッセージ例: `warn!(room_id = ?, participant_id = ?, stream_kind = "signaling", invalid_reason = "missing_version", "dropping invalid message");`
 
 ### その他ルール
+
 - `body` JSONはトップレベルオブジェクト必須。配列/値のみは `SchemaViolation`。
 - 受信側で `meta` を含む未来バージョンを観測した場合は記録せず無視し、互換性を維持。
 - 送信側は常に `v=1` を埋め、`kind`/`body`が後方互換になるよう注意する。Breaking changeを入れる場合は `v=2` を定義し、旧バージョンは受信拒否で明示的に検知できるようにする。
 
 ## 実装手順（TDD単位）
+
 1. Syncerファサード/APIのテスト作成（Red）
    - IPC相当の抽象インターフェースを定義（sync/async問わず「1リクエスト→複数イベント返却」型）
    - 最小のE2E的ユースケース（join → pose → receive）をフェイクTransportでRed化
@@ -182,6 +209,7 @@ SyncerはBloomが提供するシグナリング結果を用い、クライアン
    - 切断理由フィールドはMVP固定値だが、構造だけ確保（Refactor）
 
 ParticipantTable の基本シナリオ
+
 - **新規参加:** 空テーブルで `apply_join(alice)` を呼ぶと `PeerJoined { participant_id: alice }` を1件返し、内部状態に alice が登録される。
   - 状態確認API（`participants()` など）で alice が含まれることを保証。
   - 冪等性確保のため、同じ participant_id を2回連続で join した際の挙動は別フェーズで定義する。
@@ -237,15 +265,18 @@ ParticipantTable の基本シナリオ
     - IPCポート/認証（固定値 INSECURE_DEV）を抽象化し、後続強化に耐える形へ
 
 ## 手順9 詳細仕様（Pose/Chat配送の統合テスト）
+
 手順9をTDDで進めるための具体的なハッピーケースと失敗/境界ケースを明文化する。
 
 ### 前提
+
 - Join時に `ControlMessage::Join` を DataChannel 経由で全参加者へブロードキャストし、受信側は `ParticipantTable` を更新して `PeerJoined` を発火する（手順3の再接続仕様と整合）。
 - Pose は unordered/unreliable（`ordered=false`, `reliable=false`, `label="sutera-data"`）。Chat は ordered/reliable（`ordered=true`, `reliable=true`, `label="sutera-data"`）。Transportに渡したパラメータで検証する。
 - TracingContext は受信イベント側で必須: `room_id` は Join で設定した値、`participant_id` は送信者、`stream_kind` は Pose/Chat の実種別。
 - テストのメイン経路は in-process の `WebrtcTransport::pair` を用いる。DataChannel実装パラメータの実PC確認は別テスト（RealWebrtcTransport）で行う。
 
 ### ハッピーケース
+
 1. **相互Join同期**
    - A/B がそれぞれ `SyncerRequest::Join` を1回ずつ呼ぶだけで、相手側に `PeerJoined` が1度だけ届く（余分な二重Join呼び出し不要）。
    - 同一 participant_id が再接続した場合は `PeerLeft` → `PeerJoined` の順で1セット返る。
@@ -257,6 +288,7 @@ ParticipantTable の基本シナリオ
    - 送信時の `TransportSendParams` が ordered/reliable であることを観測できる。
 
 ### 失敗/境界ケース
+
 1. **未Joinでの送信**
    - `room` 未設定（Join前）で Pose/Chat を送信した場合、Transport には何も送らずイベント0件（Errorも返さない）。ログは warn でよい。
 2. **参加者不在への配送**
@@ -267,32 +299,40 @@ ParticipantTable の基本シナリオ
    - DataChannel 経由で Control/Signaling が届いた場合は `SyncerEvent::Error { InvalidPayload }` として扱い、PeerJoined/PeerLeft を発火しない（既存挙動を維持）。
 
 ### テスト戦略
+
 - in-process経路の統合テストでハッピーケース1〜3と失敗ケース1,2,3をカバー。
 - RealWebrtcTransport を用いた別テストで DataChannel パラメータ（ordered/reliable）の実PC反映を確認し、手順9の要件を現実的な経路でも満たすことを保証する。
 
 ## 未決事項 / オープンクエスチョン
-### Q. 音声のAEC/AGCをどの層で担うか（WebRTC内蔵で足りるか要検証）。
+
+### Q. 音声のAEC/AGCをどの層で担うか（WebRTC内蔵で足りるか要検証）
+
 WebRTCのAEC/AGCをフル活用して下さい。
 
-### Q. Poseの量子化・圧縮を導入する時期と方式（MVPは生JSON）。
+### Q. Poseの量子化・圧縮を導入する時期と方式（MVPは生JSON）
+
 MVP段階では量子化・圧縮はしなくて良い。必要な場面に遭遇してから考えます。
 MVPでは 生JSONによるPose配送を採用する。
 理由：
+
 - 圧縮・量子化は実装コストが高く、MVPの価値（動作確認）に寄与しない
 - 現フェーズでは帯域最適化よりも、機能の通しやすさ・デバッグ容易性が重要
 ただし将来、ネットワーク負荷や遅延が課題化した際の拡張余地として、
 - Poseデータのスキーマはバージョン付き（vフィールド必須）とする
 - DataChannelはPose専用（unordered/unreliable）を追加可能な構造にしておく
 
-### Q. IPCポート/認証方式（ローカル想定だが多重起動時の識別）。
+### Q. IPCポート/認証方式（ローカル想定だが多重起動時の識別）
+
 - トランスポート: localhost TCP
 - ポート: 固定ポート。すでに誰かがlistenしている場合、エラーで落とす。
 - 多重起動: MVP段階では多重起動を想定しない。1Machine 1Client 1Syncer。
 - 認証方式: IPCプロトコルの最初のメッセージに auth_token フィールドを必須とし、MVPでは固定値 "INSECURE_DEV" を使用する。将来、本番環境ではこの値を起動引数または環境変数から与えることで認証強化を行う。
 
-### Q. TURN導入時の挙動・設定受け渡し方式。
+### Q. TURN導入時の挙動・設定受け渡し方式
+
 MVPでは STUN のみ対応とし、TURNを利用する処理は実装しない。
 ただし後方互換性確保のため、以下のみ仕様として先に固定する：
+
 - Syncerの設定は STUN専用ではなく ICEサーバ一覧（ice_servers）として定義
 - Room/Client設定に ice_policy フィールドを予約し、MVPでは "default" のみ使用
 - 切断理由・接続経路を表すフィールド（disconnect_reason, connection_path）は定義だけ行い、MVPでは固定値を返す
