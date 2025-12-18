@@ -97,6 +97,27 @@ impl<T: Transport> BasicSyncer<T> {
         self.inbox = TransportInbox::new();
     }
 
+    /// 現在登録されている参加者のスナップショットを取得する（主にテスト用）。
+    pub fn participants_snapshot(&self) -> Vec<ParticipantId> {
+        self.participants.participants()
+    }
+
+    /// テスト用: transportからの生イベントを直接注入する。
+    pub fn push_transport_event(&mut self, ev: TransportEvent) {
+        self.inbox.push(ev);
+    }
+
+    /// テスト用: 入力リクエストを発行せずにトランスポートの受信キューだけを捌く。
+    pub fn poll_only(&mut self) -> Vec<SyncerEvent> {
+        if let Some(room) = &self.room {
+            for ev in self.transport.poll() {
+                self.inbox.push(ev);
+            }
+            return self.inbox.drain_into_events(room, &mut self.participants);
+        }
+        Vec::new()
+    }
+
     fn drain_transport_events(&mut self) -> Vec<SyncerEvent> {
         let mut aggregated = Vec::new();
         if let Some(room) = &self.room {
