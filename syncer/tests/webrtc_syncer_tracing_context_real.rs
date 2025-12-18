@@ -1,5 +1,7 @@
 mod common;
 
+use std::time::Duration;
+
 use bloom_core::ParticipantId;
 use syncer::{
     webrtc_transport::RealWebrtcTransport, BasicSyncer, StreamKind, Syncer, SyncerEvent,
@@ -16,7 +18,7 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
         .await
         .expect("pc setup");
 
-    let timeout = std::time::Duration::from_secs(5);
+    let timeout = Duration::from_secs(5);
     ta.wait_data_channel_open(timeout).await.expect("open a");
     tb.wait_data_channel_open(timeout).await.expect("open b");
 
@@ -24,7 +26,6 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
     let mut syncer_a = BasicSyncer::new(a.clone(), ta);
     let mut syncer_b = BasicSyncer::new(b.clone(), tb);
 
-    // join both peers
     syncer_a.handle(SyncerRequest::Join {
         room_id: room.clone(),
         participant_id: a.clone(),
@@ -35,7 +36,6 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
     });
     let mut ev_a = Vec::new();
 
-    // 互いにPeerJoinedが届くまで軽くポーリング
     let mut a_seen_b = ev_a
         .iter()
         .any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
@@ -60,21 +60,19 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
         b_seen_a |= ev_b.iter().any(
             |e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a),
         );
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert!(
         a_seen_b && b_seen_a,
         "peers should observe each other's join before messaging"
     );
 
-    // 本番のChat送信
     let chat = common::sample_chat(&a);
     syncer_a.handle(SyncerRequest::SendChat {
         chat: chat.clone(),
         ctx: syncer::TracingContext::for_chat(&room, &a),
     });
 
-    // 本番のPose送信
     let pose = common::sample_pose();
     syncer_a.handle(SyncerRequest::SendPose {
         from: a.clone(),
@@ -82,7 +80,6 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
         ctx: common::sample_tracing_context(&room, &a),
     });
 
-    // B側で受信をポーリング
     let mut chat_ctx_ok = false;
     let mut pose_ctx_ok = false;
     for _ in 0..40 {
@@ -112,7 +109,7 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
         if chat_ctx_ok && pose_ctx_ok {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     assert!(
