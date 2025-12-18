@@ -52,7 +52,6 @@ impl ServerOverrides {
     {
         Self {
             participant_id_provider: Arc::new(provider),
-            ..self
         }
     }
 

@@ -85,6 +85,10 @@ use webrtc::track::track_remote::TrackRemote;
 #[cfg(feature = "webrtc")]
 use webrtc_media::Sample;
 
+type DataChannelEntry = (TransportSendParams, Arc<RTCDataChannel>);
+type DataChannelList = Vec<DataChannelEntry>;
+type SharedDataChannels = Arc<Mutex<DataChannelList>>;
+
 /// 実WebRTC実装の土台となるアダプタ。feature=webrtc 時のみ提供。
 #[cfg(feature = "webrtc")]
 pub struct RealWebrtcTransport {
@@ -95,7 +99,7 @@ pub struct RealWebrtcTransport {
     peer: Option<ParticipantId>,
     #[allow(dead_code)]
     pc: Option<Arc<RTCPeerConnection>>,
-    data_channels: Arc<Mutex<Vec<(TransportSendParams, Arc<RTCDataChannel>)>>>,
+    data_channels: SharedDataChannels,
     pending: Arc<Mutex<Vec<TransportEvent>>>,
     audio_track: Arc<Mutex<Option<Arc<TrackLocalStaticSample>>>>,
     peer_pc: Option<Arc<RTCPeerConnection>>, // for renegotiation (pair setup only)
@@ -113,7 +117,7 @@ impl RealWebrtcTransport {
             open_channels: HashSet::from(["sutera-data".to_string()]), // 仮でopen扱い
             peer: None,
             pc: None,
-            data_channels: Arc::new(Mutex::new(Vec::new())),
+            data_channels: Arc::new(Mutex::new(DataChannelList::new())),
             pending: Arc::new(Mutex::new(Vec::new())),
             audio_track: Arc::new(Mutex::new(None)),
             peer_pc: None,
@@ -126,29 +130,29 @@ impl RealWebrtcTransport {
         (
             Self {
                 me: a.clone(),
-                pc_present: true,
-                open_channels: HashSet::from(["sutera-data".to_string()]),
-                peer: Some(b.clone()),
-                pc: None,
-                data_channels: Arc::new(Mutex::new(Vec::new())),
-                pending: Arc::new(Mutex::new(Vec::new())),
-                audio_track: Arc::new(Mutex::new(None)),
-                peer_pc: None,
-                created_params: Arc::new(Mutex::new(Vec::new())),
-                open_rx: None,
+            pc_present: true,
+            open_channels: HashSet::from(["sutera-data".to_string()]),
+            peer: Some(b.clone()),
+            pc: None,
+            data_channels: Arc::new(Mutex::new(DataChannelList::new())),
+            pending: Arc::new(Mutex::new(Vec::new())),
+            audio_track: Arc::new(Mutex::new(None)),
+            peer_pc: None,
+            created_params: Arc::new(Mutex::new(Vec::new())),
+            open_rx: None,
             },
             Self {
                 me: b,
-                pc_present: true,
-                open_channels: HashSet::from(["sutera-data".to_string()]),
-                peer: Some(a.clone()),
-                pc: None,
-                data_channels: Arc::new(Mutex::new(Vec::new())),
-                pending: Arc::new(Mutex::new(Vec::new())),
-                audio_track: Arc::new(Mutex::new(None)),
-                peer_pc: None,
-                created_params: Arc::new(Mutex::new(Vec::new())),
-                open_rx: None,
+            pc_present: true,
+            open_channels: HashSet::from(["sutera-data".to_string()]),
+            peer: Some(a.clone()),
+            pc: None,
+            data_channels: Arc::new(Mutex::new(DataChannelList::new())),
+            pending: Arc::new(Mutex::new(Vec::new())),
+            audio_track: Arc::new(Mutex::new(None)),
+            peer_pc: None,
+            created_params: Arc::new(Mutex::new(Vec::new())),
+            open_rx: None,
             },
         )
     }
@@ -259,12 +263,8 @@ impl RealWebrtcTransport {
         let pc1 = Arc::new(api.new_peer_connection(config.clone()).await?);
         let pc2 = Arc::new(api.new_peer_connection(config).await?);
 
-        let data_channels1 = Arc::new(Mutex::new(
-            Vec::<(TransportSendParams, Arc<RTCDataChannel>)>::new(),
-        ));
-        let data_channels2 = Arc::new(Mutex::new(
-            Vec::<(TransportSendParams, Arc<RTCDataChannel>)>::new(),
-        ));
+        let data_channels1 = Arc::new(Mutex::new(DataChannelList::new()));
+        let data_channels2 = Arc::new(Mutex::new(DataChannelList::new()));
         let pending1 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
         let pending2 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
         let audio_track1 = Arc::new(Mutex::new(None::<Arc<TrackLocalStaticSample>>));
@@ -443,21 +443,16 @@ impl RealWebrtcTransport {
                 Box::pin(async move {
                     let t = track.clone();
                     tokio::spawn(async move {
-                        loop {
-                            match t.read_rtp().await {
-                                Ok((packet, _)) => {
-                                    pending1_audio
-                                        .lock()
-                                        .unwrap()
-                                        .push(TransportEvent::Received {
-                                            from: from_b.clone(),
-                                            payload: TransportPayload::AudioFrame(
-                                                packet.payload.to_vec(),
-                                            ),
-                                        });
-                                }
-                                Err(_) => break,
-                            }
+                        while let Ok((packet, _)) = t.read_rtp().await {
+                            pending1_audio
+                                .lock()
+                                .unwrap()
+                                .push(TransportEvent::Received {
+                                    from: from_b.clone(),
+                                    payload: TransportPayload::AudioFrame(
+                                        packet.payload.to_vec(),
+                                    ),
+                                });
                         }
                     });
                 })
@@ -476,21 +471,16 @@ impl RealWebrtcTransport {
                 Box::pin(async move {
                     let t = track.clone();
                     tokio::spawn(async move {
-                        loop {
-                            match t.read_rtp().await {
-                                Ok((packet, _)) => {
-                                    pending2_audio
-                                        .lock()
-                                        .unwrap()
-                                        .push(TransportEvent::Received {
-                                            from: from_a.clone(),
-                                            payload: TransportPayload::AudioFrame(
-                                                packet.payload.to_vec(),
-                                            ),
-                                        });
-                                }
-                                Err(_) => break,
-                            }
+                        while let Ok((packet, _)) = t.read_rtp().await {
+                            pending2_audio
+                                .lock()
+                                .unwrap()
+                                .push(TransportEvent::Received {
+                                    from: from_a.clone(),
+                                    payload: TransportPayload::AudioFrame(
+                                        packet.payload.to_vec(),
+                                    ),
+                                });
                         }
                     });
                 })
@@ -617,8 +607,10 @@ impl RealWebrtcTransport {
             }
         });
 
-        let mut guard = self.audio_track.lock().unwrap();
-        *guard = Some(track);
+        {
+            let mut guard = self.audio_track.lock().unwrap();
+            *guard = Some(track.clone());
+        }
 
         // 簡易リオファーでトラック追加を伝搬
         let offer = pc.create_offer(None).await?;
@@ -687,12 +679,14 @@ impl RealWebrtcTransport {
         if let Some(pc) = &self.peer_pc {
             let _ = pc.close().await;
         }
-        if let Ok(dcs) = self.data_channels.lock() {
-            let clones: Vec<_> = dcs.iter().map(|(_, dc)| dc.clone()).collect();
-            drop(dcs);
-            for dc in clones {
-                let _ = dc.close().await;
-            }
+        let clones = self
+            .data_channels
+            .lock()
+            .map(|dcs| dcs.iter().map(|(_, dc)| dc.clone()).collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        for dc in clones {
+            let _ = dc.close().await;
         }
     }
 }
