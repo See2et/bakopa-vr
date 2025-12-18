@@ -139,7 +139,7 @@ mod tests {
 
         fn advance(&self, duration: Duration) {
             if let Ok(mut guard) = self.now.lock() {
-                *guard = *guard + duration;
+                *guard += duration;
             }
         }
     }

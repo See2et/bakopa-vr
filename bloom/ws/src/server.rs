@@ -52,7 +52,6 @@ impl ServerOverrides {
     {
         Self {
             participant_id_provider: Arc::new(provider),
-            ..self
         }
     }
 
@@ -342,7 +341,7 @@ fn has_upgrade_headers(req: &Request) -> bool {
         .get("Connection")
         .and_then(|h| h.to_str().ok())
         .map(|h| {
-            h.split(|c| c == ' ' || c == ',')
+            h.split([' ', ','])
                 .any(|p| p.eq_ignore_ascii_case("upgrade"))
         })
         .unwrap_or(false);
@@ -395,9 +394,7 @@ async fn handle_connection<C>(
 where
     C: CoreApi + Send + 'static,
 {
-    let participant_id = overrides
-        .participant_id()
-        .unwrap_or_else(ParticipantId::new);
+    let participant_id = overrides.participant_id().unwrap_or_default();
     let span = tracing::info_span!("ws_handshake", participant_id = %participant_id);
     let _enter = span.enter();
 

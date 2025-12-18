@@ -68,7 +68,7 @@ mod tests {
 
         let core = MockCore::new(core_result);
         let sink = RecordingSink::default();
-        let broadcast = NoopBroadcastSink::default();
+        let broadcast = NoopBroadcastSink;
         let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
 
         let layer = RecordingLayer::default();
@@ -539,11 +539,11 @@ mod tests {
 
             // span拡張に記録されたフィールド（親由来など）も収集する
             if let Some(span) = ctx.span(id) {
-                span.extensions().get::<SpanFields>().map(|ext| {
+                if let Some(ext) = span.extensions().get::<SpanFields>() {
                     for (k, v) in &ext.fields {
                         visitor.fields.entry(k.clone()).or_insert(v.clone());
                     }
-                });
+                }
                 span.extensions_mut().insert(SpanFields {
                     fields: visitor.fields.clone(),
                 });
@@ -611,7 +611,7 @@ mod tests {
 
         let core = MockCore::new(core_result.clone());
         let sink = RecordingSink::default();
-        let broadcast = NoopBroadcastSink::default();
+        let broadcast = NoopBroadcastSink;
         let mut handler = WsHandler::new(core, self_id.clone(), sink, broadcast);
 
         let handshake = handler.perform_handshake().await;
@@ -1331,7 +1331,7 @@ mod tests {
 
         fn advance(&self, duration: Duration) {
             if let Ok(mut guard) = self.now.lock() {
-                *guard = *guard + duration;
+                *guard += duration;
             }
         }
     }

@@ -45,8 +45,11 @@ async fn handshake_returns_switching_protocols_and_sets_participant_span() {
     assert_eq!(response.status(), 101);
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    let spans = layer.spans.lock().expect("collect spans");
-    assert!(spans_have_field_value(&spans, "participant_id", ""));
+    let has_participant = {
+        let spans = layer.spans.lock().expect("collect spans");
+        spans_have_field_value(&spans, "participant_id", "")
+    };
+    assert!(has_participant);
 
     handle.shutdown().await;
 }
@@ -100,9 +103,9 @@ Sec-WebSocket-Version: 13\r\n\
     for line in lines {
         let lower = line.to_ascii_lowercase();
         if lower.starts_with("upgrade:") {
-            upgrade_hdr = line.splitn(2, ':').nth(1).unwrap_or("").trim();
+            upgrade_hdr = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
         } else if lower.starts_with("connection:") {
-            connection_hdr = line.splitn(2, ':').nth(1).unwrap_or("").trim();
+            connection_hdr = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
         }
         if line.is_empty() {
             break;
@@ -167,9 +170,9 @@ Host: {authority}\r\n\
     for line in lines {
         let lower = line.to_ascii_lowercase();
         if lower.starts_with("upgrade:") {
-            upgrade_hdr = line.splitn(2, ':').nth(1).unwrap_or("").trim();
+            upgrade_hdr = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
         } else if lower.starts_with("connection:") {
-            connection_hdr = line.splitn(2, ':').nth(1).unwrap_or("").trim();
+            connection_hdr = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
         }
         if line.is_empty() {
             break;
@@ -241,14 +244,20 @@ async fn offer_span_includes_participant_and_room_over_ws() {
         to = self_id,
         room_id = room_id
     );
-    ws.send(Message::Text(offer_json.into()))
+    ws.send(Message::Text(offer_json))
         .await
         .expect("send offer");
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    let spans = layer.spans.lock().expect("collect spans");
-    assert!(spans_have_field_value(&spans, "participant_id", &self_id));
-    assert!(spans_have_field_value(&spans, "room_id", &room_id));
+    let (has_participant, has_room) = {
+        let spans = layer.spans.lock().expect("collect spans");
+        (
+            spans_have_field_value(&spans, "participant_id", &self_id),
+            spans_have_field_value(&spans, "room_id", &room_id),
+        )
+    };
+    assert!(has_participant);
+    assert!(has_room);
 
     handle.shutdown().await;
 }
