@@ -14,7 +14,7 @@ pub use crate::router::{Outbound, OutboundPayload, Router};
 pub use crate::signaling_adapter::SignalingAdapter;
 pub use crate::transport_inbox::TransportInbox;
 pub use crate::participant_table::ParticipantTable;
-pub use crate::config::{IceConfig, IcePolicy};
+pub use crate::config::{IceConfig, IcePolicy, IpcConfig, IpcConfigError};
 
 use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};
