@@ -238,6 +238,11 @@ impl RealWebrtcTransport {
         Self::pair_with_config_and_api(api, config, a, b).await
     }
 
+    /// 将来的にBloomシグナリング経由で接続するための占位。現状は直接ペアリングに委譲。
+    pub async fn pair_with_signaling_hub(a: ParticipantId, b: ParticipantId) -> Result<(Self, Self)> {
+        Self::pair_with_datachannel_real(a, b).await
+    }
+
     async fn pair_with_config_and_api(
         api: webrtc::api::API,
         config: RTCConfiguration,
