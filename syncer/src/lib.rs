@@ -89,6 +89,14 @@ impl<T: Transport> BasicSyncer<T> {
         }
     }
 
+    /// 既存の状態（participants/routerなど）を維持したまま、下位Transportだけを差し替える。
+    /// 再接続シナリオ向けのテスト用フック。Join 時に再度 register される前提で registered はリセットする。
+    pub fn rebind_transport(&mut self, transport: T) {
+        self.transport = FilteringTransport::new(self.me.clone(), transport);
+        // 古い transport 由来のペンディングイベントや failure 重複管理はリセットする
+        self.inbox = TransportInbox::new();
+    }
+
     fn drain_transport_events(&mut self) -> Vec<SyncerEvent> {
         let mut aggregated = Vec::new();
         if let Some(room) = &self.room {
