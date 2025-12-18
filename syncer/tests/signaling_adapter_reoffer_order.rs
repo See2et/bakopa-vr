@@ -70,8 +70,7 @@ fn reoffer_emits_peer_left_before_peer_joined_in_order() {
     };
 
     let closer = RecordingCloser::default();
-    let mut adapter =
-        BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
+    let mut adapter = BloomSignalingAdapter::with_context_and_closer(NoopSender, closer, ctx);
 
     let offer = |sdp: &str| ServerToClient::Offer {
         from: remote.to_string(),

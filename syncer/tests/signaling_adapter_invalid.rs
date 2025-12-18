@@ -35,8 +35,7 @@ fn invalid_offer_emits_invalid_payload_and_peer_left_then_closes_pc() {
     };
 
     let closer = RecordingCloser::default();
-    let mut adapter =
-        BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
+    let mut adapter = BloomSignalingAdapter::with_context_and_closer(NoopSender, closer, ctx);
 
     let remote = ParticipantId::new();
     let valid_offer = ServerToClient::Offer {

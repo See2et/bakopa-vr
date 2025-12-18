@@ -21,7 +21,7 @@ fn inbound_offer_is_wrapped_into_sync_message_envelope() {
     };
 
     let mut adapter: BloomSignalingAdapter<NoopSender> =
-        BloomSignalingAdapter::with_context(NoopSender::default(), ctx);
+        BloomSignalingAdapter::with_context(NoopSender, ctx);
 
     let remote = ParticipantId::new();
     let raw = ServerToClient::Offer {
@@ -65,7 +65,7 @@ fn inbound_answer_and_ice_are_also_wrapped() {
     };
 
     let mut adapter: BloomSignalingAdapter<NoopSender> =
-        BloomSignalingAdapter::with_context(NoopSender::default(), ctx);
+        BloomSignalingAdapter::with_context(NoopSender, ctx);
 
     let remote = ParticipantId::new();
 

@@ -31,8 +31,11 @@ async fn handshake_emits_span_with_participant_id_field_over_ws() {
         .expect("connect to bloom ws server");
 
     tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-    let spans = layer.spans.lock().expect("collect spans");
-    assert!(spans_have_field_value(&spans, "participant_id", ""));
+    let has_participant = {
+        let spans = layer.spans.lock().expect("collect spans");
+        spans_have_field_value(&spans, "participant_id", "")
+    };
+    assert!(has_participant);
 
     handle.shutdown().await;
 }
@@ -63,14 +66,20 @@ async fn offer_span_includes_participant_and_room_over_ws_again() {
         to = self_id,
         room_id = room_id
     );
-    ws.send(Message::Text(offer_json.into()))
+    ws.send(Message::Text(offer_json))
         .await
         .expect("send offer");
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    let spans = layer.spans.lock().expect("collect spans");
-    assert!(spans_have_field_value(&spans, "participant_id", &self_id));
-    assert!(spans_have_field_value(&spans, "room_id", &room_id));
+    let (has_participant, has_room) = {
+        let spans = layer.spans.lock().expect("collect spans");
+        (
+            spans_have_field_value(&spans, "participant_id", &self_id),
+            spans_have_field_value(&spans, "room_id", &room_id),
+        )
+    };
+    assert!(has_participant);
+    assert!(has_room);
 
     handle.shutdown().await;
 }

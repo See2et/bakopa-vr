@@ -34,8 +34,7 @@ fn reoffer_closes_previous_peer_connection_and_emits_peer_left() {
     };
 
     let closer = RecordingCloser::default();
-    let mut adapter =
-        BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
+    let mut adapter = BloomSignalingAdapter::with_context_and_closer(NoopSender, closer, ctx);
 
     let remote = ParticipantId::new();
 

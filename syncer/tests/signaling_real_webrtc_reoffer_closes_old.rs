@@ -32,11 +32,8 @@ fn reoffer_closes_old_pc_and_emits_left_then_joined() {
         ice_policy: "default".into(),
     };
 
-    let mut adapter = BloomSignalingAdapter::with_context_and_closer(
-        NoopSender::default(),
-        RecordingCloser::default(),
-        ctx,
-    );
+    let mut adapter =
+        BloomSignalingAdapter::with_context_and_closer(NoopSender, RecordingCloser::default(), ctx);
 
     let pid = ParticipantId::new();
     let pid_str = pid.to_string();

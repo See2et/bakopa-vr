@@ -24,46 +24,39 @@ async fn run_rate_limit_test<C: CoreApi + Send + 'static>(core: SharedCore<C>) {
     };
 
     for _ in 0..21 {
-        ws.send(Message::Text(
-            format!(
-                r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer","room_id":"{room_id}"}}"#,
-                to = self_id,
-                room_id = room_id
-            )
-            .into(),
-        ))
+        ws.send(Message::Text(format!(
+            r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer","room_id":"{room_id}"}}"#,
+            to = self_id,
+            room_id = room_id
+        )))
         .await
         .expect("send offer");
     }
 
     let mut got_rate_limited = false;
     for _ in 0..30 {
-        match tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await {
-            Ok(Some(Ok(Message::Text(txt)))) => {
-                if let Ok(msg) = serde_json::from_str::<ServerToClient>(&txt) {
-                    if let ServerToClient::Error { code, .. } = msg {
-                        if code == ErrorCode::RateLimited {
-                            got_rate_limited = true;
-                            break;
-                        }
-                    }
+        if let Ok(Some(Ok(Message::Text(txt)))) =
+            tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await
+        {
+            if let Ok(ServerToClient::Error { code, .. }) =
+                serde_json::from_str::<ServerToClient>(&txt)
+            {
+                if code == ErrorCode::RateLimited {
+                    got_rate_limited = true;
+                    break;
                 }
             }
-            _ => {}
         }
     }
 
     assert!(got_rate_limited, "21st message should return RateLimited");
 
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
-    ws.send(Message::Text(
-        format!(
-            r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer","room_id":"{room_id}"}}"#,
-            to = self_id,
-            room_id = room_id
-        )
-        .into(),
-    ))
+    ws.send(Message::Text(format!(
+        r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer","room_id":"{room_id}"}}"#,
+        to = self_id,
+        room_id = room_id
+    )))
     .await
     .expect("send after cooldown");
 
