@@ -142,7 +142,7 @@ where
     ) -> Result<Option<TransportPayload>, serde_json::Error> {
         let envelope_opt = match message {
             ServerToClient::Offer { from, payload } => {
-                Span::current().record("message_type", &"offer");
+                Span::current().record("message_type", "offer");
                 let (from_pid, existing) = self.track_participant(from.as_str())?;
                 self.handle_env_result(
                     from_pid,
@@ -158,7 +158,7 @@ where
                 )?
             }
             ServerToClient::Answer { from, payload } => {
-                Span::current().record("message_type", &"answer");
+                Span::current().record("message_type", "answer");
                 let from_pid = self.parse_participant(from.as_str());
                 self.handle_env_result(
                     from_pid,
@@ -175,7 +175,7 @@ where
                 )?
             }
             ServerToClient::IceCandidate { from, payload } => {
-                Span::current().record("message_type", &"ice");
+                Span::current().record("message_type", "ice");
                 let from_pid = self.parse_participant(from.as_str());
                 self.handle_env_result(
                     from_pid,
@@ -192,7 +192,7 @@ where
                 )?
             }
             _ => {
-                Span::current().record("message_type", &"unsupported");
+                Span::current().record("message_type", "unsupported");
                 warn!(raw = ?message, "unsupported signaling message");
                 return Ok(None);
             }
