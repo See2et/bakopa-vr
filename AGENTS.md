@@ -16,6 +16,9 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 また、**仕様が不明瞭なときは勝手に「良さそうな実装」をしない**で下さい。適宜ユーザーに仕様書の更新提案や質疑応答を行って下さい。
 
 1. Spec: 仕様を明文化する
+    - ユーザーのやりたいことが1Spec=1PRとして過剰・過大な場合、適切な要件と規模に落とし込む(skill: sdd-slice-wish)
+    - ユーザーからヒアリングした内容を元に、Specのドラフトを作成する(skill: sdd-init)
+    - ドラフトの内容に合意できたら、TDDのための充分なテストケースをSpecに網羅する(skill: sdd-test-cases)
 1. Red: 失敗するテストを書く(skill: tdd-red)
 1. Green: テストをパスさせる(skill: tdd-green)
 1. Refactor: コードの品質を向上させる(skill: tdd-refactor)
