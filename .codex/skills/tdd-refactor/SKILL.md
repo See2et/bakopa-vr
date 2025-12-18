@@ -22,6 +22,8 @@ description: TDDのリファクタ(REFACTOR)フェーズを厳密に実行する
   - `cargo fix`での機械的な修正
   - `cargo fmt -all`でのフォーマット
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`で指摘された内容の修正
+- 変更範囲にMarkdown文書が含まれる場合
+  - `markdownlint-cli2 --fix`での機械的な修正
 
 ## 手順（厳守）
 
