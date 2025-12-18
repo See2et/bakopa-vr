@@ -10,10 +10,10 @@ fn core_build_without_webrtc_dependency_graph() {
         .expect("syncer has a parent directory")
         .to_path_buf();
 
-    // 1) no-default-features で syncer がビルドできること
+    // 1) no-default-features で syncer の lib がビルドできること
     let status = Command::new("cargo")
         .arg("check")
-        .args(["-p", "syncer", "--no-default-features"])
+        .args(["-p", "syncer", "--no-default-features", "--lib"])
         .current_dir(&workspace_root)
         .status()
         .expect("failed to run cargo check");

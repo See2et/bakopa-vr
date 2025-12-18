@@ -11,27 +11,6 @@ use bloom_core::ParticipantId;
 use anyhow::Result;
 use tokio::sync::{mpsc, oneshot};
 use bytes::Bytes;
-use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS};
-use webrtc::api::interceptor_registry::register_default_interceptors;
-use webrtc::api::setting_engine::SettingEngine;
-use webrtc::api::APIBuilder;
-use webrtc::data_channel::RTCDataChannel;
-use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
-use webrtc::data_channel::data_channel_message::DataChannelMessage;
-use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
-use webrtc::ice_transport::ice_server::RTCIceServer;
-use webrtc::ice_transport::ice_connection_state::RTCIceConnectionState;
-use webrtc::peer_connection::configuration::RTCConfiguration;
-use webrtc::peer_connection::policy::ice_transport_policy::RTCIceTransportPolicy;
-use webrtc::peer_connection::RTCPeerConnection;
-use webrtc::interceptor::registry::Registry;
-use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
-use webrtc::rtp_transceiver::RTCRtpTransceiver;
-use webrtc_media::Sample;
-use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
-use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
-use webrtc::track::track_remote::TrackRemote;
-
 use crate::{Transport, TransportEvent, TransportPayload, TransportSendParams, StreamKind};
 use crate::messages::SyncMessageEnvelope;
 
@@ -71,7 +50,49 @@ impl Default for WebrtcTransportOptions {
     }
 }
 
-/// 実WebRTC実装の土台となるアダプタ。現時点ではPCを保持するだけのスタブ。
+#[cfg(feature = "webrtc")]
+use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS};
+#[cfg(feature = "webrtc")]
+use webrtc::api::interceptor_registry::register_default_interceptors;
+#[cfg(feature = "webrtc")]
+use webrtc::api::setting_engine::SettingEngine;
+#[cfg(feature = "webrtc")]
+use webrtc::api::APIBuilder;
+#[cfg(feature = "webrtc")]
+use webrtc::data_channel::RTCDataChannel;
+#[cfg(feature = "webrtc")]
+use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
+#[cfg(feature = "webrtc")]
+use webrtc::data_channel::data_channel_message::DataChannelMessage;
+#[cfg(feature = "webrtc")]
+use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
+#[cfg(feature = "webrtc")]
+use webrtc::ice_transport::ice_server::RTCIceServer;
+#[cfg(feature = "webrtc")]
+use webrtc::ice_transport::ice_connection_state::RTCIceConnectionState;
+#[cfg(feature = "webrtc")]
+use webrtc::peer_connection::configuration::RTCConfiguration;
+#[cfg(feature = "webrtc")]
+use webrtc::peer_connection::policy::ice_transport_policy::RTCIceTransportPolicy;
+#[cfg(feature = "webrtc")]
+use webrtc::peer_connection::RTCPeerConnection;
+#[cfg(feature = "webrtc")]
+use webrtc::interceptor::registry::Registry;
+#[cfg(feature = "webrtc")]
+use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
+#[cfg(feature = "webrtc")]
+use webrtc::rtp_transceiver::RTCRtpTransceiver;
+#[cfg(feature = "webrtc")]
+use webrtc_media::Sample;
+#[cfg(feature = "webrtc")]
+use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
+#[cfg(feature = "webrtc")]
+use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
+#[cfg(feature = "webrtc")]
+use webrtc::track::track_remote::TrackRemote;
+
+/// 実WebRTC実装の土台となるアダプタ。feature=webrtc 時のみ提供。
+#[cfg(feature = "webrtc")]
 pub struct RealWebrtcTransport {
     #[allow(dead_code)]
     me: ParticipantId,

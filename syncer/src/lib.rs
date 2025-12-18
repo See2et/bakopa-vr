@@ -4,6 +4,9 @@ pub mod rate_limiter;
 pub mod router;
 pub mod signaling_adapter;
 pub mod transport_inbox;
+pub mod config;
+
+#[cfg(feature = "webrtc")]
 pub mod webrtc_transport;
 
 pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, PoseTransform};
@@ -11,6 +14,7 @@ pub use crate::router::{Outbound, OutboundPayload, Router};
 pub use crate::signaling_adapter::SignalingAdapter;
 pub use crate::transport_inbox::TransportInbox;
 pub use crate::participant_table::ParticipantTable;
+pub use crate::config::{IceConfig, IcePolicy};
 
 use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
 use bloom_core::{ParticipantId, RoomId};

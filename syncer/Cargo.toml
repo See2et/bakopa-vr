@@ -3,6 +3,12 @@ name = "syncer"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["webrtc", "webrtc-media"]
+# optional WebRTC stack。core ビルドでは外す。
+webrtc = ["dep:webrtc"]
+webrtc-media = ["dep:webrtc-media"]
+
 [dependencies]
 bloom-core = { path = "../bloom/core" }
 bloom-api = { path = "../bloom/api" }
@@ -12,9 +18,9 @@ serde_json = "1"
 tracing = "0.1"
 anyhow = "1"
 bytes = "1"
-webrtc = "0.11"
-webrtc-media = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+webrtc = { version = "0.11", optional = true }
+webrtc-media = { version = "0.8", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
