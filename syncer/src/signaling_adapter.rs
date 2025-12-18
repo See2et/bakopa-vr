@@ -8,7 +8,7 @@ use std::str::FromStr;
 use crate::messages::{SignalingAnswer, SignalingIce, SignalingOffer};
 use crate::messages::{SignalingMessage, SyncMessageEnvelope, SyncMessageError};
 use crate::{SyncerError, SyncerEvent, TransportPayload};
-use tracing::warn;
+use tracing::{warn, Span};
 
 /// Bloom WebSocketシグナリングとの境界を抽象化するための最小trait。
 pub trait SignalingAdapter {
@@ -130,12 +130,20 @@ where
         PollResult { payloads, events }
     }
 
+    #[tracing::instrument(
+        skip(self, message),
+        fields(
+            room_id = %self.context.room_id,
+            message_type = tracing::field::Empty
+        )
+    )]
     fn shape_incoming(
         &mut self,
         message: ServerToClient,
     ) -> Result<Option<TransportPayload>, serde_json::Error> {
         let envelope_opt = match message {
             ServerToClient::Offer { from, payload } => {
+                Span::current().record("message_type", &"offer");
                 let (from_pid, existing) = self.track_participant(from.as_str())?;
                 self.handle_env_result(
                     from_pid,
@@ -151,6 +159,7 @@ where
                 )?
             }
             ServerToClient::Answer { from, payload } => {
+                Span::current().record("message_type", &"answer");
                 let from_pid = self.parse_participant(from.as_str());
                 self.handle_env_result(
                     from_pid,
@@ -167,6 +176,7 @@ where
                 )?
             }
             ServerToClient::IceCandidate { from, payload } => {
+                Span::current().record("message_type", &"ice");
                 let from_pid = self.parse_participant(from.as_str());
                 self.handle_env_result(
                     from_pid,
@@ -183,6 +193,7 @@ where
                 )?
             }
             _ => {
+                Span::current().record("message_type", &"unsupported");
                 return Err(serde_json::Error::io(io::Error::other(
                     "unsupported signaling message",
                 )))
