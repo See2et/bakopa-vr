@@ -40,12 +40,12 @@ async fn run_peer_connected_test<C: CoreApi + Send + 'static>(shared_core: Share
                 if let Ok(Some(Ok(Message::Text(t)))) =
                     tokio::time::timeout(std::time::Duration::from_millis(300), ws.next()).await
                 {
-                    if let Ok(evt) = serde_json::from_str::<ServerToClient>(&t) {
-                        if let ServerToClient::RoomParticipants { participants, .. } = evt {
-                            if let Some(id) = participants.iter().find(|pid| *pid != &a_id) {
-                                found = Some(id.clone());
-                                break;
-                            }
+                    if let Ok(ServerToClient::RoomParticipants { participants, .. }) =
+                        serde_json::from_str::<ServerToClient>(&t)
+                    {
+                        if let Some(id) = participants.iter().find(|pid| *pid != &a_id) {
+                            found = Some(id.clone());
+                            break;
                         }
                     }
                 }

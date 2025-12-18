@@ -35,7 +35,7 @@ impl<C, S, B> WsHandler<C, S, B> {
             sink,
             broadcast,
             rate_limiter: Some(RateLimiter::from_config(
-                Arc::new(SystemClock::default()),
+                Arc::new(SystemClock),
                 RateLimitConfig::default(),
             )),
         }

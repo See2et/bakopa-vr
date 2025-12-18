@@ -29,10 +29,8 @@ async fn server_sends_periodic_ping_and_disconnects_on_missing_pong() {
     // 30s間隔のPingを1回受信できることを確認（auto-pongが起きるため切断は検証しない）
     let recv = tokio::time::timeout(tokio::time::Duration::from_secs(40), async {
         loop {
-            if let Some(msg) = ws.next().await {
-                if let Ok(Message::Ping(_)) = msg {
-                    return;
-                }
+            if let Some(Ok(Message::Ping(_))) = ws.next().await {
+                return;
             }
         }
     })

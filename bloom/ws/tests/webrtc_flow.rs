@@ -45,7 +45,7 @@ async fn ice_candidate_is_forwarded_without_mutation() {
         to = b_id,
         candidate = candidate
     );
-    ws_a.send(Message::Text(ice_json.into()))
+    ws_a.send(Message::Text(ice_json))
         .await
         .expect("send ice candidate");
 
@@ -59,12 +59,14 @@ async fn ice_candidate_is_forwarded_without_mutation() {
     }
 
     // コアに渡されたペイロードも改変されていないことを確認
-    let core = core_arc.lock().expect("lock core");
-    assert_eq!(core.relay_ice_calls.len(), 1);
-    let (_room, from, to, RelayIce { candidate: relayed }) = core.relay_ice_calls[0].clone();
-    assert_eq!(from.to_string(), a_id);
-    assert_eq!(to.to_string(), b_id);
-    assert_eq!(relayed, candidate);
+    {
+        let core = core_arc.lock().expect("lock core");
+        assert_eq!(core.relay_ice_calls.len(), 1);
+        let (_room, from, to, RelayIce { candidate: relayed }) = core.relay_ice_calls[0].clone();
+        assert_eq!(from.to_string(), a_id);
+        assert_eq!(to.to_string(), b_id);
+        assert_eq!(relayed, candidate);
+    }
 
     handle.shutdown().await;
 }
@@ -136,11 +138,13 @@ async fn binary_frame_is_rejected_without_room_participants_change() {
     }
 
     // core.leave_roomが呼ばれていない（参加者状態を変化させない）
-    let core = core_arc.lock().expect("lock core");
-    assert!(
-        core.leave_room_calls.is_empty(),
-        "binary rejection should not invoke leave_room"
-    );
+    {
+        let core = core_arc.lock().expect("lock core");
+        assert!(
+            core.leave_room_calls.is_empty(),
+            "binary rejection should not invoke leave_room"
+        );
+    }
 
     handle.shutdown().await;
 }

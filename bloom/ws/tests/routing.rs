@@ -50,12 +50,12 @@ async fn run_offer_routing_test<C: CoreApi + Send + 'static>(shared_core: Shared
                 if let Ok(Some(Ok(Message::Text(t)))) =
                     tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await
                 {
-                    if let Ok(evt) = serde_json::from_str::<ServerToClient>(&t) {
-                        if let ServerToClient::RoomParticipants { participants, .. } = evt {
-                            if let Some(id) = participants.iter().find(|pid| *pid != &a_id) {
-                                found = Some(id.clone());
-                                break;
-                            }
+                    if let Ok(ServerToClient::RoomParticipants { participants, .. }) =
+                        serde_json::from_str::<ServerToClient>(&t)
+                    {
+                        if let Some(id) = participants.iter().find(|pid| *pid != &a_id) {
+                            found = Some(id.clone());
+                            break;
                         }
                     }
                 }
@@ -72,7 +72,7 @@ async fn run_offer_routing_test<C: CoreApi + Send + 'static>(shared_core: Shared
         r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer"}}"#,
         to = b_id
     );
-    ws_a.send(Message::Text(offer_json.into()))
+    ws_a.send(Message::Text(offer_json))
         .await
         .expect("send offer");
 
@@ -113,7 +113,7 @@ async fn run_missing_participant_error<C: CoreApi + Send + 'static>(shared_core:
         r#"{{"type":"Offer","to":"{to}","sdp":"v=0 offer"}}"#,
         to = missing_id
     );
-    ws.send(Message::Text(offer.into()))
+    ws.send(Message::Text(offer))
         .await
         .expect("send missing offer");
     let resp = recv_server_msg(&mut ws).await;

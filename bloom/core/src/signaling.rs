@@ -75,9 +75,7 @@ pub fn relay_offer_checked(
     to: &ParticipantId,
     payload: RelaySdp,
 ) -> Result<(), ErrorCode> {
-    if let Err(e) = validate_membership(participants, from, to) {
-        return Err(e);
-    }
+    validate_membership(participants, from, to)?;
     relay_offer(delivery, from, to, payload);
     Ok(())
 }

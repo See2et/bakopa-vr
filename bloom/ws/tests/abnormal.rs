@@ -98,27 +98,26 @@ async fn abnormal_close_triggers_single_leave_and_broadcasts() {
     let mut received_peer_disconnected = false;
     let mut received_room_participants = false;
     for _ in 0..10 {
-        match tokio::time::timeout(std::time::Duration::from_millis(200), ws_b.next()).await {
-            Ok(Some(Ok(Message::Text(t)))) => {
-                let evt: ServerToClient = serde_json::from_str(&t).expect("parse server msg");
-                match evt {
-                    ServerToClient::PeerDisconnected { participant_id } => {
-                        if participant_id == a_id {
-                            received_peer_disconnected = true;
-                        }
+        if let Ok(Some(Ok(Message::Text(t)))) =
+            tokio::time::timeout(std::time::Duration::from_millis(200), ws_b.next()).await
+        {
+            let evt: ServerToClient = serde_json::from_str(&t).expect("parse server msg");
+            match evt {
+                ServerToClient::PeerDisconnected { participant_id } => {
+                    if participant_id == a_id {
+                        received_peer_disconnected = true;
                     }
-                    ServerToClient::RoomParticipants { participants, .. } => {
-                        if !participants.contains(&a_id) {
-                            received_room_participants = true;
-                        }
+                }
+                ServerToClient::RoomParticipants { participants, .. } => {
+                    if !participants.contains(&a_id) {
+                        received_room_participants = true;
                     }
-                    _ => {}
                 }
-                if received_peer_disconnected && received_room_participants {
-                    break;
-                }
+                _ => {}
             }
-            _ => {}
+            if received_peer_disconnected && received_room_participants {
+                break;
+            }
         }
     }
 

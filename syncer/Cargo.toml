@@ -1,0 +1,30 @@
+[package]
+name = "syncer"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["webrtc", "webrtc-media"]
+webrtc = ["dep:webrtc"]
+webrtc-media = ["dep:webrtc-media"]
+
+[dependencies]
+bloom-core = { path = "../bloom/core" }
+bloom-api = { path = "../bloom/api" }
+lazy_static = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+anyhow = "1"
+bytes = "1"
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+    "sync",
+] }
+webrtc = { version = "0.14", optional = true }
+webrtc-media = { version = "0.11", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
