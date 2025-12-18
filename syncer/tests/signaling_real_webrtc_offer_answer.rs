@@ -88,6 +88,8 @@ async fn signaling_via_hub_opens_datachannel_and_emits_peer_joined() {
         if a_seen_b && b_seen_a {
             break;
         }
+        // 過度なビジーポーリングを避け、非同期タスクへ制御を戻す
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
 
     assert!(a_seen_b, "A should observe B join");
