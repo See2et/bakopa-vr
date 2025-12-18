@@ -103,11 +103,13 @@ impl<T: Transport> BasicSyncer<T> {
     }
 
     /// テスト用: transportからの生イベントを直接注入する。
+    #[cfg_attr(not(test), doc(hidden))]
     pub fn push_transport_event(&mut self, ev: TransportEvent) {
         self.inbox.push(ev);
     }
 
     /// テスト用: 入力リクエストを発行せずにトランスポートの受信キューだけを捌く。
+    #[cfg_attr(not(test), doc(hidden))]
     pub fn poll_only(&mut self) -> Vec<SyncerEvent> {
         if let Some(room) = &self.room {
             for ev in self.transport.poll() {
