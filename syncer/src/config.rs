@@ -1,7 +1,6 @@
 use crate::signaling_adapter::SignalingContext;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum IcePolicy {
     #[default]
     Default,
@@ -14,7 +13,6 @@ impl IcePolicy {
         }
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct IceConfig {

@@ -37,12 +37,10 @@ pub struct WebrtcTransport {
     state: Rc<RefCell<WebrtcState>>, // テスト用の観測ポイント
 }
 
-#[derive(Debug, Clone, Copy)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct WebrtcTransportOptions {
     pub inject_failure_once: bool,
 }
-
 
 #[cfg(feature = "webrtc")]
 use webrtc::api::interceptor_registry::register_default_interceptors;
@@ -130,29 +128,29 @@ impl RealWebrtcTransport {
         (
             Self {
                 me: a.clone(),
-            pc_present: true,
-            open_channels: HashSet::from(["sutera-data".to_string()]),
-            peer: Some(b.clone()),
-            pc: None,
-            data_channels: Arc::new(Mutex::new(DataChannelList::new())),
-            pending: Arc::new(Mutex::new(Vec::new())),
-            audio_track: Arc::new(Mutex::new(None)),
-            peer_pc: None,
-            created_params: Arc::new(Mutex::new(Vec::new())),
-            open_rx: None,
+                pc_present: true,
+                open_channels: HashSet::from(["sutera-data".to_string()]),
+                peer: Some(b.clone()),
+                pc: None,
+                data_channels: Arc::new(Mutex::new(DataChannelList::new())),
+                pending: Arc::new(Mutex::new(Vec::new())),
+                audio_track: Arc::new(Mutex::new(None)),
+                peer_pc: None,
+                created_params: Arc::new(Mutex::new(Vec::new())),
+                open_rx: None,
             },
             Self {
                 me: b,
-            pc_present: true,
-            open_channels: HashSet::from(["sutera-data".to_string()]),
-            peer: Some(a.clone()),
-            pc: None,
-            data_channels: Arc::new(Mutex::new(DataChannelList::new())),
-            pending: Arc::new(Mutex::new(Vec::new())),
-            audio_track: Arc::new(Mutex::new(None)),
-            peer_pc: None,
-            created_params: Arc::new(Mutex::new(Vec::new())),
-            open_rx: None,
+                pc_present: true,
+                open_channels: HashSet::from(["sutera-data".to_string()]),
+                peer: Some(a.clone()),
+                pc: None,
+                data_channels: Arc::new(Mutex::new(DataChannelList::new())),
+                pending: Arc::new(Mutex::new(Vec::new())),
+                audio_track: Arc::new(Mutex::new(None)),
+                peer_pc: None,
+                created_params: Arc::new(Mutex::new(Vec::new())),
+                open_rx: None,
             },
         )
     }
@@ -449,9 +447,7 @@ impl RealWebrtcTransport {
                                 .unwrap()
                                 .push(TransportEvent::Received {
                                     from: from_b.clone(),
-                                    payload: TransportPayload::AudioFrame(
-                                        packet.payload.to_vec(),
-                                    ),
+                                    payload: TransportPayload::AudioFrame(packet.payload.to_vec()),
                                 });
                         }
                     });
@@ -477,9 +473,7 @@ impl RealWebrtcTransport {
                                 .unwrap()
                                 .push(TransportEvent::Received {
                                     from: from_a.clone(),
-                                    payload: TransportPayload::AudioFrame(
-                                        packet.payload.to_vec(),
-                                    ),
+                                    payload: TransportPayload::AudioFrame(packet.payload.to_vec()),
                                 });
                         }
                     });

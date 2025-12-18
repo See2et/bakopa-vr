@@ -394,9 +394,7 @@ async fn handle_connection<C>(
 where
     C: CoreApi + Send + 'static,
 {
-    let participant_id = overrides
-        .participant_id()
-        .unwrap_or_default();
+    let participant_id = overrides.participant_id().unwrap_or_default();
     let span = tracing::info_span!("ws_handshake", participant_id = %participant_id);
     let _enter = span.enter();
 
