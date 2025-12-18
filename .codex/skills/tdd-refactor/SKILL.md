@@ -14,6 +14,11 @@ description: TDDのリファクタ(REFACTOR)フェーズを厳密に実行する
 - 変更は「仕様変更」ではなく「内部改善」である。
   - もし仕様変更が必要なら：ユーザーの了承のもと**先にSpecとテスト期待値を更新**してから（＝別のREDとして扱う）。
 
+## 必ず取り組むべき内容
+- 変更範囲にRustコードが含まれる場合
+    - `cargo fmt -all`でのフォーマット
+    - `cargo clippy --workspace --all-targets --all-features -- -D warnings`で指摘された内容の修正
+
 ## 手順（厳守）
 1. **フェーズ宣言**
    - `Current Phase: REFACTOR`
