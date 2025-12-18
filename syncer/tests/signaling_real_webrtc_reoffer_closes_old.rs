@@ -1,7 +1,6 @@
 use bloom_api::payload::RelaySdp;
 use bloom_api::ServerToClient;
 use bloom_core::ParticipantId;
-use std::str::FromStr;
 use syncer::signaling_adapter::{
     BloomSignalingAdapter, ClientToServerSender, PeerConnectionCloser, SignalingContext,
 };
@@ -39,10 +38,11 @@ fn reoffer_closes_old_pc_and_emits_left_then_joined() {
         ctx,
     );
 
-    let pid = ParticipantId::new().to_string();
+    let pid = ParticipantId::new();
+    let pid_str = pid.to_string();
 
     let offer = |sdp: &str| ServerToClient::Offer {
-        from: pid.clone(),
+        from: pid_str.clone(),
         payload: RelaySdp {
             sdp: sdp.to_string(),
         },
@@ -66,11 +66,11 @@ fn reoffer_closes_old_pc_and_emits_left_then_joined() {
         "re-offer should emit at least two events (PeerLeft, PeerJoined)"
     );
     assert!(
-        matches!(events[0], SyncerEvent::PeerLeft { ref participant_id } if participant_id == &ParticipantId::from_str(&pid).unwrap()),
+        matches!(events[0], SyncerEvent::PeerLeft { ref participant_id } if participant_id == &pid),
         "first event should be PeerLeft for the participant"
     );
     assert!(
-        matches!(events[1], SyncerEvent::PeerJoined { ref participant_id } if participant_id == &ParticipantId::from_str(&pid).unwrap()),
+        matches!(events[1], SyncerEvent::PeerJoined { ref participant_id } if participant_id == &pid),
         "second event should be PeerJoined for the participant"
     );
 
@@ -78,7 +78,7 @@ fn reoffer_closes_old_pc_and_emits_left_then_joined() {
     let closer = adapter.into_inner_closer();
     assert_eq!(
         closer.closed,
-        vec![ParticipantId::from_str(&pid).unwrap()],
+        vec![pid.clone()],
         "closer should be called once for the participant"
     );
 }
