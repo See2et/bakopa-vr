@@ -177,8 +177,7 @@ where
                 )?
             }
             _ => {
-                return Err(serde_json::Error::io(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(serde_json::Error::io(io::Error::other(
                     "unsupported signaling message",
                 )))
             }

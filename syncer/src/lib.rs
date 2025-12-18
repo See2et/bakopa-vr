@@ -20,7 +20,6 @@ use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
 use crate::rate_limiter::{RateLimitDecision, RateLimiter, RealClock};
 use bloom_core::{ParticipantId, RoomId};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -548,7 +547,7 @@ impl Syncer for StubSyncer {
                 participant_id,
             } => {
                 let mut guard = ROOM_STATE.lock().unwrap();
-                let room_entry = guard.entry(room_id.clone()).or_insert_with(Vec::new);
+                let room_entry = guard.entry(room_id.clone()).or_default();
 
                 // 既存参加者を PeerJoined として返す
                 let mut events: Vec<SyncerEvent> = room_entry

@@ -38,17 +38,11 @@ pub struct WebrtcTransport {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[derive(Default)]
 pub struct WebrtcTransportOptions {
     pub inject_failure_once: bool,
 }
 
-impl Default for WebrtcTransportOptions {
-    fn default() -> Self {
-        Self {
-            inject_failure_once: false,
-        }
-    }
-}
 
 #[cfg(feature = "webrtc")]
 use webrtc::api::interceptor_registry::register_default_interceptors;

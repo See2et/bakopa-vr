@@ -7,6 +7,12 @@ use uuid::Uuid;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RoomId(Uuid);
 
+impl Default for RoomId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RoomId {
     /// UUID v4 を生成してRoomIdを作る。
     pub fn new() -> Self {
@@ -35,6 +41,12 @@ impl FromStr for RoomId {
 /// 参加者を一意に識別するID。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ParticipantId(Uuid);
+
+impl Default for ParticipantId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ParticipantId {
     /// UUID v4 を生成してParticipantIdを作る。
