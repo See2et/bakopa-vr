@@ -2,7 +2,6 @@ use bloom_api::payload::{RelayIce, RelaySdp};
 use bloom_api::{ClientToServer, ServerToClient};
 use bloom_core::ParticipantId;
 use std::collections::HashSet;
-use std::io;
 use std::str::FromStr;
 
 use crate::messages::{SignalingAnswer, SignalingIce, SignalingOffer};
@@ -194,9 +193,8 @@ where
             }
             _ => {
                 Span::current().record("message_type", &"unsupported");
-                return Err(serde_json::Error::io(io::Error::other(
-                    "unsupported signaling message",
-                )))
+                warn!(raw = ?message, "unsupported signaling message");
+                return Ok(None);
             }
         };
 
