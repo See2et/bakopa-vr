@@ -14,7 +14,7 @@
 **技術スタック**
 
 - 言語: Rust
-- ライブラリ: iroh
+- ライブラリ: WebRTC
 
 ### Sidecar
 
