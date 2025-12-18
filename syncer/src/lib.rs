@@ -17,10 +17,12 @@ pub use crate::participant_table::ParticipantTable;
 pub use crate::config::{IceConfig, IcePolicy, IpcConfig, IpcConfigError};
 
 use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
+use crate::rate_limiter::{RateLimitDecision, RateLimiter, RealClock};
 use bloom_core::{ParticipantId, RoomId};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::str::FromStr;
+use std::time::Duration;
 
 /// Syncer全体のファサード。1リクエストに対して複数イベントを返す契約。
 pub trait Syncer {
@@ -72,24 +74,28 @@ impl<T: Transport> FilteringTransport<T> {
 }
 
 /// Router・TransportInbox を組み合わせた最小Syncer実装。
-pub struct BasicSyncer<T: Transport> {
+pub struct BasicSyncer<T: Transport, C: rate_limiter::Clock = RealClock> {
     me: ParticipantId,
     transport: FilteringTransport<T>,
     participants: ParticipantTable,
     router: Router,
     inbox: TransportInbox,
     room: Option<RoomId>,
+    rate_limiter: RateLimiter<C>,
+    session_id: String,
 }
 
-impl<T: Transport> BasicSyncer<T> {
-    pub fn new(me: ParticipantId, transport: T) -> Self {
+impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
+    pub fn with_rate_limiter(me: ParticipantId, transport: T, rate_limiter: RateLimiter<C>) -> Self {
         Self {
+            session_id: me.to_string(),
             me: me.clone(),
             transport: FilteringTransport::new(me, transport),
             participants: ParticipantTable::new(),
             router: Router::new(),
             inbox: TransportInbox::new(),
             room: None,
+            rate_limiter,
         }
     }
 
@@ -137,7 +143,7 @@ impl<T: Transport> BasicSyncer<T> {
     }
 }
 
-impl<T: Transport> Syncer for BasicSyncer<T> {
+impl<T: Transport, C: rate_limiter::Clock> Syncer for BasicSyncer<T, C> {
     fn handle(&mut self, request: SyncerRequest) -> Vec<SyncerEvent> {
         // 先に受信を取り込んでおく
         if let Some(room) = &self.room {
@@ -158,7 +164,19 @@ impl<T: Transport> Syncer for BasicSyncer<T> {
     }
 }
 
-impl<T: Transport> BasicSyncer<T> {
+impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
+    fn rate_limit(&mut self, stream_kind: StreamKind) -> Option<SyncerEvent> {
+        match self
+            .rate_limiter
+            .check_and_record(&self.session_id, stream_kind)
+        {
+            RateLimitDecision::Allowed => None,
+            RateLimitDecision::RateLimited { stream_kind } => {
+                Some(SyncerEvent::RateLimited { stream_kind })
+            }
+        }
+    }
+
     fn broadcast_control_join(&mut self, participant_id: &ParticipantId) {
         use crate::messages::{ControlMessage, ControlPayload, SyncMessageEnvelope};
 
@@ -199,6 +217,11 @@ impl<T: Transport> BasicSyncer<T> {
                 events.extend(self.drain_transport_events());
             }
             SyncerRequest::SendPose { from, pose, ctx } => {
+                if let Some(ev) = self.rate_limit(StreamKind::Pose) {
+                    events.push(ev);
+                    events.extend(self.drain_transport_events());
+                    return events;
+                }
                 // 未参加者からの送信は無視（ログはTransport層に任せる）。
                 if !self.participants.is_registered(&from) {
                     events.extend(self.drain_transport_events());
@@ -219,6 +242,11 @@ impl<T: Transport> BasicSyncer<T> {
                 let _ = ctx;
             }
             SyncerRequest::SendChat { chat, ctx } => {
+                if let Some(ev) = self.rate_limit(StreamKind::Chat) {
+                    events.push(ev);
+                    events.extend(self.drain_transport_events());
+                    return events;
+                }
                 if !self.participants.is_registered(&ctx.participant_id) {
                     events.extend(self.drain_transport_events());
                     return events;
@@ -240,6 +268,11 @@ impl<T: Transport> BasicSyncer<T> {
                 let _ = ctx;
             }
             SyncerRequest::SendVoiceFrame { frame, ctx } => {
+                if let Some(ev) = self.rate_limit(StreamKind::Voice) {
+                    events.push(ev);
+                    events.extend(self.drain_transport_events());
+                    return events;
+                }
                 if !self.participants.is_registered(&ctx.participant_id) {
                     events.extend(self.drain_transport_events());
                     return events;
@@ -302,6 +335,16 @@ impl TransportSendParams {
             },
             StreamKind::Voice => Self::AudioTrack,
         }
+    }
+}
+
+impl<T: Transport> BasicSyncer<T> {
+    pub fn new(me: ParticipantId, transport: T) -> Self {
+        BasicSyncer::<T, RealClock>::with_rate_limiter(
+            me.clone(),
+            transport,
+            RateLimiter::new(20, Duration::from_secs(1)),
+        )
     }
 }
 
@@ -395,6 +438,9 @@ pub enum SyncerEvent {
         from: ParticipantId,
         frame: Vec<u8>,
         ctx: TracingContext,
+    },
+    RateLimited {
+        stream_kind: StreamKind,
     },
     Error {
         kind: SyncerError,
