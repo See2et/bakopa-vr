@@ -240,6 +240,7 @@ where
                 if existing {
                     if let Some(ref pid) = pid {
                         self.close_and_emit_peer_left(pid);
+                        // 再Offer後に新セッションの活性化を知らせる
                         self.events.push(SyncerEvent::PeerJoined {
                             participant_id: pid.clone(),
                         });
