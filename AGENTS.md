@@ -3,8 +3,7 @@
 
 詳細は`docs/product.md`と`docs/architecture.md`を参照して下さい。
 
-## Coding Rules
-### Do Test-Driven Development & Spec-Driven Development
+## Do Test-Driven Development & Spec-Driven Development
 和田卓人（t-wada）氏が提唱するテスト駆動開発（TDD）と、仕様駆動開発（SDD）に則って開発を進めて下さい。
 
 - **テストが開発を駆動する:** すべてのプロダクションコードは、失敗するテストをパスさせるためだけに書かれます。テストは後付けの作業ではありません。それ自身が仕様書であり、設計の駆動役です。
@@ -24,6 +23,7 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 1. Refactor: コードの品質を向上させる(skill: tdd-refactor)
 1. Commit: 進捗を保存する
 
+## Rust Coding Rules
 ### Logging/Trace
 #### 使用クレートと前提
 
