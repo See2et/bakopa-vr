@@ -8,6 +8,7 @@ use std::str::FromStr;
 use crate::messages::{SignalingAnswer, SignalingIce, SignalingOffer};
 use crate::messages::{SignalingMessage, SyncMessageEnvelope, SyncMessageError};
 use crate::{SyncerError, SyncerEvent, TransportPayload};
+use tracing::warn;
 
 /// Bloom WebSocketシグナリングとの境界を抽象化するための最小trait。
 pub trait SignalingAdapter {
@@ -111,11 +112,16 @@ where
         let mut payloads: Vec<TransportPayload> = Vec::new();
 
         for msg in messages {
+            let msg_for_log = msg.clone();
             match self.shape_incoming(msg) {
                 Ok(Some(payload)) => payloads.push(payload),
                 Ok(None) => {}
-                Err(_) => {
-                    // 直列化失敗はここでは無視（重大ではない）。将来ログに出す場合はここにhook。
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        raw = ?msg_for_log,
+                        "failed to shape incoming message"
+                    );
                 }
             }
         }
