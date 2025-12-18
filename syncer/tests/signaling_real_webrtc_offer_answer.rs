@@ -12,7 +12,7 @@ async fn signaling_via_hub_opens_datachannel_and_emits_peer_joined() {
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
-    // シグナリングハブを用意（将来のBloom配線用占位）
+    // TODO: Bloom側のシグナリング配線を繋ぐ際に使う想定の占位（現状 pair_with_signaling_hub には未配線）
     let hub = InMemorySignalingHub::new();
     hub.register(a.clone());
     hub.register(b.clone());
