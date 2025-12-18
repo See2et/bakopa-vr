@@ -57,9 +57,13 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
    - パスワード、秘密鍵、トークン、クレジットカード情報などの機密情報は絶対にログに出さない。
    - ユーザー識別には内部 ID を使い、生データ（メールアドレス等）は必要な場合のみフィールドとして記録する。
 
-### Error Handling
+### Error Handling (skill: rust-error-handling)
 
-このプロジェクトでは、エラー処理の基盤として **`anyhow`** と **`thiserror`** を使用する。  
+このプロジェクトでは、エラー処理の基盤として **`anyhow`** と **`thiserror`**を用いる。
+- **ドメイン／ライブラリ層**の public API は 責務ごとの **型付き Error（thiserror）** を定義して返すこと。
+- **アプリ境界（main/CLI/HTTP入口など）**でのみ `anyhow::Result` を使用してよい。境界では必ず `.context()` / `.with_context()` で「何をしていて失敗したか」を付与すること。
+- `unwrap` / `expect` は原則禁止（テスト、明示された初期化コードなど例外を除く）。ランタイムで起こりうる失敗は `Result/Option` として扱い `?` で伝搬する。
+- エラーは「使う側が判断できる粒度」で設計する（例: InvalidInput / NotFound / Conflict / External / Internal）。曖昧な文字列エラーや握りつぶしは禁止。
 
 #### 前提となる役割分担
 
