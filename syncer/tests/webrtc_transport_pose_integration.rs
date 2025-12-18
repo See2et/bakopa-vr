@@ -7,7 +7,6 @@ use syncer::{
     TransportSendParams,
 };
 
-/// RED: Poseが1回届き、送信時パラメータがunordered/unreliableであることを確認。
 #[test]
 fn pose_delivers_once_with_unordered_unreliable_params() {
     let room = RoomId::new();

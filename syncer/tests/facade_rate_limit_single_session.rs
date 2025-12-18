@@ -8,7 +8,6 @@ use common::fake_clock::FakeClock;
 use syncer::rate_limiter::RateLimiter;
 use syncer::{BasicSyncer, StreamKind, Syncer, SyncerEvent, SyncerRequest, TracingContext};
 
-/// RED→GREEN: 20件まで許容し、21件目で RateLimited を返し Transport 送信が増えない。
 #[test]
 fn chat_is_rate_limited_per_session_after_20_messages() {
     let room = RoomId::new();

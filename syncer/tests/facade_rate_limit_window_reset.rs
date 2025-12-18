@@ -8,7 +8,6 @@ use common::fake_clock::FakeClock;
 use syncer::rate_limiter::RateLimiter;
 use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest, TracingContext};
 
-/// RED→GREEN: 21件目でRateLimited、1.1秒進めると再び許可される。
 #[test]
 fn rate_limit_resets_after_window_elapsed() {
     let room = RoomId::new();

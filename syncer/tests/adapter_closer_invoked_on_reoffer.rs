@@ -38,7 +38,6 @@ impl PeerConnectionCloser for MockCloser {
     }
 }
 
-/// RED: 再Offer時に PeerConnectionCloser::close が1回だけ呼ばれることを確認する。
 #[test]
 fn closer_invoked_once_on_reoffer() {
     let room = "room-x".to_string();

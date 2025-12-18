@@ -4,7 +4,6 @@ use bloom_core::{ParticipantId, RoomId};
 use common::{sample_chat, sample_tracing_context};
 use syncer::{webrtc_transport::WebrtcTransport, BasicSyncer, Syncer, SyncerEvent, SyncerRequest};
 
-/// RED: 参加者同期済みの状態で、A->B の Chat が1回だけ届き、TracingContextが埋まることを確認する。
 #[test]
 fn chat_delivers_once_with_tracing_over_webrtc_transport() {
     let room = RoomId::new();

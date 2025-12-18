@@ -8,7 +8,6 @@ use syncer::{
     SyncerRequest, TracingContext,
 };
 
-/// RED: PeerLeft 後に同じ participant_id で再接続し直せることを検証する統合テスト。
 /// 必要なフック（transport 再バインドなど）が未実装のため、まずはコンパイル失敗で Red を作る。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reconnects_after_failure_and_delivers_again() {

@@ -8,7 +8,6 @@ use syncer::{
     SyncerRequest, TracingContext, TransportEvent,
 };
 
-/// RED→GREEN: 実PC経路で Failure が2度観測されても PeerLeft が1回だけになることを確認する。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn failure_is_deduplicated_even_with_real_transport() {
     let a = ParticipantId::new();

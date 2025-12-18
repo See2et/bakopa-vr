@@ -44,7 +44,6 @@ impl Transport for FailingTransport {
     }
 }
 
-/// RED: Failureが重複してもPeerLeftは1度しか出ないことを期待する（現状は2回出て失敗する）。
 #[test]
 fn failure_events_are_deduped_to_single_peer_left() {
     let room = RoomId::new();

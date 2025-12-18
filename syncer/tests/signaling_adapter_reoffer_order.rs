@@ -57,7 +57,6 @@ impl ClientToServerSender for NoopSender {
     fn send(&mut self, _message: bloom_api::ClientToServer) {}
 }
 
-/// RED: 同一participantの再Offerで PeerLeft → PeerJoined の順になることを期待するが、現実は PeerJoined が出ないため失敗させる。
 #[test]
 fn reoffer_emits_peer_left_before_peer_joined_in_order() {
     let room_id = RoomId::new();

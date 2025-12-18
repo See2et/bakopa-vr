@@ -8,7 +8,6 @@ use syncer::{
     SyncerRequest,
 };
 
-/// RED: 実PC経路で受信イベントのTracingContextが送信者/stream_kindに一致することを確認する。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
     let a = ParticipantId::new();

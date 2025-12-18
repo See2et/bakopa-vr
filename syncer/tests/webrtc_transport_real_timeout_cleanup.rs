@@ -1,7 +1,6 @@
 use bloom_core::ParticipantId;
 use syncer::{Transport, TransportEvent};
 
-/// RED: openせずタイムアウトしたらFailureを積み、リソースをクローズすることを期待。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn connection_timeout_emits_failure_and_cleans_up() {
     let a = ParticipantId::new();

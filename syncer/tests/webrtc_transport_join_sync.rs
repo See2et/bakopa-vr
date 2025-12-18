@@ -4,7 +4,6 @@ use bloom_core::{ParticipantId, RoomId};
 use common::{sample_chat, sample_tracing_context};
 use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest};
 
-/// RED: Joinだけで相互にPeerJoinedが届くことを保証したい（ダブルJoin禁止）。
 #[test]
 fn join_broadcasts_peer_join_once_each_side() {
     let room = RoomId::new();

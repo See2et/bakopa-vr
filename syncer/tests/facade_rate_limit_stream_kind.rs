@@ -8,7 +8,6 @@ use common::fake_clock::FakeClock;
 use syncer::rate_limiter::RateLimiter;
 use syncer::{BasicSyncer, StreamKind, Syncer, SyncerEvent, SyncerRequest, TracingContext};
 
-/// RED→GREEN: Poseで上限到達後にChatを送ると、RateLimitedのstream_kindがChatになる。
 #[test]
 fn rate_limited_stream_kind_reflects_latest_request() {
     let room = RoomId::new();

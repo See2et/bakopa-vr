@@ -6,7 +6,6 @@ use syncer::{
     webrtc_transport::RealWebrtcTransport, BasicSyncer, Syncer, SyncerEvent, SyncerRequest,
 };
 
-/// RED→GREEN: InMemorySignalingHub経由のシグナリングでRealWebrtcTransportがopenし、PeerJoinedが双方に届く。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn signaling_via_hub_opens_datachannel_and_emits_peer_joined() {
     let room = RoomId::new();

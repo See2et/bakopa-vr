@@ -8,7 +8,6 @@ use syncer::{
     TracingContext,
 };
 
-/// RED: 実PC経路でFailureを検出したときに PeerLeft が1回だけ返り、
 /// その後の送信が相手に届かない（参加者テーブルから除去される）ことを確認する。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn failure_emits_single_peer_left_and_stops_delivery() {

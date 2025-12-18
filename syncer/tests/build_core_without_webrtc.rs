@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-/// RED: core ビルド（--no-default-features）で webrtc 依存がグラフから消えていることを期待する。
 /// まだ feature 分離が無いため現時点では失敗する。
 #[test]
 fn core_build_without_webrtc_dependency_graph() {

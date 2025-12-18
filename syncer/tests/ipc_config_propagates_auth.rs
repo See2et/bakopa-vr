@@ -13,7 +13,6 @@ impl ClientToServerSender for NoopSender {
     fn send(&mut self, _message: bloom_api::ClientToServer) {}
 }
 
-/// RED: IpcConfig の auth_token が SignalingContext 経由で BloomSignalingAdapter に反映されることを期待する。
 #[test]
 fn auth_token_propagates_into_adapter() {
     let token = "dev-token-123";
@@ -56,7 +55,6 @@ fn auth_token_propagates_into_adapter() {
     );
 }
 
-/// RED: 空 auth_token は拒否されるべき。
 #[test]
 fn empty_auth_token_is_rejected() {
     assert!(

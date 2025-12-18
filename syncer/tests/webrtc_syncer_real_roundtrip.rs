@@ -4,7 +4,6 @@ use bloom_core::ParticipantId;
 use common::sample_chat;
 use syncer::{messages::ChatMessage, BasicSyncer, Syncer, SyncerEvent, SyncerRequest};
 
-/// RED: RealWebrtcTransport をBasicSyncerに差し替え、実PC経路でチャット往復するE2E。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_webrtc_syncer_chat_roundtrip() {
     let a = ParticipantId::new();

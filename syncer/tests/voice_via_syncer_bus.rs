@@ -6,7 +6,6 @@ use syncer::{
     TracingContext, TransportSendParams,
 };
 
-/// RED: Syncer API 経由で音声フレームがフェイクWebRTC Transportを通って届き、AudioTrackパラメータが使われることを検証する。
 #[test]
 fn voice_frame_delivered_via_syncer_uses_audio_track_params() {
     let room = RoomId::new();

@@ -1,7 +1,6 @@
 use syncer::config::{IceConfig, IcePolicy};
 use syncer::signaling_adapter::SignalingContext;
 
-/// RED: IceConfig のデフォルトと SignalingContext への伝播を固定する。
 #[test]
 fn ice_config_defaults_and_signaling_projection() {
     // default は policy = "default", servers 空
