@@ -12,8 +12,8 @@ use crate::{StreamKind, Transport, TransportEvent, TransportPayload, TransportSe
 use anyhow::Result;
 use bloom_core::ParticipantId;
 use bytes::Bytes;
-use tracing::warn;
 use tokio::sync::{mpsc, oneshot};
+use tracing::warn;
 
 #[derive(Default, Debug)]
 struct WebrtcBus {
@@ -667,7 +667,9 @@ impl RealWebrtcTransport {
         let audio_track = self.audio_track.clone();
 
         Some(Self::add_dummy_audio_track_with_handles(
-            pc, peer_pc, audio_track,
+            pc,
+            peer_pc,
+            audio_track,
         ))
     }
 
@@ -771,10 +773,7 @@ impl Transport for RealWebrtcTransport {
                         }
                     }
 
-                    let track_opt = audio_track
-                        .lock()
-                        .ok()
-                        .and_then(|guard| guard.clone());
+                    let track_opt = audio_track.lock().ok().and_then(|guard| guard.clone());
 
                     if let Some(track) = track_opt {
                         let sample = webrtc_media::Sample {
