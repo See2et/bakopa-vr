@@ -240,6 +240,9 @@ where
                 if existing {
                     if let Some(ref pid) = pid {
                         self.close_and_emit_peer_left(pid);
+                        self.events.push(SyncerEvent::PeerJoined {
+                            participant_id: pid.clone(),
+                        });
                     }
                 }
                 Ok(Some(env))
