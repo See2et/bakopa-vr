@@ -8,7 +8,11 @@ async fn connection_timeout_emits_failure_and_cleans_up() {
     let b = ParticipantId::new();
 
     // fail-fast設定で、timeout内にopenしないようにする
-    let (mut ta, tb) = syncer::webrtc_transport::RealWebrtcTransport::pair_with_datachannel_real_failfast(a.clone(), b.clone())
+    let (mut ta, tb) =
+        syncer::webrtc_transport::RealWebrtcTransport::pair_with_datachannel_real_failfast(
+            a.clone(),
+            b.clone(),
+        )
         .await
         .expect("pc setup");
 
@@ -18,7 +22,12 @@ async fn connection_timeout_emits_failure_and_cleans_up() {
 
     // Failureイベントが積まれていること
     let events = ta.poll();
-    assert!(events.iter().any(|e| matches!(e, TransportEvent::Failure { .. })), "failure should be emitted on timeout");
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, TransportEvent::Failure { .. })),
+        "failure should be emitted on timeout"
+    );
 
     ta.shutdown().await;
     tb.shutdown().await;

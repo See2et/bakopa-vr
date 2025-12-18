@@ -34,13 +34,18 @@ fn pose_received_is_parsed_with_tracing_context() {
         .into_transport_payload()
         .expect("serialize outbound");
 
-    let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received { from: from.clone(), payload }]);
+    let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received {
+        from: from.clone(),
+        payload,
+    }]);
     let events = inbox.drain_into_events(&room_id, &mut participants);
 
     let pose = events
         .into_iter()
         .find_map(|e| match e {
-            SyncerEvent::PoseReceived { from: sender, ctx, .. } => Some((sender, ctx)),
+            SyncerEvent::PoseReceived {
+                from: sender, ctx, ..
+            } => Some((sender, ctx)),
             _ => None,
         })
         .expect("expected PoseReceived event");
@@ -66,7 +71,10 @@ fn chat_received_is_parsed_with_tracing_context() {
         .into_transport_payload()
         .expect("serialize outbound");
 
-    let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received { from: from.clone(), payload }]);
+    let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received {
+        from: from.clone(),
+        payload,
+    }]);
     let events = inbox.drain_into_events(&room_id, &mut participants);
 
     let chat = events
@@ -89,10 +97,16 @@ fn invalid_payload_is_reported_as_error_event() {
 
     let invalid_payload = syncer::TransportPayload::Bytes(vec![]);
 
-    let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received { from, payload: invalid_payload }]);
+    let mut inbox = TransportInbox::from_events(vec![TransportEvent::Received {
+        from,
+        payload: invalid_payload,
+    }]);
     let events = inbox.drain_into_events(&room_id, &mut participants);
 
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, SyncerEvent::Error { .. })), "expected Error event for invalid payload");
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, SyncerEvent::Error { .. })),
+        "expected Error event for invalid payload"
+    );
 }

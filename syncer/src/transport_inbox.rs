@@ -2,9 +2,8 @@ use bloom_core::RoomId;
 use tracing::warn;
 
 use crate::{
-    messages::SyncMessage,
-    participant_table::ParticipantTable,
-    StreamKind, SyncerError, SyncerEvent, TracingContext, TransportEvent, TransportPayload,
+    messages::SyncMessage, participant_table::ParticipantTable, StreamKind, SyncerError,
+    SyncerEvent, TracingContext, TransportEvent, TransportPayload,
 };
 
 /// 受信したTransportEventをSyncerEventへ変換する小さなバッファ。

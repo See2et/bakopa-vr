@@ -2,8 +2,10 @@ use bloom_api::payload::RelaySdp;
 use bloom_api::ServerToClient;
 use bloom_core::{ParticipantId, RoomId};
 use syncer::messages::SyncMessageError;
-use syncer::signaling_adapter::{BloomSignalingAdapter, ClientToServerSender, PeerConnectionCloser, SignalingContext};
-use syncer::{SyncerEvent, SyncerError};
+use syncer::signaling_adapter::{
+    BloomSignalingAdapter, ClientToServerSender, PeerConnectionCloser, SignalingContext,
+};
+use syncer::{SyncerError, SyncerEvent};
 
 #[derive(Default)]
 struct RecordingCloser {
@@ -33,7 +35,8 @@ fn invalid_offer_emits_invalid_payload_and_peer_left_then_closes_pc() {
     };
 
     let closer = RecordingCloser::default();
-    let mut adapter = BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
+    let mut adapter =
+        BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
 
     let remote = ParticipantId::new();
     let valid_offer = ServerToClient::Offer {
@@ -45,7 +48,10 @@ fn invalid_offer_emits_invalid_payload_and_peer_left_then_closes_pc() {
     adapter.push_incoming(valid_offer);
     let poll = adapter.poll();
     let events = poll.events;
-    assert!(events.is_empty(), "first valid offer should not emit errors");
+    assert!(
+        events.is_empty(),
+        "first valid offer should not emit errors"
+    );
 
     // invalid offer with empty SDP
     let invalid_offer = ServerToClient::Offer {
@@ -55,7 +61,10 @@ fn invalid_offer_emits_invalid_payload_and_peer_left_then_closes_pc() {
     adapter.push_incoming(invalid_offer);
 
     let poll = adapter.poll();
-    assert!(poll.payloads.is_empty(), "invalid payload should not be forwarded");
+    assert!(
+        poll.payloads.is_empty(),
+        "invalid payload should not be forwarded"
+    );
     let events = poll.events;
 
     // expect one InvalidPayload error and one PeerLeft for cleanup
@@ -71,5 +80,9 @@ fn invalid_offer_emits_invalid_payload_and_peer_left_then_closes_pc() {
     }));
 
     let closed = adapter.into_inner_closer().closed;
-    assert_eq!(closed, vec![remote], "close must be called exactly once on invalid re-offer");
+    assert_eq!(
+        closed,
+        vec![remote],
+        "close must be called exactly once on invalid re-offer"
+    );
 }

@@ -7,12 +7,12 @@ use std::sync::Mutex;
 pub mod signaling_hub;
 pub mod test_helpers;
 
-use bloom_core::ParticipantId;
-use anyhow::Result;
-use tokio::sync::{mpsc, oneshot};
-use bytes::Bytes;
-use crate::{Transport, TransportEvent, TransportPayload, TransportSendParams, StreamKind};
 use crate::messages::SyncMessageEnvelope;
+use crate::{StreamKind, Transport, TransportEvent, TransportPayload, TransportSendParams};
+use anyhow::Result;
+use bloom_core::ParticipantId;
+use bytes::Bytes;
+use tokio::sync::{mpsc, oneshot};
 
 #[derive(Default, Debug)]
 struct WebrtcBus {
@@ -51,25 +51,27 @@ impl Default for WebrtcTransportOptions {
 }
 
 #[cfg(feature = "webrtc")]
-use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS};
-#[cfg(feature = "webrtc")]
 use webrtc::api::interceptor_registry::register_default_interceptors;
+#[cfg(feature = "webrtc")]
+use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS};
 #[cfg(feature = "webrtc")]
 use webrtc::api::setting_engine::SettingEngine;
 #[cfg(feature = "webrtc")]
 use webrtc::api::APIBuilder;
 #[cfg(feature = "webrtc")]
-use webrtc::data_channel::RTCDataChannel;
-#[cfg(feature = "webrtc")]
 use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
 #[cfg(feature = "webrtc")]
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
 #[cfg(feature = "webrtc")]
+use webrtc::data_channel::RTCDataChannel;
+#[cfg(feature = "webrtc")]
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
+#[cfg(feature = "webrtc")]
+use webrtc::ice_transport::ice_connection_state::RTCIceConnectionState;
 #[cfg(feature = "webrtc")]
 use webrtc::ice_transport::ice_server::RTCIceServer;
 #[cfg(feature = "webrtc")]
-use webrtc::ice_transport::ice_connection_state::RTCIceConnectionState;
+use webrtc::interceptor::registry::Registry;
 #[cfg(feature = "webrtc")]
 use webrtc::peer_connection::configuration::RTCConfiguration;
 #[cfg(feature = "webrtc")]
@@ -77,19 +79,17 @@ use webrtc::peer_connection::policy::ice_transport_policy::RTCIceTransportPolicy
 #[cfg(feature = "webrtc")]
 use webrtc::peer_connection::RTCPeerConnection;
 #[cfg(feature = "webrtc")]
-use webrtc::interceptor::registry::Registry;
+use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 #[cfg(feature = "webrtc")]
 use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
 #[cfg(feature = "webrtc")]
 use webrtc::rtp_transceiver::RTCRtpTransceiver;
 #[cfg(feature = "webrtc")]
-use webrtc_media::Sample;
-#[cfg(feature = "webrtc")]
-use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
-#[cfg(feature = "webrtc")]
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 #[cfg(feature = "webrtc")]
 use webrtc::track::track_remote::TrackRemote;
+#[cfg(feature = "webrtc")]
+use webrtc_media::Sample;
 
 /// 実WebRTC実装の土台となるアダプタ。feature=webrtc 時のみ提供。
 #[cfg(feature = "webrtc")]
@@ -175,7 +175,10 @@ impl RealWebrtcTransport {
     }
 
     /// 失敗を誘発するためのテスト用ペア（ICE relayのみ・空サーバ・短タイムアウト）
-    pub async fn pair_with_datachannel_real_failfast(a: ParticipantId, b: ParticipantId) -> Result<(Self, Self)> {
+    pub async fn pair_with_datachannel_real_failfast(
+        a: ParticipantId,
+        b: ParticipantId,
+    ) -> Result<(Self, Self)> {
         let mut setting_engine = SettingEngine::default();
         // 接続タイムアウトを短縮して失敗を早期に検出
         setting_engine.set_ice_timeouts(
@@ -198,14 +201,18 @@ impl RealWebrtcTransport {
         let peer_b = b.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-            p1.lock().unwrap().push(TransportEvent::Failure { peer: peer_b });
+            p1.lock()
+                .unwrap()
+                .push(TransportEvent::Failure { peer: peer_b });
         });
 
         let p2 = t2.pending.clone();
         let peer_a = a.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-            p2.lock().unwrap().push(TransportEvent::Failure { peer: peer_a });
+            p2.lock()
+                .unwrap()
+                .push(TransportEvent::Failure { peer: peer_a });
         });
 
         Ok((t1, t2))
@@ -226,7 +233,10 @@ impl RealWebrtcTransport {
     }
 
     /// async版: 実PeerConnectionを生成し、sutera-data DataChannelのopenまでを確立する。
-    pub async fn pair_with_datachannel_real(a: ParticipantId, b: ParticipantId) -> Result<(Self, Self)> {
+    pub async fn pair_with_datachannel_real(
+        a: ParticipantId,
+        b: ParticipantId,
+    ) -> Result<(Self, Self)> {
         let api = Self::build_api(SettingEngine::default())?;
 
         // In-processなのでICEサーバは不要。ホスト候補のみで十分。
@@ -239,7 +249,10 @@ impl RealWebrtcTransport {
     }
 
     /// 将来的にBloomシグナリング経由で接続するための占位。現状は直接ペアリングに委譲。
-    pub async fn pair_with_signaling_hub(a: ParticipantId, b: ParticipantId) -> Result<(Self, Self)> {
+    pub async fn pair_with_signaling_hub(
+        a: ParticipantId,
+        b: ParticipantId,
+    ) -> Result<(Self, Self)> {
         Self::pair_with_datachannel_real(a, b).await
     }
 
@@ -252,8 +265,12 @@ impl RealWebrtcTransport {
         let pc1 = Arc::new(api.new_peer_connection(config.clone()).await?);
         let pc2 = Arc::new(api.new_peer_connection(config).await?);
 
-        let data_channels1 = Arc::new(Mutex::new(Vec::<(TransportSendParams, Arc<RTCDataChannel>)>::new()));
-        let data_channels2 = Arc::new(Mutex::new(Vec::<(TransportSendParams, Arc<RTCDataChannel>)>::new()));
+        let data_channels1 = Arc::new(Mutex::new(
+            Vec::<(TransportSendParams, Arc<RTCDataChannel>)>::new(),
+        ));
+        let data_channels2 = Arc::new(Mutex::new(
+            Vec::<(TransportSendParams, Arc<RTCDataChannel>)>::new(),
+        ));
         let pending1 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
         let pending2 = Arc::new(Mutex::new(Vec::<TransportEvent>::new()));
         let audio_track1 = Arc::new(Mutex::new(None::<Arc<TrackLocalStaticSample>>));
@@ -292,8 +309,15 @@ impl RealWebrtcTransport {
             let pending1_fail = pending1_fail.clone();
             let peer_b_fail = peer_b_fail.clone();
             Box::pin(async move {
-                if matches!(st, RTCIceConnectionState::Failed | RTCIceConnectionState::Disconnected | RTCIceConnectionState::Closed) {
-                    pending1_fail.lock().unwrap().push(TransportEvent::Failure { peer: peer_b_fail.clone() });
+                if matches!(
+                    st,
+                    RTCIceConnectionState::Failed
+                        | RTCIceConnectionState::Disconnected
+                        | RTCIceConnectionState::Closed
+                ) {
+                    pending1_fail.lock().unwrap().push(TransportEvent::Failure {
+                        peer: peer_b_fail.clone(),
+                    });
                 }
             })
         }));
@@ -304,8 +328,15 @@ impl RealWebrtcTransport {
             let pending2_fail = pending2_fail.clone();
             let peer_a_fail = peer_a_fail.clone();
             Box::pin(async move {
-                if matches!(st, RTCIceConnectionState::Failed | RTCIceConnectionState::Disconnected | RTCIceConnectionState::Closed) {
-                    pending2_fail.lock().unwrap().push(TransportEvent::Failure { peer: peer_a_fail.clone() });
+                if matches!(
+                    st,
+                    RTCIceConnectionState::Failed
+                        | RTCIceConnectionState::Disconnected
+                        | RTCIceConnectionState::Closed
+                ) {
+                    pending2_fail.lock().unwrap().push(TransportEvent::Failure {
+                        peer: peer_a_fail.clone(),
+                    });
                 }
             })
         }));
@@ -318,10 +349,10 @@ impl RealWebrtcTransport {
         let open_tx2_mutex = Arc::new(Mutex::new(Some(open_tx2)));
 
         let dc1 = pc1.create_data_channel("sutera-data", None).await?;
-        data_channels1
-            .lock()
-            .unwrap()
-            .push((TransportSendParams::for_stream(StreamKind::Chat), dc1.clone()));
+        data_channels1.lock().unwrap().push((
+            TransportSendParams::for_stream(StreamKind::Chat),
+            dc1.clone(),
+        ));
 
         let dc1_unordered = pc1
             .create_data_channel(
@@ -354,10 +385,13 @@ impl RealWebrtcTransport {
             let peer_b = peer_b.clone();
             Box::pin(async move {
                 let bytes = msg.data.to_vec();
-                pending1_clone.lock().unwrap().push(TransportEvent::Received {
-                    from: peer_b.clone(),
-                    payload: TransportPayload::Bytes(bytes),
-                });
+                pending1_clone
+                    .lock()
+                    .unwrap()
+                    .push(TransportEvent::Received {
+                        from: peer_b.clone(),
+                        payload: TransportPayload::Bytes(bytes),
+                    });
             })
         }));
 
@@ -406,50 +440,68 @@ impl RealWebrtcTransport {
         // 音声受信: pc1が受け取る場合（from b）
         let pending1_audio = pending1.clone();
         let from_b = b.clone();
-        pc1.on_track(Box::new(move |track: Arc<TrackRemote>, _recv: Arc<RTCRtpReceiver>, _tx: Arc<RTCRtpTransceiver>| {
-            let pending1_audio = pending1_audio.clone();
-            let from_b = from_b.clone();
-            Box::pin(async move {
-                let t = track.clone();
-                tokio::spawn(async move {
-                    loop {
-                        match t.read_rtp().await {
-                            Ok((packet, _)) => {
-                                pending1_audio.lock().unwrap().push(TransportEvent::Received {
-                                    from: from_b.clone(),
-                                    payload: TransportPayload::AudioFrame(packet.payload.to_vec()),
-                                });
+        pc1.on_track(Box::new(
+            move |track: Arc<TrackRemote>,
+                  _recv: Arc<RTCRtpReceiver>,
+                  _tx: Arc<RTCRtpTransceiver>| {
+                let pending1_audio = pending1_audio.clone();
+                let from_b = from_b.clone();
+                Box::pin(async move {
+                    let t = track.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            match t.read_rtp().await {
+                                Ok((packet, _)) => {
+                                    pending1_audio
+                                        .lock()
+                                        .unwrap()
+                                        .push(TransportEvent::Received {
+                                            from: from_b.clone(),
+                                            payload: TransportPayload::AudioFrame(
+                                                packet.payload.to_vec(),
+                                            ),
+                                        });
+                                }
+                                Err(_) => break,
                             }
-                            Err(_) => break,
                         }
-                    }
-                });
-            })
-        }));
+                    });
+                })
+            },
+        ));
 
         // 音声受信: pc2が受け取る場合（from a）
         let pending2_audio = pending2.clone();
         let from_a = a.clone();
-        pc2.on_track(Box::new(move |track: Arc<TrackRemote>, _recv: Arc<RTCRtpReceiver>, _tx: Arc<RTCRtpTransceiver>| {
-            let pending2_audio = pending2_audio.clone();
-            let from_a = from_a.clone();
-            Box::pin(async move {
-                let t = track.clone();
-                tokio::spawn(async move {
-                    loop {
-                        match t.read_rtp().await {
-                            Ok((packet, _)) => {
-                                pending2_audio.lock().unwrap().push(TransportEvent::Received {
-                                    from: from_a.clone(),
-                                    payload: TransportPayload::AudioFrame(packet.payload.to_vec()),
-                                });
+        pc2.on_track(Box::new(
+            move |track: Arc<TrackRemote>,
+                  _recv: Arc<RTCRtpReceiver>,
+                  _tx: Arc<RTCRtpTransceiver>| {
+                let pending2_audio = pending2_audio.clone();
+                let from_a = from_a.clone();
+                Box::pin(async move {
+                    let t = track.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            match t.read_rtp().await {
+                                Ok((packet, _)) => {
+                                    pending2_audio
+                                        .lock()
+                                        .unwrap()
+                                        .push(TransportEvent::Received {
+                                            from: from_a.clone(),
+                                            payload: TransportPayload::AudioFrame(
+                                                packet.payload.to_vec(),
+                                            ),
+                                        });
+                                }
+                                Err(_) => break,
                             }
-                            Err(_) => break,
                         }
-                    }
-                });
-            })
-        }));
+                    });
+                })
+            },
+        ));
 
         // Offer/Answer exchange
         let offer = pc1.create_offer(None).await?;
@@ -530,7 +582,10 @@ impl RealWebrtcTransport {
         }
         // 失敗が既に積まれていればエラーとして返す
         if let Ok(pending) = self.pending.lock() {
-            if pending.iter().any(|e| matches!(e, TransportEvent::Failure { .. })) {
+            if pending
+                .iter()
+                .any(|e| matches!(e, TransportEvent::Failure { .. }))
+            {
                 return Err(anyhow::anyhow!("connection failed"));
             }
         }
@@ -758,7 +813,12 @@ impl WebrtcTransport {
     /// in-processで2ピア分のTransportを生成するためのヘルパー。
     /// 将来、ここを実WebRTC初期化に置き換える。
     pub fn pair(a: ParticipantId, b: ParticipantId) -> (Self, Self) {
-        Self::pair_with_options(a, b, WebrtcTransportOptions::default(), WebrtcTransportOptions::default())
+        Self::pair_with_options(
+            a,
+            b,
+            WebrtcTransportOptions::default(),
+            WebrtcTransportOptions::default(),
+        )
     }
 
     pub fn pair_with_options(
@@ -801,11 +861,11 @@ impl Transport for WebrtcTransport {
             let mut state = self.state.borrow_mut();
             if state.inject_failure_once {
                 let is_control = match &payload {
-                    TransportPayload::Bytes(b) => {
-                        SyncMessageEnvelope::from_slice(b)
-                            .map(|env| matches!(env.kind, StreamKind::ControlJoin | StreamKind::ControlLeave))
-                            .unwrap_or(false)
-                    }
+                    TransportPayload::Bytes(b) => SyncMessageEnvelope::from_slice(b)
+                        .map(|env| {
+                            matches!(env.kind, StreamKind::ControlJoin | StreamKind::ControlLeave)
+                        })
+                        .unwrap_or(false),
                     _ => false,
                 };
 

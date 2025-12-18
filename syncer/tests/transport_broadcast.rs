@@ -56,7 +56,10 @@ fn nothing_delivered_before_registration() {
     );
 
     let received_b = tb.poll();
-    assert!(received_b.is_empty(), "unregistered peers should not receive");
+    assert!(
+        received_b.is_empty(),
+        "unregistered peers should not receive"
+    );
 
     // after register, message should flow
     tb.register_participant(b.clone());
@@ -68,5 +71,9 @@ fn nothing_delivered_before_registration() {
     );
 
     let received_b = tb.poll();
-    assert_eq!(received_b.len(), 1, "registered peer should receive after register");
+    assert_eq!(
+        received_b.len(),
+        1,
+        "registered peer should receive after register"
+    );
 }

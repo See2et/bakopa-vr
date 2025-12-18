@@ -63,15 +63,11 @@ fn outbound_signaling_is_transcoded_to_bloom_messages() {
         vec![
             ClientToServer::Offer {
                 to: to_offer.to_string(),
-                payload: RelaySdp {
-                    sdp: offer.sdp,
-                },
+                payload: RelaySdp { sdp: offer.sdp },
             },
             ClientToServer::Answer {
                 to: to_answer.to_string(),
-                payload: RelaySdp {
-                    sdp: answer.sdp,
-                },
+                payload: RelaySdp { sdp: answer.sdp },
             },
             ClientToServer::IceCandidate {
                 to: to_ice.to_string(),

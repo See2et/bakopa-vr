@@ -46,7 +46,8 @@ fn rate_limit_resets_after_window_elapsed() {
             ctx: TracingContext::for_chat(&room, &a),
         });
         assert!(
-            !ev.iter().any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
+            !ev.iter()
+                .any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
             "first 20 should be allowed"
         );
     }
@@ -59,7 +60,8 @@ fn rate_limit_resets_after_window_elapsed() {
         ctx: TracingContext::for_chat(&room, &a),
     });
     assert!(
-        ev.iter().any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
+        ev.iter()
+            .any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
         "21st should be rate limited"
     );
     assert_eq!(
@@ -76,7 +78,8 @@ fn rate_limit_resets_after_window_elapsed() {
         ctx: TracingContext::for_chat(&room, &a),
     });
     assert!(
-        !ev.iter().any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
+        !ev.iter()
+            .any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
         "after window reset, should be allowed"
     );
     assert_eq!(

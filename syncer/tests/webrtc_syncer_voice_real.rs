@@ -13,10 +13,9 @@ async fn voice_frame_delivered_over_real_webrtc_syncer() {
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
-    let (mut ta, mut tb) =
-        RealWebrtcTransport::pair_with_datachannel_real(a.clone(), b.clone())
-            .await
-            .expect("pc setup");
+    let (mut ta, mut tb) = RealWebrtcTransport::pair_with_datachannel_real(a.clone(), b.clone())
+        .await
+        .expect("pc setup");
 
     let timeout = std::time::Duration::from_secs(5);
     ta.wait_data_channel_open(timeout).await.expect("open a");
@@ -55,14 +54,21 @@ async fn voice_frame_delivered_over_real_webrtc_syncer() {
             chat: common::sample_chat(&b),
             ctx: TracingContext::for_chat(&room, &b),
         });
-        a_seen_b |= ev_a.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
-        b_seen_a |= ev_b.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
+        a_seen_b |= ev_a.iter().any(
+            |e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b),
+        );
+        b_seen_a |= ev_b.iter().any(
+            |e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a),
+        );
         if a_seen_b && b_seen_a {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    assert!(a_seen_b && b_seen_a, "peers should observe each other's join before voice");
+    assert!(
+        a_seen_b && b_seen_a,
+        "peers should observe each other's join before voice"
+    );
 
     // 送信
     let frame = vec![9u8; 160];
@@ -86,7 +92,11 @@ async fn voice_frame_delivered_over_real_webrtc_syncer() {
             eprintln!("poll {} events: {:?}", i, events);
         }
         received = events.into_iter().find_map(|ev| match ev {
-            SyncerEvent::VoiceFrameReceived { from, frame: f, ctx } => Some((from, f, ctx)),
+            SyncerEvent::VoiceFrameReceived {
+                from,
+                frame: f,
+                ctx,
+            } => Some((from, f, ctx)),
             _ => None,
         });
         if received.is_some() {

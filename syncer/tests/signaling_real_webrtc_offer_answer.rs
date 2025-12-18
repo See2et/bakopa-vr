@@ -19,10 +19,9 @@ async fn signaling_via_hub_opens_datachannel_and_emits_peer_joined() {
     hub.register(b.clone());
 
     // 現状は直接ペアリングでopenするが、APIとしてhub経由を固定
-    let (mut ta, mut tb) =
-        RealWebrtcTransport::pair_with_signaling_hub(a.clone(), b.clone())
-            .await
-            .expect("pc setup via signaling hub");
+    let (mut ta, mut tb) = RealWebrtcTransport::pair_with_signaling_hub(a.clone(), b.clone())
+        .await
+        .expect("pc setup via signaling hub");
 
     let timeout = std::time::Duration::from_secs(5);
     ta.wait_data_channel_open(timeout).await.expect("open a");
@@ -66,8 +65,12 @@ async fn signaling_via_hub_opens_datachannel_and_emits_peer_joined() {
         payload: syncer::TransportPayload::Bytes(bytes_a),
     });
 
-    let mut a_seen_b = ev_a.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
-    let mut b_seen_a = ev_b.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
+    let mut a_seen_b = ev_a
+        .iter()
+        .any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
+    let mut b_seen_a = ev_b
+        .iter()
+        .any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
     for _ in 0..40 {
         ev_a = syncer_a.handle(SyncerRequest::SendChat {
             chat: common::sample_chat(&a),
@@ -77,8 +80,12 @@ async fn signaling_via_hub_opens_datachannel_and_emits_peer_joined() {
             chat: common::sample_chat(&b),
             ctx: syncer::TracingContext::for_chat(&room, &b),
         });
-        a_seen_b |= ev_a.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
-        b_seen_a |= ev_b.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
+        a_seen_b |= ev_a.iter().any(
+            |e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b),
+        );
+        b_seen_a |= ev_b.iter().any(
+            |e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a),
+        );
         if a_seen_b && b_seen_a {
             break;
         }

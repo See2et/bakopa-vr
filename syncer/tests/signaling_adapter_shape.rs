@@ -9,9 +9,18 @@ struct RecordingSignalingAdapter {
 
 #[derive(Debug, PartialEq)]
 enum Call {
-    Offer { to: ParticipantId, payload: SignalingOffer },
-    Answer { to: ParticipantId, payload: SignalingAnswer },
-    Ice { to: ParticipantId, payload: SignalingIce },
+    Offer {
+        to: ParticipantId,
+        payload: SignalingOffer,
+    },
+    Answer {
+        to: ParticipantId,
+        payload: SignalingAnswer,
+    },
+    Ice {
+        to: ParticipantId,
+        payload: SignalingIce,
+    },
 }
 
 impl SignalingAdapter for RecordingSignalingAdapter {

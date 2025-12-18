@@ -75,10 +75,7 @@ fn mixed_pose_and_chat_sequence_preserves_correct_stream_kind() {
     outbounds.extend(router.route_chat(&sender, sample_chat(&sender), &table));
 
     // Convert to events and check kinds in order
-    let mut events: Vec<SyncerEvent> = outbounds
-        .into_iter()
-        .map(|o| o.into_event(&room))
-        .collect();
+    let mut events: Vec<SyncerEvent> = outbounds.into_iter().map(|o| o.into_event(&room)).collect();
 
     assert_eq!(events.len(), 2, "expected pose and chat events");
 

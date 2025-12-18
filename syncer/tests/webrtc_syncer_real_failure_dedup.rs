@@ -16,18 +16,13 @@ async fn failure_is_deduplicated_even_with_real_transport() {
     let room = RoomId::new();
 
     // 通常の実PCペア（故意に故障させない）。Failure は手動注入する。
-    let (mut ta, mut tb) =
-        RealWebrtcTransport::pair_with_datachannel_real(a.clone(), b.clone())
-            .await
-            .expect("pc setup");
+    let (mut ta, mut tb) = RealWebrtcTransport::pair_with_datachannel_real(a.clone(), b.clone())
+        .await
+        .expect("pc setup");
 
     let timeout = Duration::from_secs(5);
-    ta.wait_data_channel_open(timeout)
-        .await
-        .expect("open a");
-    tb.wait_data_channel_open(timeout)
-        .await
-        .expect("open b");
+    ta.wait_data_channel_open(timeout).await.expect("open a");
+    tb.wait_data_channel_open(timeout).await.expect("open b");
 
     let mut syncer_a = BasicSyncer::new(a.clone(), ta);
     let mut syncer_b = BasicSyncer::new(b.clone(), tb);

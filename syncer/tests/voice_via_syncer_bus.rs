@@ -2,8 +2,8 @@ mod common;
 
 use bloom_core::{ParticipantId, RoomId};
 use syncer::{
-    webrtc_transport::WebrtcTransport, BasicSyncer, StreamKind, Syncer, SyncerEvent,
-    SyncerRequest, TransportSendParams, TracingContext,
+    webrtc_transport::WebrtcTransport, BasicSyncer, StreamKind, Syncer, SyncerEvent, SyncerRequest,
+    TracingContext, TransportSendParams,
 };
 
 /// RED: Syncer API 経由で音声フレームがフェイクWebRTC Transportを通って届き、AudioTrackパラメータが使われることを検証する。
@@ -56,7 +56,11 @@ fn voice_frame_delivered_via_syncer_uses_audio_track_params() {
         });
 
         received = events.into_iter().find_map(|ev| match ev {
-            SyncerEvent::VoiceFrameReceived { from, frame: f, ctx } => Some((from, f, ctx)),
+            SyncerEvent::VoiceFrameReceived {
+                from,
+                frame: f,
+                ctx,
+            } => Some((from, f, ctx)),
             _ => None,
         });
 
@@ -76,7 +80,10 @@ fn voice_frame_delivered_via_syncer_uses_audio_track_params() {
 
     // 送信側でAudioTrackが使われたことを確認
     let sent_params = ta_probe.sent_params();
-    assert!(sent_params
-        .iter()
-        .any(|p| matches!(p, TransportSendParams::AudioTrack)), "voice should use audio track send params");
+    assert!(
+        sent_params
+            .iter()
+            .any(|p| matches!(p, TransportSendParams::AudioTrack)),
+        "voice should use audio track send params"
+    );
 }

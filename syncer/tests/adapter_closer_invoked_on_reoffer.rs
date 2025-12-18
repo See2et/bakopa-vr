@@ -1,5 +1,5 @@
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use bloom_api::payload::RelaySdp;
 use bloom_api::ServerToClient;
@@ -52,11 +52,8 @@ fn closer_invoked_once_on_reoffer() {
     let counter = Rc::new(RefCell::new(0));
     let closer = MockCloser::new(counter.clone());
 
-    let mut adapter = BloomSignalingAdapter::with_context_and_closer(
-        NoopSender::default(),
-        closer,
-        ctx,
-    );
+    let mut adapter =
+        BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
 
     let pid = ParticipantId::new().to_string();
 

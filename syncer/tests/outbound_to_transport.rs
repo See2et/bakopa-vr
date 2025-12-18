@@ -16,7 +16,9 @@ fn pose_outbound_serializes_with_kind_and_version() {
         payload: OutboundPayload::Pose(pose.clone()),
     };
 
-    let payload = outbound.into_transport_payload().expect("serialize pose outbound");
+    let payload = outbound
+        .into_transport_payload()
+        .expect("serialize pose outbound");
 
     let envelope = payload
         .parse_envelope()
@@ -38,7 +40,9 @@ fn chat_outbound_serializes_with_kind_and_version() {
         payload: OutboundPayload::Chat(chat.clone()),
     };
 
-    let payload = outbound.into_transport_payload().expect("serialize chat outbound");
+    let payload = outbound
+        .into_transport_payload()
+        .expect("serialize chat outbound");
 
     let envelope = payload
         .parse_envelope()

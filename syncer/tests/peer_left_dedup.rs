@@ -13,14 +13,23 @@ struct FailingTransport {
 
 impl FailingTransport {
     fn new(peer: ParticipantId) -> Self {
-        Self { peer, emitted: false }
+        Self {
+            peer,
+            emitted: false,
+        }
     }
 }
 
 impl Transport for FailingTransport {
     fn register_participant(&mut self, _participant: ParticipantId) {}
 
-    fn send(&mut self, _to: ParticipantId, _payload: TransportPayload, _params: TransportSendParams) {}
+    fn send(
+        &mut self,
+        _to: ParticipantId,
+        _payload: TransportPayload,
+        _params: TransportSendParams,
+    ) {
+    }
 
     fn poll(&mut self) -> Vec<TransportEvent> {
         self.emitted = true;

@@ -1,20 +1,20 @@
+pub mod config;
 pub mod messages;
 pub mod participant_table;
 pub mod rate_limiter;
 pub mod router;
 pub mod signaling_adapter;
 pub mod transport_inbox;
-pub mod config;
 
 #[cfg(feature = "webrtc")]
 pub mod webrtc_transport;
 
+pub use crate::config::{IceConfig, IcePolicy, IpcConfig, IpcConfigError};
 pub use crate::messages::{ChatMessage, ControlMessage, PoseMessage as Pose, PoseTransform};
+pub use crate::participant_table::ParticipantTable;
 pub use crate::router::{Outbound, OutboundPayload, Router};
 pub use crate::signaling_adapter::SignalingAdapter;
 pub use crate::transport_inbox::TransportInbox;
-pub use crate::participant_table::ParticipantTable;
-pub use crate::config::{IceConfig, IcePolicy, IpcConfig, IpcConfigError};
 
 use crate::messages::{SyncMessage, SyncMessageEnvelope, SyncMessageError};
 use crate::rate_limiter::{RateLimitDecision, RateLimiter, RealClock};
@@ -59,7 +59,12 @@ impl<T: Transport> FilteringTransport<T> {
         self.inner.register_participant(self.me.clone());
     }
 
-    pub fn send(&mut self, to: ParticipantId, payload: TransportPayload, params: TransportSendParams) {
+    pub fn send(
+        &mut self,
+        to: ParticipantId,
+        payload: TransportPayload,
+        params: TransportSendParams,
+    ) {
         if !self.registered {
             return; // 未登録の送信はドロップ
         }
@@ -86,7 +91,11 @@ pub struct BasicSyncer<T: Transport, C: rate_limiter::Clock = RealClock> {
 }
 
 impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
-    pub fn with_rate_limiter(me: ParticipantId, transport: T, rate_limiter: RateLimiter<C>) -> Self {
+    pub fn with_rate_limiter(
+        me: ParticipantId,
+        transport: T,
+        rate_limiter: RateLimiter<C>,
+    ) -> Self {
         Self {
             session_id: me.to_string(),
             me: me.clone(),
@@ -206,8 +215,7 @@ impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
                 let payload = TransportPayload::Bytes(bytes);
                 let params = TransportSendParams::for_stream(StreamKind::ControlJoin);
                 // broadcast: WebrtcTransport/BusTransport ignore `to` and deliver to peer set
-                self.transport
-                    .send(self.me.clone(), payload, params);
+                self.transport.send(self.me.clone(), payload, params);
             }
         }
     }
@@ -241,13 +249,14 @@ impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
                     return events;
                 }
 
-                let outs = self.router.route_pose(&from, pose.clone(), &self.participants);
+                let outs = self
+                    .router
+                    .route_pose(&from, pose.clone(), &self.participants);
 
                 for outbound in outs {
                     if let Ok(payload) = outbound.into_transport_payload() {
                         let params = TransportSendParams::for_stream(outbound.stream_kind);
-                        self.transport
-                            .send(outbound.to.clone(), payload, params);
+                        self.transport.send(outbound.to.clone(), payload, params);
                     }
                 }
 
@@ -263,15 +272,14 @@ impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
                     return events;
                 }
 
-                let outs = self
-                    .router
-                    .route_chat(&ctx.participant_id, chat.clone(), &self.participants);
+                let outs =
+                    self.router
+                        .route_chat(&ctx.participant_id, chat.clone(), &self.participants);
 
                 for outbound in outs {
                     if let Ok(payload) = outbound.into_transport_payload() {
                         let params = TransportSendParams::for_stream(outbound.stream_kind);
-                        self.transport
-                            .send(outbound.to.clone(), payload, params);
+                        self.transport.send(outbound.to.clone(), payload, params);
                     }
                 }
 
@@ -394,9 +402,7 @@ pub enum TransportEvent {
         payload: TransportPayload,
     },
     /// 接続失敗やDTLS/ICEエラーなど、相手peerとの通信が成立しなかったことを示す。
-    Failure {
-        peer: ParticipantId,
-    },
+    Failure { peer: ParticipantId },
 }
 
 /// API入力モデル。

@@ -1,10 +1,10 @@
 use bloom_core::{ParticipantId, RoomId};
 
+use crate::messages::{reason, SyncMessageEnvelope};
 use crate::{
     messages::ChatMessage, messages::SyncMessageError, participant_table::ParticipantTable, Pose,
     StreamKind, SyncerEvent, TracingContext, TransportPayload,
 };
-use crate::messages::{SyncMessageEnvelope, reason};
 use serde_json;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,10 +56,11 @@ impl Outbound {
             OutboundPayload::Chat(chat) => SyncMessageEnvelope::from_chat(chat.clone())?,
         };
 
-        let bytes = serde_json::to_vec(&envelope).map_err(|_| SyncMessageError::SchemaViolation {
-            kind: self.stream_kind.as_str().to_string(),
-            reason: reason::SERIALIZE_FAILED,
-        })?;
+        let bytes =
+            serde_json::to_vec(&envelope).map_err(|_| SyncMessageError::SchemaViolation {
+                kind: self.stream_kind.as_str().to_string(),
+                reason: reason::SERIALIZE_FAILED,
+            })?;
 
         Ok(TransportPayload::Bytes(bytes))
     }

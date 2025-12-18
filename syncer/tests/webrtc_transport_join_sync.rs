@@ -27,9 +27,9 @@ fn join_broadcasts_peer_join_once_each_side() {
     });
 
     // B側はAのControlJoinを受信しているはず
-    let peer_joined_seen_by_b = events_b.iter().any(|ev| {
-        matches!(ev, SyncerEvent::PeerJoined { participant_id } if participant_id == &a)
-    });
+    let peer_joined_seen_by_b = events_b
+        .iter()
+        .any(|ev| matches!(ev, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
     assert!(
         peer_joined_seen_by_b,
         "B should see A join via ControlJoin broadcast"

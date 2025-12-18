@@ -1,7 +1,9 @@
 use bloom_api::payload::RelaySdp;
 use bloom_api::ServerToClient;
 use bloom_core::{ParticipantId, RoomId};
-use syncer::signaling_adapter::{BloomSignalingAdapter, ClientToServerSender, PeerConnectionCloser, SignalingContext};
+use syncer::signaling_adapter::{
+    BloomSignalingAdapter, ClientToServerSender, PeerConnectionCloser, SignalingContext,
+};
 use syncer::SyncerEvent;
 
 #[derive(Default)]
@@ -32,13 +34,16 @@ fn reoffer_closes_previous_peer_connection_and_emits_peer_left() {
     };
 
     let closer = RecordingCloser::default();
-    let mut adapter = BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
+    let mut adapter =
+        BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
 
     let remote = ParticipantId::new();
 
     let offer = |sdp: &str| ServerToClient::Offer {
         from: remote.to_string(),
-        payload: RelaySdp { sdp: sdp.to_string() },
+        payload: RelaySdp {
+            sdp: sdp.to_string(),
+        },
     };
 
     // 1回目のOffer
@@ -60,5 +65,9 @@ fn reoffer_closes_previous_peer_connection_and_emits_peer_left() {
     );
 
     let closed = adapter.into_inner_closer().closed;
-    assert_eq!(closed, vec![remote], "close should be called exactly once for the participant");
+    assert_eq!(
+        closed,
+        vec![remote],
+        "close should be called exactly once for the participant"
+    );
 }

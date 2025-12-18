@@ -3,7 +3,7 @@ mod common;
 use bloom_core::{ParticipantId, RoomId};
 use syncer::{
     webrtc_transport::WebrtcTransport, BasicSyncer, StreamKind, Syncer, SyncerEvent, SyncerRequest,
-    TransportSendParams, TracingContext,
+    TracingContext, TransportSendParams,
 };
 
 #[test]

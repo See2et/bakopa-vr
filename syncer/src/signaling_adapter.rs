@@ -215,7 +215,12 @@ where
         });
     }
 
-    fn emit_invalid(&mut self, pid: Option<ParticipantId>, error: SyncMessageError, existing: bool) {
+    fn emit_invalid(
+        &mut self,
+        pid: Option<ParticipantId>,
+        error: SyncMessageError,
+        existing: bool,
+    ) {
         self.events.push(SyncerEvent::Error {
             kind: SyncerError::InvalidPayload(error.clone()),
         });

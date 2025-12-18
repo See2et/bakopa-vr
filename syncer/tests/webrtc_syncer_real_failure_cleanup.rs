@@ -16,10 +16,9 @@ async fn failure_emits_single_peer_left_and_stops_delivery() {
     let b = ParticipantId::new();
 
     // fail-fast な実PCペアを用意（ICE失敗を強制）
-    let (ta, tb) =
-        RealWebrtcTransport::pair_with_datachannel_real_failfast(a.clone(), b.clone())
-            .await
-            .expect("pc setup");
+    let (ta, tb) = RealWebrtcTransport::pair_with_datachannel_real_failfast(a.clone(), b.clone())
+        .await
+        .expect("pc setup");
 
     let room = RoomId::new();
     let mut syncer_a = BasicSyncer::new(a.clone(), ta);

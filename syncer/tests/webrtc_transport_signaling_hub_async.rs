@@ -26,6 +26,10 @@ async fn async_signaling_exchange_round_trip() {
     sender.await.unwrap();
 
     let b_clone = b.clone();
-    let msgs = tokio::task::spawn_blocking(move || hub.drain_for(&b_clone)).await.unwrap();
-    assert!(msgs.iter().any(|m| m.kind == SignalKind::Offer && m.from == a && m.to == b));
+    let msgs = tokio::task::spawn_blocking(move || hub.drain_for(&b_clone))
+        .await
+        .unwrap();
+    assert!(msgs
+        .iter()
+        .any(|m| m.kind == SignalKind::Offer && m.from == a && m.to == b));
 }

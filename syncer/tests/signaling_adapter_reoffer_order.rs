@@ -1,8 +1,13 @@
 use bloom_api::payload::RelaySdp;
 use bloom_api::ServerToClient;
 use bloom_core::{ParticipantId, RoomId};
-use syncer::signaling_adapter::{BloomSignalingAdapter, ClientToServerSender, PeerConnectionCloser, SignalingContext};
-use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest, Transport, TransportEvent, TransportPayload, TransportSendParams};
+use syncer::signaling_adapter::{
+    BloomSignalingAdapter, ClientToServerSender, PeerConnectionCloser, SignalingContext,
+};
+use syncer::{
+    BasicSyncer, Syncer, SyncerEvent, SyncerRequest, Transport, TransportEvent, TransportPayload,
+    TransportSendParams,
+};
 
 /// テスト用: 送信は捨て、キューに積んだ受信イベントをpollで返すだけのフェイクTransport。
 #[derive(Default)]
@@ -21,7 +26,13 @@ impl QueueTransport {
 impl Transport for QueueTransport {
     fn register_participant(&mut self, _participant: ParticipantId) {}
 
-    fn send(&mut self, _to: ParticipantId, _payload: TransportPayload, _params: TransportSendParams) {}
+    fn send(
+        &mut self,
+        _to: ParticipantId,
+        _payload: TransportPayload,
+        _params: TransportSendParams,
+    ) {
+    }
 
     fn poll(&mut self) -> Vec<TransportEvent> {
         self.events.drain(..).collect()
@@ -60,17 +71,23 @@ fn reoffer_emits_peer_left_before_peer_joined_in_order() {
     };
 
     let closer = RecordingCloser::default();
-    let mut adapter = BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
+    let mut adapter =
+        BloomSignalingAdapter::with_context_and_closer(NoopSender::default(), closer, ctx);
 
     let offer = |sdp: &str| ServerToClient::Offer {
         from: remote.to_string(),
-        payload: RelaySdp { sdp: sdp.to_string() },
+        payload: RelaySdp {
+            sdp: sdp.to_string(),
+        },
     };
 
     // 1回目のOffer（初回接続）: イベントなし
     adapter.push_incoming(offer("v=0\no=- 0 0 IN IP4 127.0.0.1\n"));
     let poll1 = adapter.poll();
-    assert!(poll1.events.is_empty(), "first offer should not emit events");
+    assert!(
+        poll1.events.is_empty(),
+        "first offer should not emit events"
+    );
 
     // 2回目のOffer（再接続）: PeerLeft が発火し、ペイロードも返るはず
     adapter.push_incoming(offer("v=0\no=- 1 1 IN IP4 127.0.0.1\n"));
@@ -78,12 +95,18 @@ fn reoffer_emits_peer_left_before_peer_joined_in_order() {
 
     let mut events = poll2.events;
     assert!(
-        events.iter().any(|e| matches!(e, SyncerEvent::PeerLeft { participant_id } if participant_id == &remote)),
+        events.iter().any(
+            |e| matches!(e, SyncerEvent::PeerLeft { participant_id } if participant_id == &remote)
+        ),
         "reoffer must emit PeerLeft for the old session"
     );
 
     // 生成されたペイロードを QueueTransport 経由で BasicSyncer に流し込む
-    let payload = poll2.payloads.into_iter().next().expect("payload from reoffer");
+    let payload = poll2
+        .payloads
+        .into_iter()
+        .next()
+        .expect("payload from reoffer");
     let transport = QueueTransport::with_event(TransportEvent::Received {
         from: remote.clone(),
         payload,
@@ -101,15 +124,13 @@ fn reoffer_emits_peer_left_before_peer_joined_in_order() {
     // 期待: 先頭が PeerLeft(remote)、直後のイベントが PeerJoined(remote)
     let mut iter = events.into_iter();
     let first = iter.next().expect("events should not be empty");
-    let second = iter
-        .next()
-        .unwrap_or(SyncerEvent::Error {
-            kind: syncer::SyncerError::InvalidPayload(
-                syncer::messages::SyncMessageError::UnknownKind {
-                    value: "placeholder".into(),
-                },
-            ),
-        });
+    let second = iter.next().unwrap_or(SyncerEvent::Error {
+        kind: syncer::SyncerError::InvalidPayload(
+            syncer::messages::SyncMessageError::UnknownKind {
+                value: "placeholder".into(),
+            },
+        ),
+    });
 
     assert!(
         matches!(first, SyncerEvent::PeerLeft { ref participant_id } if participant_id == &remote),
@@ -122,5 +143,9 @@ fn reoffer_emits_peer_left_before_peer_joined_in_order() {
 
     // closer が1回だけ close を呼んでいることを確認
     let closer = adapter.into_inner_closer();
-    assert_eq!(closer.closed, vec![remote], "closer should be called once for remote");
+    assert_eq!(
+        closer.closed,
+        vec![remote],
+        "closer should be called once for remote"
+    );
 }

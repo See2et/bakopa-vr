@@ -31,15 +31,25 @@ async fn datachannel_params_reflect_stream_kind() {
 
     let params = test_helpers::created_params(&ta);
     assert!(
-        params
-            .iter()
-            .any(|p| matches!(p, TransportSendParams::DataChannel { ordered: false, reliable: false, .. })),
+        params.iter().any(|p| matches!(
+            p,
+            TransportSendParams::DataChannel {
+                ordered: false,
+                reliable: false,
+                ..
+            }
+        )),
         "pose should be unordered/unreliable"
     );
     assert!(
-        params
-            .iter()
-            .any(|p| matches!(p, TransportSendParams::DataChannel { ordered: true, reliable: true, .. })),
+        params.iter().any(|p| matches!(
+            p,
+            TransportSendParams::DataChannel {
+                ordered: true,
+                reliable: true,
+                ..
+            }
+        )),
         "chat should be ordered/reliable"
     );
 

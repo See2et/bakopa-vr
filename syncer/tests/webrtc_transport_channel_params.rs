@@ -3,7 +3,7 @@ mod common;
 use bloom_core::{ParticipantId, RoomId};
 use syncer::{
     webrtc_transport::WebrtcTransport, BasicSyncer, StreamKind, Syncer, SyncerRequest,
-    TransportSendParams, TracingContext,
+    TracingContext, TransportSendParams,
 };
 
 fn params_for(kind: StreamKind) -> TransportSendParams {
@@ -54,13 +54,20 @@ fn pose_and_chat_use_expected_channel_params() {
     let sent = ta_probe.sent_params();
     let pose_then_chat: Vec<_> = sent
         .into_iter()
-        .filter(|p| matches!(p, TransportSendParams::DataChannel { .. } | TransportSendParams::AudioTrack))
+        .filter(|p| {
+            matches!(
+                p,
+                TransportSendParams::DataChannel { .. } | TransportSendParams::AudioTrack
+            )
+        })
         .filter(|p| p == &params_for(StreamKind::Pose) || p == &params_for(StreamKind::Chat))
         .collect();
 
     // PoseとChatがそれぞれ1回以上送られ、順序も Pose -> Chat で記録されていることを確認
     assert!(
-        pose_then_chat.windows(2).any(|w| w[0] == params_for(StreamKind::Pose) && w[1] == params_for(StreamKind::Chat)),
+        pose_then_chat
+            .windows(2)
+            .any(|w| w[0] == params_for(StreamKind::Pose) && w[1] == params_for(StreamKind::Chat)),
         "pose send should use unordered/unreliable params and precede chat params"
     );
 }

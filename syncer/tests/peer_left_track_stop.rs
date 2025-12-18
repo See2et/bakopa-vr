@@ -1,5 +1,8 @@
 use bloom_core::{ParticipantId, RoomId};
-use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest, Transport, TransportEvent, TransportPayload, TransportSendParams};
+use syncer::{
+    BasicSyncer, Syncer, SyncerEvent, SyncerRequest, Transport, TransportEvent, TransportPayload,
+    TransportSendParams,
+};
 
 /// Transport that emits two Failure events across two polls (simulating track停止や二重通知)。
 #[derive(Debug)]
@@ -10,20 +13,33 @@ struct DualFailureTransport {
 
 impl DualFailureTransport {
     fn new(peer: ParticipantId) -> Self {
-        Self { peer, poll_count: 0 }
+        Self {
+            peer,
+            poll_count: 0,
+        }
     }
 }
 
 impl Transport for DualFailureTransport {
     fn register_participant(&mut self, _participant: ParticipantId) {}
 
-    fn send(&mut self, _to: ParticipantId, _payload: TransportPayload, _params: TransportSendParams) {}
+    fn send(
+        &mut self,
+        _to: ParticipantId,
+        _payload: TransportPayload,
+        _params: TransportSendParams,
+    ) {
+    }
 
     fn poll(&mut self) -> Vec<TransportEvent> {
         self.poll_count += 1;
         match self.poll_count {
-            1 => vec![TransportEvent::Failure { peer: self.peer.clone() }],
-            2 => vec![TransportEvent::Failure { peer: self.peer.clone() }],
+            1 => vec![TransportEvent::Failure {
+                peer: self.peer.clone(),
+            }],
+            2 => vec![TransportEvent::Failure {
+                peer: self.peer.clone(),
+            }],
             _ => Vec::new(),
         }
     }

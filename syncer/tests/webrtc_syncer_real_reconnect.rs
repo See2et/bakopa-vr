@@ -17,10 +17,9 @@ async fn reconnects_after_failure_and_delivers_again() {
     let room = RoomId::new();
 
     // 1st connection: fail fast to trigger PeerLeft
-    let (ta1, tb1) =
-        RealWebrtcTransport::pair_with_datachannel_real_failfast(a.clone(), b.clone())
-            .await
-            .expect("pc setup");
+    let (ta1, tb1) = RealWebrtcTransport::pair_with_datachannel_real_failfast(a.clone(), b.clone())
+        .await
+        .expect("pc setup");
 
     let mut syncer_a = BasicSyncer::new(a.clone(), ta1);
     let mut syncer_b = BasicSyncer::new(b.clone(), tb1);
@@ -56,14 +55,17 @@ async fn reconnects_after_failure_and_delivers_again() {
     assert!(left_seen, "precondition: PeerLeft should be observed");
 
     // 2nd connection: new PC pair reuses same participant_id
-    let (mut ta2, mut tb2) =
-        RealWebrtcTransport::pair_with_datachannel_real(a.clone(), b.clone())
-            .await
-            .expect("pc setup 2");
+    let (mut ta2, mut tb2) = RealWebrtcTransport::pair_with_datachannel_real(a.clone(), b.clone())
+        .await
+        .expect("pc setup 2");
 
     let timeout = Duration::from_secs(5);
-    ta2.wait_data_channel_open(timeout).await.expect("open a second pc");
-    tb2.wait_data_channel_open(timeout).await.expect("open b second pc");
+    ta2.wait_data_channel_open(timeout)
+        .await
+        .expect("open a second pc");
+    tb2.wait_data_channel_open(timeout)
+        .await
+        .expect("open b second pc");
 
     // 未実装のフック: 既存 Syncer に新Transportを再バインドする前提
     syncer_a.rebind_transport(ta2);
@@ -91,8 +93,12 @@ async fn reconnects_after_failure_and_delivers_again() {
             chat: common::sample_chat(&b),
             ctx: TracingContext::for_chat(&room, &b),
         });
-        a_seen_b |= ev_a.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
-        b_seen_a |= ev_b.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
+        a_seen_b |= ev_a.iter().any(
+            |e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b),
+        );
+        b_seen_a |= ev_b.iter().any(
+            |e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a),
+        );
         if a_seen_b && b_seen_a {
             break;
         }

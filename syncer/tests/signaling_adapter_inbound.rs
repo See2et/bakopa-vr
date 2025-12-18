@@ -94,6 +94,12 @@ fn inbound_answer_and_ice_are_also_wrapped() {
         .map(|p| p.parse_sync_message().unwrap())
         .collect();
 
-    assert!(matches!(messages[0], SyncMessage::Signaling(SignalingMessage::Answer(_))));
-    assert!(matches!(messages[1], SyncMessage::Signaling(SignalingMessage::Ice(_))));
+    assert!(matches!(
+        messages[0],
+        SyncMessage::Signaling(SignalingMessage::Answer(_))
+    ));
+    assert!(matches!(
+        messages[1],
+        SyncMessage::Signaling(SignalingMessage::Ice(_))
+    ));
 }

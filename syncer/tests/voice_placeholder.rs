@@ -4,7 +4,6 @@ use bloom_core::{ParticipantId, RoomId};
 use common::bus_transport::{new_bus, BusTransport};
 use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest};
 
-
 #[test]
 fn audio_frame_is_emitted_as_voice_event_with_context() {
     let room = RoomId::new();

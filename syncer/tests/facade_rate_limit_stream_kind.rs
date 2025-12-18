@@ -6,7 +6,7 @@ use bloom_core::{ParticipantId, RoomId};
 use common::bus_transport::{new_bus, BusTransport};
 use common::fake_clock::FakeClock;
 use syncer::rate_limiter::RateLimiter;
-use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest, TracingContext, StreamKind};
+use syncer::{BasicSyncer, StreamKind, Syncer, SyncerEvent, SyncerRequest, TracingContext};
 
 /// RED→GREEN: Poseで上限到達後にChatを送ると、RateLimitedのstream_kindがChatになる。
 #[test]
@@ -46,7 +46,8 @@ fn rate_limited_stream_kind_reflects_latest_request() {
             ctx: common::sample_tracing_context(&room, &a),
         });
         assert!(
-            !ev.iter().any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
+            !ev.iter()
+                .any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
             "first 20 should be allowed"
         );
     }

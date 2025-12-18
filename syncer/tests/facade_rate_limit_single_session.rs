@@ -6,7 +6,7 @@ use bloom_core::{ParticipantId, RoomId};
 use common::bus_transport::{new_bus, BusTransport};
 use common::fake_clock::FakeClock;
 use syncer::rate_limiter::RateLimiter;
-use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest, TracingContext, StreamKind};
+use syncer::{BasicSyncer, StreamKind, Syncer, SyncerEvent, SyncerRequest, TracingContext};
 
 /// RED→GREEN: 20件まで許容し、21件目で RateLimited を返し Transport 送信が増えない。
 #[test]
@@ -48,12 +48,17 @@ fn chat_is_rate_limited_per_session_after_20_messages() {
             ctx: TracingContext::for_chat(&room, &a),
         });
         assert!(
-            !events.iter().any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
+            !events
+                .iter()
+                .any(|e| matches!(e, SyncerEvent::RateLimited { .. })),
             "first 20 messages should not be rate limited"
         );
     }
     let sent_before = bus.borrow().messages.len();
-    assert_eq!(sent_before, 20, "20 chats should have been enqueued to transport");
+    assert_eq!(
+        sent_before, 20,
+        "20 chats should have been enqueued to transport"
+    );
 
     // 21件目でRateLimitedが返り、送信は増えない
     let events = syncer_a.handle(SyncerRequest::SendChat {

@@ -34,7 +34,12 @@ impl Transport for FakeTransport {
         }
     }
 
-    fn send(&mut self, to: ParticipantId, payload: TransportPayload, _params: syncer::TransportSendParams) {
+    fn send(
+        &mut self,
+        to: ParticipantId,
+        payload: TransportPayload,
+        _params: syncer::TransportSendParams,
+    ) {
         let recipients: Vec<ParticipantId> = {
             let bus = self.bus.borrow();
             bus.participants

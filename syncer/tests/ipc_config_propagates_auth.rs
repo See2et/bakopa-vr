@@ -22,8 +22,7 @@ fn auth_token_propagates_into_adapter() {
     let cfg = IpcConfig::new(token).expect("ipc config should construct");
     let ctx: SignalingContext = cfg.to_signaling_ctx(room);
 
-    let mut adapter =
-        BloomSignalingAdapter::<NoopSender>::with_context(NoopSender::default(), ctx);
+    let mut adapter = BloomSignalingAdapter::<NoopSender>::with_context(NoopSender::default(), ctx);
 
     // inbound offer を流し、内側で埋められる auth_token を検査
     adapter.push_incoming(ServerToClient::Offer {

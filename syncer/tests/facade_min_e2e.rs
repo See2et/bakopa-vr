@@ -1,10 +1,9 @@
 mod common;
 
 use bloom_core::{ParticipantId, RoomId};
-use common::{sample_chat, sample_pose, sample_tracing_context};
 use common::bus_transport::{new_bus, BusTransport};
+use common::{sample_chat, sample_pose, sample_tracing_context};
 use syncer::{BasicSyncer, Syncer, SyncerEvent, SyncerRequest};
-
 
 #[test]
 fn pose_flow_delivers_once_to_peer() {

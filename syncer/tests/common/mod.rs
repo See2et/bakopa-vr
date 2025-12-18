@@ -1,8 +1,8 @@
 use bloom_core::{ParticipantId, RoomId};
 use syncer::{messages::ChatMessage, Pose, PoseTransform, StreamKind, TracingContext};
 
-pub mod fake_clock;
 pub mod bus_transport;
+pub mod fake_clock;
 pub mod timeouts;
 
 #[allow(dead_code)]

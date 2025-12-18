@@ -12,10 +12,9 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
     let a = ParticipantId::new();
     let b = ParticipantId::new();
 
-    let (mut ta, mut tb) =
-        RealWebrtcTransport::pair_with_datachannel_real(a.clone(), b.clone())
-            .await
-            .expect("pc setup");
+    let (mut ta, mut tb) = RealWebrtcTransport::pair_with_datachannel_real(a.clone(), b.clone())
+        .await
+        .expect("pc setup");
 
     let timeout = std::time::Duration::from_secs(5);
     ta.wait_data_channel_open(timeout).await.expect("open a");
@@ -37,8 +36,12 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
     let mut ev_a = Vec::new();
 
     // 互いにPeerJoinedが届くまで軽くポーリング
-    let mut a_seen_b = ev_a.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
-    let mut b_seen_a = ev_b.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
+    let mut a_seen_b = ev_a
+        .iter()
+        .any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
+    let mut b_seen_a = ev_b
+        .iter()
+        .any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
     for _ in 0..60 {
         if a_seen_b && b_seen_a {
             break;
@@ -51,11 +54,18 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
             chat: common::sample_chat(&b),
             ctx: syncer::TracingContext::for_chat(&room, &b),
         });
-        a_seen_b |= ev_a.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b));
-        b_seen_a |= ev_b.iter().any(|e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a));
+        a_seen_b |= ev_a.iter().any(
+            |e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &b),
+        );
+        b_seen_a |= ev_b.iter().any(
+            |e| matches!(e, SyncerEvent::PeerJoined { participant_id } if participant_id == &a),
+        );
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    assert!(a_seen_b && b_seen_a, "peers should observe each other's join before messaging");
+    assert!(
+        a_seen_b && b_seen_a,
+        "peers should observe each other's join before messaging"
+    );
 
     // 本番のChat送信
     let chat = common::sample_chat(&a);
@@ -105,6 +115,12 @@ async fn tracing_context_matches_sender_and_stream_kind_real_transport() {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 
-    assert!(chat_ctx_ok, "chat tracing context should match sender and stream_kind");
-    assert!(pose_ctx_ok, "pose tracing context should match sender and stream_kind");
+    assert!(
+        chat_ctx_ok,
+        "chat tracing context should match sender and stream_kind"
+    );
+    assert!(
+        pose_ctx_ok,
+        "pose tracing context should match sender and stream_kind"
+    );
 }
