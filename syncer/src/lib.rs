@@ -177,6 +177,21 @@ impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
         }
     }
 
+    /// rate limit に引っかかった場合はイベントをpushし、受信キューも捌いて早期returnする。
+    fn short_circuit_rate_limit(
+        &mut self,
+        stream_kind: StreamKind,
+        events: &mut Vec<SyncerEvent>,
+    ) -> bool {
+        if let Some(ev) = self.rate_limit(stream_kind) {
+            events.push(ev);
+            events.extend(self.drain_transport_events());
+            true
+        } else {
+            false
+        }
+    }
+
     fn broadcast_control_join(&mut self, participant_id: &ParticipantId) {
         use crate::messages::{ControlMessage, ControlPayload, SyncMessageEnvelope};
 
@@ -217,9 +232,7 @@ impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
                 events.extend(self.drain_transport_events());
             }
             SyncerRequest::SendPose { from, pose, ctx } => {
-                if let Some(ev) = self.rate_limit(StreamKind::Pose) {
-                    events.push(ev);
-                    events.extend(self.drain_transport_events());
+                if self.short_circuit_rate_limit(StreamKind::Pose, &mut events) {
                     return events;
                 }
                 // 未参加者からの送信は無視（ログはTransport層に任せる）。
@@ -242,9 +255,7 @@ impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
                 let _ = ctx;
             }
             SyncerRequest::SendChat { chat, ctx } => {
-                if let Some(ev) = self.rate_limit(StreamKind::Chat) {
-                    events.push(ev);
-                    events.extend(self.drain_transport_events());
+                if self.short_circuit_rate_limit(StreamKind::Chat, &mut events) {
                     return events;
                 }
                 if !self.participants.is_registered(&ctx.participant_id) {
@@ -268,9 +279,7 @@ impl<T: Transport, C: rate_limiter::Clock> BasicSyncer<T, C> {
                 let _ = ctx;
             }
             SyncerRequest::SendVoiceFrame { frame, ctx } => {
-                if let Some(ev) = self.rate_limit(StreamKind::Voice) {
-                    events.push(ev);
-                    events.extend(self.drain_transport_events());
+                if self.short_circuit_rate_limit(StreamKind::Voice, &mut events) {
                     return events;
                 }
                 if !self.participants.is_registered(&ctx.participant_id) {
