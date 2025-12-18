@@ -103,17 +103,9 @@ Sec-WebSocket-Version: 13\r\n\
     for line in lines {
         let lower = line.to_ascii_lowercase();
         if lower.starts_with("upgrade:") {
-            upgrade_hdr = line
-                .split_once(':')
-                .map(|x| x.1)
-                .unwrap_or("")
-                .trim();
+            upgrade_hdr = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
         } else if lower.starts_with("connection:") {
-            connection_hdr = line
-                .split_once(':')
-                .map(|x| x.1)
-                .unwrap_or("")
-                .trim();
+            connection_hdr = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
         }
         if line.is_empty() {
             break;
@@ -178,17 +170,9 @@ Host: {authority}\r\n\
     for line in lines {
         let lower = line.to_ascii_lowercase();
         if lower.starts_with("upgrade:") {
-            upgrade_hdr = line
-                .split_once(':')
-                .map(|x| x.1)
-                .unwrap_or("")
-                .trim();
+            upgrade_hdr = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
         } else if lower.starts_with("connection:") {
-            connection_hdr = line
-                .split_once(':')
-                .map(|x| x.1)
-                .unwrap_or("")
-                .trim();
+            connection_hdr = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
         }
         if line.is_empty() {
             break;
