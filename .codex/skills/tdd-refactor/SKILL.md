@@ -16,6 +16,7 @@ description: TDDのリファクタ(REFACTOR)フェーズを厳密に実行する
 
 ## 必ず取り組むべき内容
 - 変更範囲にRustコードが含まれる場合
+    - `cargo fix`での機械的な修正
     - `cargo fmt -all`でのフォーマット
     - `cargo clippy --workspace --all-targets --all-features -- -D warnings`で指摘された内容の修正
 
