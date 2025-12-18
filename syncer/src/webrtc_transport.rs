@@ -12,6 +12,7 @@ use crate::{StreamKind, Transport, TransportEvent, TransportPayload, TransportSe
 use anyhow::Result;
 use bloom_core::ParticipantId;
 use bytes::Bytes;
+use tracing::warn;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Default, Debug)]
@@ -575,12 +576,23 @@ impl RealWebrtcTransport {
         let pc = self
             .pc
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("peer connection not ready"))?;
+            .ok_or_else(|| anyhow::anyhow!("peer connection not ready"))?
+            .clone();
         let peer_pc = self
             .peer_pc
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("peer pc not available for renegotiation"))?;
+            .ok_or_else(|| anyhow::anyhow!("peer pc not available for renegotiation"))?
+            .clone();
+        let audio_track = self.audio_track.clone();
 
+        Self::add_dummy_audio_track_with_handles(pc, peer_pc, audio_track).await
+    }
+
+    async fn add_dummy_audio_track_with_handles(
+        pc: Arc<RTCPeerConnection>,
+        peer_pc: Arc<RTCPeerConnection>,
+        audio_track: Arc<Mutex<Option<Arc<TrackLocalStaticSample>>>>,
+    ) -> Result<()> {
         let track = Arc::new(TrackLocalStaticSample::new(
             RTCRtpCodecCapability {
                 mime_type: MIME_TYPE_OPUS.to_string(),
@@ -602,7 +614,7 @@ impl RealWebrtcTransport {
         });
 
         {
-            let mut guard = self.audio_track.lock().unwrap();
+            let mut guard = audio_track.lock().unwrap();
             *guard = Some(track.clone());
         }
 
@@ -636,8 +648,10 @@ impl RealWebrtcTransport {
         Ok(())
     }
 
-    /// audio_track が未設定なら一度だけ追加する（失敗は黙殺）。
-    fn ensure_audio_track(&self) {
+    /// audio_track が未設定なら一度だけ非同期で追加する（失敗は黙殺）。
+    fn ensure_audio_track_task(
+        &self,
+    ) -> Option<impl std::future::Future<Output = Result<(), anyhow::Error>> + Send + 'static> {
         let needs_add = self
             .audio_track
             .lock()
@@ -645,12 +659,16 @@ impl RealWebrtcTransport {
             .unwrap_or(false);
 
         if !needs_add {
-            return;
+            return None;
         }
 
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            let _ = handle.block_on(self.add_dummy_audio_track());
-        }
+        let pc = self.pc.clone()?;
+        let peer_pc = self.peer_pc.clone()?;
+        let audio_track = self.audio_track.clone();
+
+        Some(Self::add_dummy_audio_track_with_handles(
+            pc, peer_pc, audio_track,
+        ))
     }
 
     #[cfg(test)]
@@ -743,21 +761,31 @@ impl Transport for RealWebrtcTransport {
                 }
             }
             TransportPayload::AudioFrame(data) => {
-                self.ensure_audio_track();
-                // audio_track がなければ無視（まだ追加されていないケース）
-                if let Ok(track_guard) = self.audio_track.lock() {
-                    if let Some(track) = track_guard.clone() {
+                let audio_track = self.audio_track.clone();
+                let ensure = self.ensure_audio_track_task();
+                tokio::spawn(async move {
+                    if let Some(fut) = ensure {
+                        if let Err(e) = fut.await {
+                            warn!(error = %e, "failed to add dummy audio track");
+                            return;
+                        }
+                    }
+
+                    let track_opt = audio_track
+                        .lock()
+                        .ok()
+                        .and_then(|guard| guard.clone());
+
+                    if let Some(track) = track_opt {
                         let sample = webrtc_media::Sample {
                             data: Bytes::from(data),
                             duration: std::time::Duration::from_millis(20),
                             ..Default::default()
                         };
                         let track_clone = track.clone();
-                        tokio::spawn(async move {
-                            let _ = track_clone.write_sample(&sample).await;
-                        });
+                        let _ = track_clone.write_sample(&sample).await;
                     }
-                }
+                });
             }
         }
     }
