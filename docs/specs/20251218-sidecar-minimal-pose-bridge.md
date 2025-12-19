@@ -82,15 +82,110 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 - エラー列挙: Client への `Error.kind` をどの粒度で公開するか？（Bloom/Syncer の内部理由をどこまで露出させるか）
     - `Error.kind`は粗い粒度に保ち、`message`に人間向けの文章を差し込みましょう
 
-## サンプルシナリオ (TDD入口)
-- ハッピー:  
-  Given Bloom WS が起動し、Room 未作成  
-  When Client A が Sidecar に接続し `Join { bloom_ws_url, room_id: null }` を送信し、その後 `SendPose` を 1 度送る  
-  Then Client A は `SelfJoined` を受け取り、`PoseReceived`（自分自身は含まない）が発火しないまま、Bloom/Syncer にエラーが記録されない  
-  And Client B が別 Sidecar から同 room に Join して `PoseReceived`（from=A）が 1 件届く
+## テスト戦略
+- Unit: JSONシリアライズ/デシリアライズ、Envelope v1 への変換、RateLimitイベント伝達、接続状態管理（再接続時の participant_id リセット）、エラー分類。
+- Integration: Bloom WS とのシグナリング往復（Create/Join/Offer/Answer/Ice）、Syncer との Pose 送受信（テストダブル or 実WebRTC）、RateLimiter 1 秒 20 件の境界。
+- E2E（最小）: 2 クライアント相当（2 本の Sidecar）で Join → Pose 片方向配送、RateLimit 発火と回復、切断→再接続。
+- 依存の扱い: Clock をテストダブル化してレートリミットの境界を再現、Bloom/Syncer はローカルで立ち上げるかモックに差し替え。ネットワークポートは Ephemeral を使い衝突回避。
 
-- 代表的失敗:  
-  Given Client が 1 秒間に 25 回 `SendPose` を送る  
-  When Syncer が RateLimit し始める  
-  Then Client は `RateLimited { stream_kind: pose }` を受け取り、Sidecar は該当期間の Pose を送信しない  
-  And 1 秒経過後に再度送信すると Pose が配送される
+## テストケース一覧
+
+### TC-001: 新規ルーム Join 成功
+- 対応要件: FR-001
+- 種別: Happy
+- テスト層: Integration
+- Given Bloom WS が起動し、ルーム未作成、Sidecar がデフォルト設定で待機
+- When Client が `/sidecar` に接続し `Join { room_id: null, bloom_ws_url, ice_servers }` を送る
+- Then Client は `SelfJoined { room_id!=null, participant_id!=null, participants=[self] }` を受け取り、Bloom にルームが生成される
+
+### TC-002: 既存ルーム Join で参加者リストを受信
+- 対応要件: FR-001
+- 種別: Happy
+- テスト層: Integration
+- Given Room が Bloom に存在し participant_x が登録済み
+- When Client Y が room_id を指定して Join する
+- Then Client Y は `SelfJoined` で participants に participant_x を含み、Bloom は参加者数を 2 に更新する
+
+### TC-003: Pose 送信が DataChannel に載る
+- 対応要件: FR-002
+- 種別: Happy
+- テスト層: Unit（Transport ダブル）
+- Given Sidecar が Syncer に接続済みで、Transport ダブルが送信ペイロードを観測できる
+- When Client から `SendPose { head, hand_l, hand_r }` を送信
+- Then Transport へ kind=pose, Envelope v1, unordered/unreliable 指定で1件送信される
+
+### TC-004: Pose 受信を Client へ中継
+- 対応要件: FR-003
+- 種別: Happy
+- テスト層: Integration
+- Given 2 クライアントが同 room に参加し、B 側の Syncer へ A からの Pose が到着する
+- When Sidecar B が Transport 受信イベントを処理
+- Then Client B は `PoseReceived { from=A, pose=... }` を受け取る（自分自身の Pose は配信しない）
+
+### TC-005: レートリミット発火時の RateLimited イベント
+- 対応要件: FR-004
+- 種別: Failure/Boundary
+- テスト層: Integration
+- Given Clock ダブルで 1 秒間に 21 回の `SendPose` を発行
+- When Syncer の RateLimiter が上限を超える
+- Then Client は `RateLimited { stream_kind: pose }` を受け取り、超過分の Pose は送信されない
+
+### TC-006: レートリミット回復後の配送再開
+- 対応要件: FR-002, FR-004
+- 種別: Boundary
+- テスト層: Integration
+- Given TC-005 直後で 1 秒経過するまで待機
+- When その後に `SendPose` を 1 回送る
+- Then Pose が再び送信され、RateLimited は発火しない
+
+### TC-007: InvalidPayload を Error として転送
+- 対応要件: FR-004
+- 種別: Failure
+- テスト層: Unit
+- Given Client から body が欠損した `SendPose` または未知 kind を送信
+- When Sidecar が検証し Syncer から InvalidPayload 相当のエラーを受け取る
+- Then Client は `Error { kind=\"InvalidPayload\" }` を受け取り、Sidecar プロセスは継続する
+
+### TC-008: WS 切断時の Leave/状態クリア
+- 対応要件: FR-005
+- 種別: Invariant
+- テスト層: Integration
+- Given Client が Join 済みで participants>0
+- When Client が WS を正常 Close する
+- Then Sidecar は Bloom に Leave を送り、Syncer の participant テーブルが空になり、後続の `PoseReceived` は発火しない
+
+### TC-009: 再接続で participant_id が衝突しない
+- 対応要件: FR-005
+- 種別: Boundary
+- テスト層: Integration
+- Given Client が切断後すぐ再接続
+- When 新規 `Join` を送信
+- Then 新しい participant_id が払い出され、`SelfJoined` participants に重複がないことを確認する
+
+### TC-010: トレースフィールド付与
+- 対応要件: NFR-001
+- 種別: Non-functional
+- テスト層: Unit
+- Given RecordingSubscriber をセットした Sidecar で Join→SendPose を 1 回実行
+- When ログ/Span を収集
+- Then いずれかの span に `room_id` `participant_id` `stream_kind` がフィールドとして含まれる
+
+### TC-011: デフォルトバインドと設定
+- 対応要件: NFR-002
+- 種別: Non-functional / Boundary
+- テスト層: Unit
+- Given Sidecar を設定なしで起動
+- Then リッスンアドレスが `127.0.0.1:{port}` になる  
+- When 環境変数または設定でポートを指定  
+- Then 指定ポートで起動し、パス `/sidecar` 以外への接続は 426/404 で拒否する
+
+## カバレッジ確認チェックリスト
+- [x] Join 成功/既存ルーム/参加者リスト
+- [x] Pose 送信/受信（unordered/unreliable）と Envelope v1
+- [x] レートリミット発火と回復（1 秒 20 件）
+- [x] InvalidPayload/未知 kind のハンドリング
+- [x] 切断・再接続・状態クリア
+- [x] トレーシングフィールド付与
+- [x] デフォルトバインド/設定パス
+- [ ] 座標系の定義に基づく値検証（未決: 左手/右手系と単位の厳密テスト）
+- [ ] 認証/トークン有無の分岐（未決: 認証方針）
