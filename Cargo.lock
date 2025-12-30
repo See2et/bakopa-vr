@@ -1830,11 +1830,14 @@ dependencies = [
  "axum",
  "futures-util",
  "http",
+ "serde",
+ "serde_json",
  "subtle",
  "tokio",
  "tokio-tungstenite 0.23.1",
  "tracing",
  "tungstenite 0.23.0",
+ "uuid",
 ]
 
 [[package]]
