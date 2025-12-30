@@ -29,6 +29,8 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 ### フェーズ開始時のSKILL確認（遵守強化）
 - RED/GREEN/REFACTOR などフェーズを宣言するときは、対応する `SKILL.md`（例: `tdd-red` / `tdd-green` / `tdd-refactor`）を **毎回開いて確認** すること。  
   - 忘れた場合は作業を一時停止し、SKILLを読み直してから再開する。  
+  - 参照したSKILL名を返答に明記する（例:「参照: tdd-green SKILL.md」）。
+- REFACTOR では `cargo fmt` と `cargo clippy --workspace --all-targets --all-features -- -D warnings` を実行し、結果を返答に記載する。実行できなかった場合は理由と再実行予定を明示する（黙ってスキップしない）。
 
 ## Rust Coding Rules
 
