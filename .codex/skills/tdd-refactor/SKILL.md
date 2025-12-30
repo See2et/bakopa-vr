@@ -23,7 +23,8 @@ description: TDDのリファクタ(REFACTOR)フェーズを厳密に実行する
 - 変更範囲にRustコードが含まれる場合
   - `cargo fix`での機械的な修正
   - `cargo fmt -all`でのフォーマット
-  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`で指摘された内容の修正
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`で指摘された内容の修正  
+    - **実行できない場合**（例: 依存未取得・ビルド失敗・CI制約など）は、理由を返答に明記し、再実行のTODOを残すこと。黙ってスキップしない。
 - 変更範囲にMarkdown文書が含まれる場合
   - `markdownlint-cli2 --fix`での機械的な修正
 
