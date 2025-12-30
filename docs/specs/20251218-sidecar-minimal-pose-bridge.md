@@ -100,6 +100,9 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
     - `ws://127.0.0.1:{port}/sidecar`に固定。ポート設定のみ残します
 - エラー列挙: Client への `Error.kind` をどの粒度で公開するか？（Bloom/Syncer の内部理由をどこまで露出させるか）
     - `Error.kind`は粗い粒度に保ち、`message`に人間向けの文章を差し込みましょう
+- 現段階ではClientは未実装だが、テスト／デバッグの際にどうするのか？
+    - `sidecar/tests`配下にFakeClient（テストヘルパ）を実装する
+    - crate外への公開はせず、プロトコル契約の回帰防止とE2Eの再現性確保に目的を限定する
 
 ## テスト戦略
 - Unit: JSONシリアライズ/デシリアライズ、Envelope v1 への変換、RateLimitイベント伝達、接続状態管理（再接続時の participant_id リセット）、エラー分類。
@@ -278,7 +281,7 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
   - Client は `Error { kind="NotJoined", message=... }` を受け取る
   - Sidecar プロセスは継続し、後続の `Join` を受け付けられる状態を保つ
   
-### TC-015: Pose に NaN/Inf が含まれると InvalidPayload
+### TC-014: Pose に NaN/Inf が含まれると InvalidPayload
 - 対応要件: FR-004（および FR-002 の入力検証）
 - 種別: Failure / Validation
 - テスト層: Unit（Sidecar の入力検証）
