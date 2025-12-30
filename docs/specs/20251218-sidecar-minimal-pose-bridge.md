@@ -9,7 +9,9 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
   - Bloom WS への接続（CreateRoom/JoinRoom/Offer/Answer/IceCandidate のブリッジ）と Syncer への配線。
   - Pose（Head/HandL/HandR）メッセージの送受信と RateLimit/Error の伝達。
   - ユニットテスト／最小 E2E（2 クライアント相当）での送受信確認。
+  - Client/Sidecar 間のシンプルな Token 認証（事前共有トークン、ローカル WS 接続の拒否/許可）。
 - 非スコープ
+  - 複数Clientの同時接続（Sidecarセッションの多重化）
   - VR/Unity UI、音声・テキストチャット、認証・課金、TURN/帯域適応。
   - UGC 配信・アバター管理、モデレーション、永続化。
 
@@ -28,11 +30,23 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 - WebRTC STUN 設定は環境変数または設定ファイルで Sidecar → Syncer に渡す。TURN は未対応。
 
 ## 機能要件
+### FR-000: Client/Sidecar Token 認証
+- Sidecarは事前共有トークンを環境変数`SIDECAR_TOKEN`から取得する。未設定の場合、Sidecarは起動に失敗する。
+- ClientがSidecarのWebSocket（ws://127.0.0.1:{port}/sidecar）に認証する際、Tokenによる認証を行う必要がある。
+    - Client は WebSocket Upgrade リックエストに `Authorization: Bearer <token>` を付与する必要がある。
+    - また、トークンの認証には定数時間比較を用いること。
+- トークンが不一致/欠損の場合、HTTP 401/403を返す。
+    - 401 Unauthorized: Authorizationヘッダが欠損、Bearerの形式が不正、トークンが不一致などの場合
+    - 403 Forbidden: Originが非nullかつ拒否する場合（ブラウザからのアクセスは原則として拒否する）
+- 認証失敗時、Sidecar は Bloom/Syncer へ一切接続せず、ローカル WS セッションのみを終了または継続待機する。
+
 ### FR-001: ローカル接続と Join
 - Client は Sidecar の `ws://127.0.0.1:{port}/sidecar` に接続し、`Join` リクエストを送る。
+    - もちろん、Tokenによる認証が済んでいることが前提
 - `Join` は `room_id`（省略時は CreateRoom）、`bloom_ws_url`、`ice_servers` を含む。
-- Sidecar は Bloom WS に接続し、room 参加に成功したら Syncer を初期化し、自身を登録する。
+- Sidecar は Bloom の WebSocket に接続し、room 参加に成功したら Syncer を初期化し、自身を登録する。
 - 成功時に Client へ `SelfJoined { room_id, participant_id, participants }` を返す。
+- また、ブラウザからのアクセスは原則として拒否する。
 
 ### FR-002: Pose 送信
 - Client からの `SendPose { head, hand_l, hand_r }` を Syncer `Pose` メッセージ（Envelope v1, kind=pose）に変換し、DataChannel (unordered/unreliable) で送信する。
@@ -47,12 +61,16 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 - Bloom/Syncer いずれかでの InvalidPayload/接続断など recoverable な失敗は `Error { kind, message }` として Client に通知し、Sidecar プロセスは継続する。
 
 ### FR-005: 切断・再接続
-- Client が WS を正常終了した場合、Sidecar は Bloom へ Leave を送り、Syncer 内状態をクリアする。
+- Client が WebSocket 接続を正常終了した場合、Sidecar は Syncer を通じて Bloom へ Leave を送り、Syncer 内状態をクリアする。
 - Client 再接続時は新規 session として扱い、既存 participant_id が残っていても重複しないようにする（Bloom 側で再発行された場合を優先）。
+- Sidecarは同時に1つのClientに対してのみWebSocketセッションを保持する。
+    - 既存セッションがある状態で新しい接続が来た場合、新しい方に接続する。
+    - ただし、既存セッションの切断は、新規接続が認証に成功しWebSocket Upgradeが完了した後にのみ行う。
 
 ## 非機能要件
 ### NFR-001: ログ/トレース
 - `tracing` を用い、Sidecar から出す span/log には `room_id`/`participant_id`/`stream_kind` を可能な限り付与する。Subscriber 初期化はバイナリ内 1 か所のみ。
+- ただし、SidecarのWebSocket接続認証時のTokenをログに出さないこと。
 
 ### NFR-002: 安全なデフォルト
 - デフォルト送信レートは Syncer の 1 秒 20 メッセージに従い、Sidecar 内で追加スロットリングは行わない（必要なら将来拡張）。
@@ -71,12 +89,13 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
     - 左手座標系（Left-Handed, +X右, +Y上, +Z前）
     - 位置は メートル（m） を単位とする
     - 回転表現はQuaternion(x,y,z,w)を用います
-    - Head/HandのTransformはプレイヤーのルート座標に対する相対的な値で表現します
+    - Head/HandのTransformはプレイヤーのルートに対する相対座標で表現します
 - 送信レート: 1 秒あたりの Pose 更新頻度の推奨値・上限を Sidecar で設けるか?
     - Sidecar側では送信レートのリミットについて、判断を下さない。あくまでSyncer側の判断をClientに伝達するのみ。
     - Sidecarは最新のPoseのみを保持・送信する(coalescing)
 - 認証: Bloom/Sidecar 間および Client/Sidecar 間でトークンを要求するか？導入タイミングは？
-    - とりあえず今は実装しません
+    - Client/Sidecar 間は事前共有 Token による簡易認証を実装する（本スライスで対応）。
+    - Bloom/Sidecar 間はスコープ外（将来拡張）。
 - エンドポイント設計: `ws://.../sidecar` のパス固定でよいか、ポート/パスの設定方法は？
     - `ws://127.0.0.1:{port}/sidecar`に固定。ポート設定のみ残します
 - エラー列挙: Client への `Error.kind` をどの粒度で公開するか？（Bloom/Syncer の内部理由をどこまで露出させるか）
@@ -89,6 +108,55 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 - 依存の扱い: Clock をテストダブル化してレートリミットの境界を再現、Bloom/Syncer はローカルで立ち上げるかモックに差し替え。ネットワークポートは Ephemeral を使い衝突回避。
 
 ## テストケース一覧
+
+### TC-000: 認証失敗で WS 接続が拒否される
+#### TC-000-a
+- 対応要件: FR-000
+- 種別: Failure
+- テスト層: Unit/Integration
+- Given: Sidecarが期待するTokenを`CORRECT_TOKEN_ABC`に設定して起動している
+- When: `Authorization: Bearer WRONG_TOKEN_XYZ`が渡され、token が不一致（必ず定数時間比較を行う）
+- Then: 
+    - Upgrade が拒否される（HTTP 401）
+
+#### TC-000-b
+- 対応要件: FR-000
+- 種別: Failure
+- テスト層: Unit/Integration
+- Given: Sidecarが期待するTokenを`CORRECT_TOKEN_ABC`に設定して起動している
+- When: Authorization ヘッダ無しで WebSocket Upgradeを試す
+- Then: 
+    - Upgrade が拒否される（HTTP 401）
+
+#### TC-000-c
+- 対応要件: FR-000
+- 種別: Failure
+- テスト層: Unit/Integration
+- Given: Sidecarが期待するTokenを`CORRECT_TOKEN_ABC`に設定して起動している
+- When: 不正な形式のヘッダが渡される
+- Then: 
+    - Upgrade が拒否される（HTTP 401）
+
+#### TC-000-d
+- 対応要件: FR-000
+- 種別: Failure
+- テスト層: Unit/Integration
+- Given: Sidecarが期待するTokenを`CORRECT_TOKEN_ABC`に設定して起動している
+- When: `Authorization: Bearer CORRECT_TOKEN_ABC`が渡される
+- Then: 
+    - Upgrade が成功し、Client/Sidecar間の WebSocket 接続が確立する
+
+#### TC-000-e
+- 対応要件: FR-000
+- Given: 正しいtokenによってSidecarが起動
+- When: WebSocket UpgradeリクエストのOriginが空、あるいはnullのとき
+- Then: Upgrade が成功する
+
+#### TC-000-f
+- 対応要件: FR-000
+- Given: 正しいtokenによってSidecar が起動
+- When: WebSocket Upgrade リクエストに Origin: https://evil.example（任意の非null）を付与
+- Then: Upgrade が拒否される（HTTP 403）
 
 ### TC-001: 新規ルーム Join 成功
 - 対応要件: FR-001
@@ -179,6 +247,20 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 - When 環境変数または設定でポートを指定  
 - Then 指定ポートで起動し、パス `/sidecar` 以外への接続は 426/404 で拒否する
 
+### TC-012: 新接続が未認証なら既存セッションを落とせない
+- 対応要件: FR-000, FR-005
+- 種別: Failure
+- テスト層: Integration
+- Given: 
+    - Sidecar が期待する Token を CORRECT_TOKEN_ABC に設定して起動している
+    - Client A が `Authorization: Bearer CORRECT_TOKEN_ABC` で /sidecar に接続済みで、WebSocket セッションが確立している
+- When:
+    - Client B が `Authorization: Bearer WRONG_TOKEN_XYZ` で /sidecar へ WebSocket Upgrade を試みる
+- Then:
+    - Client B の Upgrade は拒否される
+    - Client A の WebSocket セッションは切断されない
+    - Sidecar は Bloom/Syncer の状態を更新しない（Leaveや再接続が発生しない）
+
 ## カバレッジ確認チェックリスト
 - [x] Join 成功/既存ルーム/参加者リスト
 - [x] Pose 送信/受信（unordered/unreliable）と Envelope v1
@@ -188,4 +270,4 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 - [x] トレーシングフィールド付与
 - [x] デフォルトバインド/設定パス
 - [ ] 座標系の定義に基づく値検証（未決: 左手/右手系と単位の厳密テスト）
-- [ ] 認証/トークン有無の分岐（未決: 認証方針）
+- [x] 認証/トークン有無の分岐（未決: 認証方針）
