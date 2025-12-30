@@ -26,6 +26,10 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 1. Refactor: コードの品質を向上させる(skill: tdd-refactor)
 1. Commit: 進捗を保存する
 
+### フェーズ開始時のSKILL確認（遵守強化）
+- RED/GREEN/REFACTOR などフェーズを宣言するときは、対応する `SKILL.md`（例: `tdd-red` / `tdd-green` / `tdd-refactor`）を **毎回開いて確認** すること。  
+  - 忘れた場合は作業を一時停止し、SKILLを読み直してから再開する。  
+
 ## Rust Coding Rules
 
 ### Logging/Trace
