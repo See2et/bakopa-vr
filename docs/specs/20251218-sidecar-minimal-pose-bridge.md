@@ -245,7 +245,7 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 - Given Sidecar を設定なしで起動
 - Then リッスンアドレスが `127.0.0.1:{port}` になる  
 - When 環境変数または設定でポートを指定  
-- Then 指定ポートで起動し、パス `/sidecar` 以外への接続は 426/404 で拒否する
+- Then 指定ポートで起動し、パス `/sidecar` 以外への接続は 404 で拒否する
 
 ### TC-012: 新接続が未認証なら既存セッションを落とせない
 - 対応要件: FR-000, FR-005
@@ -261,6 +261,38 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
     - Client A の WebSocket セッションは切断されない
     - Sidecar は Bloom/Syncer の状態を更新しない（Leaveや再接続が発生しない）
 
+### TC-013: Join 前の SendPose は NotJoined として拒否される
+
+- 対応要件: FR-001, FR-002, FR-004
+- 種別: Failure / Invariant
+- テスト層: Unit/Integration
+- Given:
+  - Sidecar が期待する Token を `CORRECT_TOKEN_ABC` に設定して起動している
+  - Client が `Authorization: Bearer CORRECT_TOKEN_ABC` で `/sidecar` に接続済みで、WebSocket セッションが確立している
+  - ただし、Client はまだ `Join` リクエストを送っておらず、Sidecar は Bloom/Syncer へ未接続である
+- When:
+  - Client が `SendPose { head, hand_l, hand_r }` を送信する
+- Then:
+  - Sidecar は Bloom/Syncer へ接続しない（CreateRoom/JoinRoom 等の呼び出しが発生しない）
+  - Sidecar は当該 Pose を送信せず破棄する
+  - Client は `Error { kind="NotJoined", message=... }` を受け取る
+  - Sidecar プロセスは継続し、後続の `Join` を受け付けられる状態を保つ
+  
+### TC-015: Pose に NaN/Inf が含まれると InvalidPayload
+- 対応要件: FR-004（および FR-002 の入力検証）
+- 種別: Failure / Validation
+- テスト層: Unit（Sidecar の入力検証）
+- Given
+    - Sidecar が起動しており、Client/Sidecar 間の WebSocket 接続が確立している（認証成功）
+    - Client は `Join` 済みで `SelfJoined` を受信している（＝Sidecar は Pose を受理可能な状態）
+- When
+    - Client が `SendPose { head, hand_l, hand_r }` を送信するが、以下のいずれかを満たすペイロードを含む
+    - `*.position` または `*.rotation` のいずれかの成分に **NaN/Inf/-Inf** が含まれる
+    - 例: `head.position.x = NaN
+- Then
+    - Sidecar は当該 `SendPose` を **InvalidPayload** として扱い、Client に次を返す
+    - `Error { kind="InvalidPayload", message=... }`
+
 ## カバレッジ確認チェックリスト
 - [x] Join 成功/既存ルーム/参加者リスト
 - [x] Pose 送信/受信（unordered/unreliable）と Envelope v1
@@ -269,5 +301,5 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 - [x] 切断・再接続・状態クリア
 - [x] トレーシングフィールド付与
 - [x] デフォルトバインド/設定パス
-- [ ] 座標系の定義に基づく値検証（未決: 左手/右手系と単位の厳密テスト）
+- [x] 座標系の定義に基づく値検証（未決: 左手/右手系と単位の厳密テスト）
 - [x] 認証/トークン有無の分岐（未決: 認証方針）
