@@ -3,6 +3,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use futures_util::StreamExt;
 use futures_util::SinkExt;
 use tokio::time::sleep;
+use tokio_tungstenite::tungstenite::protocol::Message;
 
 // Spec-ID: TC-013 (FR-001/FR-002/FR-004)
 // Join 前の SendPose は NotJoined として拒否されることを確認する
@@ -537,6 +538,69 @@ async fn rate_limit_recovers_after_wait() {
 
     let poses = server.sent_poses().await;
     assert_eq!(poses.len(), 21); // 20 accepted + 1 after recovery
+}
+
+// Spec-ID: TC-008 (FR-005)
+// WS切断時に状態クリアされ、後続Poseは発火しない
+#[tokio::test]
+async fn disconnect_clears_state_and_no_more_pose() {
+    let token = "CORRECT_TOKEN_ABC";
+    unsafe { std::env::set_var("SIDECAR_TOKEN", token) };
+
+    let server = sidecar::run_for_tests("127.0.0.1:0")
+        .await
+        .expect("server start");
+    let ws_url = format!("ws://{}/sidecar", server.local_addr());
+
+    // Client A join
+    let (mut stream_a, _participant_a) = join_and_get_participant(&ws_url, token).await;
+    // Client B join
+    let (mut stream_b, _participant_b) = join_and_get_participant(&ws_url, token).await;
+
+    // A closes connection
+    stream_a
+        .send(Message::Close(None))
+        .await
+        .expect("send close");
+    // give server time to process close
+    sleep(Duration::from_millis(100)).await;
+
+    // B should not receive PoseReceived after A is gone
+    let pose_payload = serde_json::json!({
+        "type": "SendPose",
+        "head": {"position": {"x":1.0,"y":2.0,"z":3.0}, "rotation": {"x":0.0,"y":0.0,"z":0.0,"w":1.0}},
+        "hand_l": null,
+        "hand_r": null
+    })
+    .to_string();
+    stream_b
+        .send(Message::Text(pose_payload))
+        .await
+        .expect("send pose");
+
+    let res = tokio::time::timeout(Duration::from_millis(300), stream_b.next()).await;
+    assert!(res.is_err(), "no pose should be delivered after A left");
+}
+
+// Spec-ID: TC-009 (FR-005)
+// 再接続すると participant_id が新規払い出しされ、重複しない
+#[tokio::test]
+async fn reconnects_get_new_participant_ids() {
+    let token = "CORRECT_TOKEN_ABC";
+    unsafe { std::env::set_var("SIDECAR_TOKEN", token) };
+
+    let server = sidecar::run_for_tests("127.0.0.1:0")
+        .await
+        .expect("server start");
+    let ws_url = format!("ws://{}/sidecar", server.local_addr());
+
+    // First session
+    let (_stream1, pid1) = join_and_get_participant(&ws_url, token).await;
+
+    // Second session (new connection)
+    let (_stream2, pid2) = join_and_get_participant(&ws_url, token).await;
+
+    assert_ne!(pid1, pid2, "participant_id should not collide on reconnect");
 }
 async fn join_and_get_participant(
     ws_url: &str,
