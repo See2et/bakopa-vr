@@ -11,6 +11,7 @@ use tokio::task::JoinHandle;
 use std::sync::Arc;
 use tracing::instrument;
 use uuid::Uuid;
+use tracing::info;
 use futures_util::{StreamExt, SinkExt};
 
 use anyhow::{Context, Result};
@@ -242,6 +243,7 @@ async fn handle_ws(socket: WebSocket, room_state: Arc<Mutex<RoomState>>) {
                         joined = true;
                         my_participant_id = Some(participant_id.clone());
                         let list = state.participants.clone();
+                        info!(room_id = %room_id, participant_id = %participant_id, "join accepted");
                         let _ = tx.send(Message::Text(
                             serde_json::json!({
                                 "type": "SelfJoined",
@@ -267,6 +269,7 @@ async fn handle_ws(socket: WebSocket, room_state: Arc<Mutex<RoomState>>) {
                                 continue;
                             }
                             state.sent_poses.push((pid.clone(), v.clone()));
+                            info!(participant_id = %pid, stream_kind = "pose", "pose sent");
                             // broadcast to other connections
                             let pose_received = Message::Text(
                                 serde_json::json!({
