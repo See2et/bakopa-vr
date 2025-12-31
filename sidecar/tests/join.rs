@@ -2,6 +2,7 @@ use tokio::time::{timeout, Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use futures_util::StreamExt;
 use futures_util::SinkExt;
+use tokio::time::sleep;
 
 // Spec-ID: TC-013 (FR-001/FR-002/FR-004)
 // Join 前の SendPose は NotJoined として拒否されることを確認する
@@ -435,6 +436,108 @@ async fn pose_is_broadcast_to_other_participants() {
     assert!(res_a.is_err(), "A should not receive its own pose");
 }
 
+// Spec-ID: TC-005 (FR-004 boundary)
+// 1秒に21件送ると RateLimited が返り、超過分は記録されない
+#[tokio::test]
+async fn rate_limit_triggers_at_21_per_second() {
+    let token = "CORRECT_TOKEN_ABC";
+    unsafe { std::env::set_var("SIDECAR_TOKEN", token) };
+
+    let server = sidecar::run_for_tests("127.0.0.1:0")
+        .await
+        .expect("server start");
+    let ws_url = format!("ws://{}/sidecar", server.local_addr());
+
+    let (mut stream, _pid) = join_and_get_participant(&ws_url, token).await;
+
+    let pose_payload = serde_json::json!({
+        "type": "SendPose",
+        "head": {"position": {"x":1.0,"y":2.0,"z":3.0}, "rotation": {"x":0.0,"y":0.0,"z":0.0,"w":1.0}},
+        "hand_l": null,
+        "hand_r": null
+    })
+    .to_string();
+
+    // send 21 quickly
+    for _ in 0..21 {
+        stream
+            .send(tokio_tungstenite::tungstenite::Message::Text(pose_payload.clone()))
+            .await
+            .expect("send pose");
+    }
+
+    // expect RateLimited
+    let msg = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("recv timeout")
+        .expect("ws msg")
+        .expect("ok msg");
+    match msg {
+        tokio_tungstenite::tungstenite::Message::Text(body) => {
+            let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+            assert_eq!(v["type"], "RateLimited");
+            assert_eq!(v["kind"], "RateLimited");
+            assert_eq!(v["stream_kind"], "pose");
+        }
+        other => panic!("unexpected message: {other:?}"),
+    }
+
+    let poses = server.sent_poses().await;
+    assert_eq!(poses.len(), 20); // only 20 accepted
+}
+
+// Spec-ID: TC-006 (FR-002/FR-004 boundary)
+// レートリミット後、1秒待てば再び送れる
+#[tokio::test]
+async fn rate_limit_recovers_after_wait() {
+    let token = "CORRECT_TOKEN_ABC";
+    unsafe { std::env::set_var("SIDECAR_TOKEN", token) };
+
+    let server = sidecar::run_for_tests("127.0.0.1:0")
+        .await
+        .expect("server start");
+    let ws_url = format!("ws://{}/sidecar", server.local_addr());
+
+    let (mut stream, _pid) = join_and_get_participant(&ws_url, token).await;
+
+    let pose_payload = serde_json::json!({
+        "type": "SendPose",
+        "head": {"position": {"x":1.0,"y":2.0,"z":3.0}, "rotation": {"x":0.0,"y":0.0,"z":0.0,"w":1.0}},
+        "hand_l": null,
+        "hand_r": null
+    })
+    .to_string();
+
+    for _ in 0..21 {
+        stream
+            .send(tokio_tungstenite::tungstenite::Message::Text(pose_payload.clone()))
+            .await
+            .expect("send pose");
+    }
+    // consume RateLimited
+    let _ = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("recv timeout");
+
+    // wait for 1s window to slide
+    sleep(Duration::from_millis(1100)).await;
+
+    // send one more
+    stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(pose_payload.clone()))
+        .await
+        .expect("send pose again");
+
+    // Expect no RateLimited; if any message arrives, ensure it's not RateLimited
+    let res = tokio::time::timeout(Duration::from_millis(300), stream.next()).await;
+    if let Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(body)))) = res {
+        let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+        assert_ne!(v["type"], "RateLimited");
+    }
+
+    let poses = server.sent_poses().await;
+    assert_eq!(poses.len(), 21); // 20 accepted + 1 after recovery
+}
 async fn join_and_get_participant(
     ws_url: &str,
     token: &str,

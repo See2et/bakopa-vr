@@ -19,6 +19,7 @@ use anyhow::{Context, Result};
 enum ErrorKind {
     NotJoined,
     InvalidPayload,
+    RateLimited,
 }
 
 #[derive(Clone)]
@@ -33,6 +34,7 @@ struct RoomState {
     participants: Vec<String>,
     sent_poses: Vec<(String, serde_json::Value)>,
     connections: Vec<ConnectionEntry>,
+    pose_events: Vec<std::time::Instant>,
 }
 
 #[derive(Clone)]
@@ -260,6 +262,10 @@ async fn handle_ws(socket: WebSocket, room_state: Arc<Mutex<RoomState>>) {
                         }
                         if let Some(pid) = my_participant_id.clone() {
                             let mut state = room_state.lock().await;
+                            if is_rate_limited(&mut state.pose_events) {
+                                send_error(&tx, ErrorKind::RateLimited);
+                                continue;
+                            }
                             state.sent_poses.push((pid.clone(), v.clone()));
                             // broadcast to other connections
                             let pose_received = Message::Text(
@@ -299,11 +305,13 @@ fn send_error(tx: &UnboundedSender<Message>, kind: ErrorKind) {
     let kind_str = match kind {
         ErrorKind::NotJoined => "NotJoined",
         ErrorKind::InvalidPayload => "InvalidPayload",
+        ErrorKind::RateLimited => "RateLimited",
     };
     let _ = tx.send(Message::Text(
         serde_json::json!({
-            "type": "Error",
+            "type": if kind == ErrorKind::RateLimited { "RateLimited" } else { "Error" },
             "kind": kind_str,
+            "stream_kind": if kind == ErrorKind::RateLimited { Some("pose") } else { None },
             "message": kind_str
         })
         .to_string(),
@@ -333,4 +341,16 @@ fn is_pose_valid(v: &serde_json::Value) -> bool {
     let pos_ok = head.get("position").is_some_and(check_vec);
     let rot_ok = head.get("rotation").is_some_and(check_rot);
     pos_ok && rot_ok
+}
+
+fn is_rate_limited(events: &mut Vec<std::time::Instant>) -> bool {
+    let now = std::time::Instant::now();
+    // keep only last 1s
+    events.retain(|t| now.duration_since(*t) <= std::time::Duration::from_secs(1));
+    if events.len() >= 20 {
+        true
+    } else {
+        events.push(now);
+        false
+    }
 }
