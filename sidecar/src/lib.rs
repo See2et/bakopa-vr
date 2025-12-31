@@ -6,13 +6,20 @@ use axum::routing::get;
 use axum::{Router, serve};
 use subtle::ConstantTimeEq;
 use tokio::net::TcpListener;
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex, mpsc::{UnboundedSender, unbounded_channel}};
 use tokio::task::JoinHandle;
 use std::sync::Arc;
 use tracing::instrument;
 use uuid::Uuid;
+use futures_util::{StreamExt, SinkExt};
 
 use anyhow::{Context, Result};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ErrorKind {
+    NotJoined,
+    InvalidPayload,
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -24,17 +31,31 @@ struct AppState {
 struct RoomState {
     room_id: Option<String>,
     participants: Vec<String>,
+    sent_poses: Vec<(String, serde_json::Value)>,
+    connections: Vec<ConnectionEntry>,
+}
+
+#[derive(Clone)]
+struct ConnectionEntry {
+    conn_id: String,
+    participant_id: Option<String>,
+    tx: UnboundedSender<Message>,
 }
 
 pub struct TestServerHandle {
     addr: std::net::SocketAddr,
     shutdown_tx: Option<oneshot::Sender<()>>,
     join_handle: Option<JoinHandle<()>>,
+    room_state: Arc<Mutex<RoomState>>,
 }
 
 impl TestServerHandle {
     pub fn local_addr(&self) -> std::net::SocketAddr {
         self.addr
+    }
+
+    pub async fn sent_poses(&self) -> Vec<(String, serde_json::Value)> {
+        self.room_state.lock().await.sent_poses.clone()
     }
 
     pub async fn shutdown(mut self) {
@@ -73,7 +94,7 @@ pub async fn run_for_tests(listen_addr: &str) -> Result<TestServerHandle> {
 
     let router = Router::new()
         .route("/sidecar", get(ws_handler))
-        .with_state(state);
+        .with_state(state.clone());
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -90,6 +111,7 @@ pub async fn run_for_tests(listen_addr: &str) -> Result<TestServerHandle> {
         addr,
         shutdown_tx: Some(shutdown_tx),
         join_handle: Some(join_handle),
+        room_state: state.room_state.clone(),
     })
 }
 
@@ -142,88 +164,173 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.ct_eq(b).into()
 }
 
-async fn handle_ws(mut socket: WebSocket, room_state: Arc<Mutex<RoomState>>) {
+async fn handle_ws(socket: WebSocket, room_state: Arc<Mutex<RoomState>>) {
+    let conn_id = Uuid::new_v4().to_string();
+    let (tx, mut rx) = unbounded_channel::<Message>();
+
+    {
+        let mut state = room_state.lock().await;
+        state.connections.push(ConnectionEntry {
+            conn_id: conn_id.clone(),
+            participant_id: None,
+            tx: tx.clone(),
+        });
+    }
+
+    let (mut ws_tx, mut ws_rx) = socket.split();
+    let writer = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if ws_tx.send(msg).await.is_err() {
+                break;
+            }
+        }
+    });
+
     let mut joined = false;
-    let mut _my_room_id: Option<String> = None;
-    let mut _my_participant_id: Option<String> = None;
-    while let Some(Ok(msg)) = socket.recv().await {
+    let mut my_participant_id: Option<String> = None;
+
+    while let Some(Ok(msg)) = ws_rx.next().await {
         match msg {
             Message::Ping(data) => {
-                if socket.send(Message::Pong(data)).await.is_err() {
-                    break;
-                }
+                let _ = tx.send(Message::Pong(data));
             }
             Message::Close(frame) => {
-                let _ = socket.send(Message::Close(frame)).await;
+                let _ = tx.send(Message::Close(frame));
                 break;
             }
             Message::Text(body) => {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
-                    let msg_type = v
-                        .get("type")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("?");
-                    match msg_type {
-                        "Join" => {
-                            let requested_room = v
-                                .get("room_id")
-                                .and_then(|r| r.as_str())
-                                .map(|s| s.to_string());
+                let v = match serde_json::from_str::<serde_json::Value>(&body) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        send_error(&tx, ErrorKind::InvalidPayload);
+                        continue;
+                    }
+                };
 
-                            let mut room_state = room_state.lock().await;
-                            let room_id = if let Some(existing) = &room_state.room_id {
-                                existing.clone()
-                            } else {
-                                let new_id = requested_room
-                                    .clone()
-                                    .unwrap_or_else(|| Uuid::new_v4().to_string());
-                                room_state.room_id = Some(new_id.clone());
-                                new_id
-                            };
+                let msg_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("?");
+                match msg_type {
+                    "Join" => {
+                        let requested_room = v
+                            .get("room_id")
+                            .and_then(|r| r.as_str())
+                            .map(|s| s.to_string());
 
-                            if let Some(req) = requested_room.as_ref().filter(|r| *r != &room_id) {
-                                tracing::debug!(requested = %req, current = %room_id, "room_id mismatch ignored in minimal impl");
-                            }
+                        let mut state = room_state.lock().await;
+                        let room_id = if let Some(existing) = &state.room_id {
+                            existing.clone()
+                        } else {
+                            let new_id = requested_room
+                                .clone()
+                                .unwrap_or_else(|| Uuid::new_v4().to_string());
+                            state.room_id = Some(new_id.clone());
+                            new_id
+                        };
 
-                            let participant_id = Uuid::new_v4().to_string();
-                            if !room_state.participants.contains(&participant_id) {
-                                room_state.participants.push(participant_id.clone());
-                            }
-                            joined = true;
-                            _my_room_id = Some(room_id.clone());
-                            _my_participant_id = Some(participant_id.clone());
-                            let list = room_state.participants.clone();
-                            let _ = socket
-                                .send(Message::Text(
-                                    serde_json::json!({
-                                        "type": "SelfJoined",
-                                        "room_id": room_id,
-                                        "participant_id": participant_id,
-                                        "participants": list
-                                    })
-                                    .to_string(),
-                                ))
-                                .await;
+                        if let Some(req) = requested_room.as_ref().filter(|r| *r != &room_id) {
+                            tracing::debug!(requested = %req, current = %room_id, "room_id mismatch ignored in minimal impl");
                         }
-                        "SendPose" if !joined => {
-                            let _ = socket
-                                .send(Message::Text(
-                                    serde_json::json!({
-                                        "type": "Error",
-                                        "kind": "NotJoined",
-                                        "message": "join required"
-                                    })
-                                    .to_string(),
-                                ))
-                                .await;
+
+                        let participant_id = Uuid::new_v4().to_string();
+                        if !state.participants.contains(&participant_id) {
+                            state.participants.push(participant_id.clone());
                         }
-                        _ => {}
+                        if let Some(conn) = state.connections.iter_mut().find(|c| c.conn_id == conn_id) {
+                            conn.participant_id = Some(participant_id.clone());
+                        }
+                        joined = true;
+                        my_participant_id = Some(participant_id.clone());
+                        let list = state.participants.clone();
+                        let _ = tx.send(Message::Text(
+                            serde_json::json!({
+                                "type": "SelfJoined",
+                                "room_id": room_id,
+                                "participant_id": participant_id,
+                                "participants": list
+                            })
+                            .to_string(),
+                        ));
+                    }
+                    "SendPose" if !joined => {
+                        send_error(&tx, ErrorKind::NotJoined);
+                    }
+                    "SendPose" => {
+                        if !is_pose_valid(&v) {
+                            send_error(&tx, ErrorKind::InvalidPayload);
+                            continue;
+                        }
+                        if let Some(pid) = my_participant_id.clone() {
+                            let mut state = room_state.lock().await;
+                            state.sent_poses.push((pid.clone(), v.clone()));
+                            // broadcast to other connections
+                            let pose_received = Message::Text(
+                                serde_json::json!({
+                                    "type": "PoseReceived",
+                                    "from": pid,
+                                    "pose": v
+                                })
+                                .to_string(),
+                            );
+                            for conn in state.connections.iter() {
+                                if conn.conn_id != conn_id {
+                                    let _ = conn.tx.send(pose_received.clone());
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        send_error(&tx, ErrorKind::InvalidPayload);
                     }
                 }
             }
             _ => {
-                // 受信したメッセージは破棄
+                // ignore
             }
         }
     }
+
+    {
+        let mut state = room_state.lock().await;
+        state.connections.retain(|c| c.conn_id != conn_id);
+    }
+    writer.abort();
+}
+
+fn send_error(tx: &UnboundedSender<Message>, kind: ErrorKind) {
+    let kind_str = match kind {
+        ErrorKind::NotJoined => "NotJoined",
+        ErrorKind::InvalidPayload => "InvalidPayload",
+    };
+    let _ = tx.send(Message::Text(
+        serde_json::json!({
+            "type": "Error",
+            "kind": kind_str,
+            "message": kind_str
+        })
+        .to_string(),
+    ));
+}
+
+fn is_pose_valid(v: &serde_json::Value) -> bool {
+    let check_vec = |vec: &serde_json::Value| {
+        vec.as_object().is_some_and(|m| {
+            ["x", "y", "z"]
+                .iter()
+                .all(|k| m.get(*k).and_then(|n| n.as_f64()).map(|f| f.is_finite()).unwrap_or(false))
+        })
+    };
+    let check_rot = |rot: &serde_json::Value| {
+        rot.as_object().is_some_and(|m| {
+            ["x", "y", "z", "w"]
+                .iter()
+                .all(|k| m.get(*k).and_then(|n| n.as_f64()).map(|f| f.is_finite()).unwrap_or(false))
+        })
+    };
+
+    let head = match v.get("head") {
+        Some(h) => h,
+        None => return false,
+    };
+    let pos_ok = head.get("position").is_some_and(check_vec);
+    let rot_ok = head.get("rotation").is_some_and(check_rot);
+    pos_ok && rot_ok
 }

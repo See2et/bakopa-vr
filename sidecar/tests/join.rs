@@ -189,3 +189,288 @@ async fn join_existing_room_returns_participants() {
         other => panic!("unexpected message: {other:?}"),
     }
 }
+
+// Spec-ID: TC-003 (FR-002)
+// Join 後の SendPose がサーバ側に送信記録される
+#[tokio::test]
+async fn send_pose_after_join_records_payload() {
+    let token = "CORRECT_TOKEN_ABC";
+    unsafe { std::env::set_var("SIDECAR_TOKEN", token) };
+
+    let server = sidecar::run_for_tests("127.0.0.1:0")
+        .await
+        .expect("server start");
+    let ws_url = format!("ws://{}/sidecar", server.local_addr());
+
+    let mut req = ws_url.clone().into_client_request().expect("req");
+    req.headers_mut()
+        .insert(http::header::AUTHORIZATION, format!("Bearer {}", token).parse().unwrap());
+    let (mut stream, _resp) = tokio_tungstenite::connect_async(req)
+        .await
+        .expect("ws connect");
+
+    // Join
+    let join_payload = serde_json::json!({
+        "type": "Join",
+        "room_id": null,
+        "bloom_ws_url": "ws://dummy",
+        "ice_servers": []
+    })
+    .to_string();
+    stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(join_payload))
+        .await
+        .expect("send join");
+    let _ = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("recv join")
+        .expect("ws msg")
+        .expect("ok msg");
+
+    // SendPose
+    let pose_payload = serde_json::json!({
+        "type": "SendPose",
+        "head": {"position": {"x":1.0,"y":2.0,"z":3.0}, "rotation": {"x":0.0,"y":0.0,"z":0.0,"w":1.0}},
+        "hand_l": null,
+        "hand_r": null
+    })
+    .to_string();
+    stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(pose_payload))
+        .await
+        .expect("send pose");
+
+    // Give server a moment to record
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let poses = server.sent_poses().await;
+    assert_eq!(poses.len(), 1);
+    let (_from, payload) = &poses[0];
+    assert_eq!(payload["type"], "SendPose");
+    assert_eq!(payload["head"]["position"]["x"], 1.0);
+}
+
+// Spec-ID: TC-014 (FR-004/FR-002 入力検証)
+// Pose に NaN が含まれると InvalidPayload となり記録されない
+#[tokio::test]
+async fn send_pose_with_nan_rejected_as_invalid_payload() {
+    let token = "CORRECT_TOKEN_ABC";
+    unsafe { std::env::set_var("SIDECAR_TOKEN", token) };
+
+    let server = sidecar::run_for_tests("127.0.0.1:0")
+        .await
+        .expect("server start");
+    let ws_url = format!("ws://{}/sidecar", server.local_addr());
+
+    let mut req = ws_url.clone().into_client_request().expect("req");
+    req.headers_mut()
+        .insert(http::header::AUTHORIZATION, format!("Bearer {}", token).parse().unwrap());
+    let (mut stream, _resp) = tokio_tungstenite::connect_async(req)
+        .await
+        .expect("ws connect");
+
+    // Join
+    let join_payload = serde_json::json!({
+        "type": "Join",
+        "room_id": null,
+        "bloom_ws_url": "ws://dummy",
+        "ice_servers": []
+    })
+    .to_string();
+    stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(join_payload))
+        .await
+        .expect("send join");
+    let _ = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("recv join")
+        .expect("ws msg")
+        .expect("ok msg");
+
+    // Invalid Pose: NaN in position.x (JSON literal NaN is invalid, so we send as string and expect InvalidPayload)
+    let invalid_payload = r#"{
+        "type": "SendPose",
+        "head": {"position": {"x": NaN, "y":0.0, "z":0.0}, "rotation": {"x":0.0,"y":0.0,"z":0.0,"w":1.0}},
+        "hand_l": null,
+        "hand_r": null
+    }"#;
+
+    stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(invalid_payload.to_string()))
+        .await
+        .expect("send invalid pose");
+
+    let msg = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("recv timeout")
+        .expect("ws msg")
+        .expect("ok msg");
+
+    match msg {
+        tokio_tungstenite::tungstenite::Message::Text(body) => {
+            let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+            assert_eq!(v["type"], "Error");
+            assert_eq!(v["kind"], "InvalidPayload");
+        }
+        other => panic!("unexpected message: {other:?}"),
+    }
+
+    // 確認: 記録されない
+    let poses = server.sent_poses().await;
+    assert_eq!(poses.len(), 0);
+}
+
+// Spec-ID: TC-007 (FR-004)
+// 未知kindや必須フィールド欠損は InvalidPayload となり記録されない
+#[tokio::test]
+async fn unknown_message_kind_is_invalid_payload() {
+    let token = "CORRECT_TOKEN_ABC";
+    unsafe { std::env::set_var("SIDECAR_TOKEN", token) };
+
+    let server = sidecar::run_for_tests("127.0.0.1:0")
+        .await
+        .expect("server start");
+    let ws_url = format!("ws://{}/sidecar", server.local_addr());
+
+    let mut req = ws_url.clone().into_client_request().expect("req");
+    req.headers_mut()
+        .insert(http::header::AUTHORIZATION, format!("Bearer {}", token).parse().unwrap());
+    let (mut stream, _resp) = tokio_tungstenite::connect_async(req)
+        .await
+        .expect("ws connect");
+
+    // Join
+    let join_payload = serde_json::json!({
+        "type": "Join",
+        "room_id": null,
+        "bloom_ws_url": "ws://dummy",
+        "ice_servers": []
+    })
+    .to_string();
+    stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(join_payload))
+        .await
+        .expect("send join");
+    let _ = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("recv join")
+        .expect("ws msg")
+        .expect("ok msg");
+
+    // Unknown message kind
+    let unknown = serde_json::json!({ "type": "FooBar" }).to_string();
+    stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(unknown))
+        .await
+        .expect("send unknown");
+
+    let msg = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("recv timeout")
+        .expect("ws msg")
+        .expect("ok msg");
+
+    match msg {
+        tokio_tungstenite::tungstenite::Message::Text(body) => {
+            let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+            assert_eq!(v["type"], "Error");
+            assert_eq!(v["kind"], "InvalidPayload");
+        }
+        other => panic!("unexpected message: {other:?}"),
+    }
+
+    // 記録されない
+    let poses = server.sent_poses().await;
+    assert!(poses.is_empty());
+}
+
+// Spec-ID: TC-004 (FR-003)
+// 2クライアントで、AのSendPoseがBにPoseReceivedとして届く（自分自身には届かない）
+#[tokio::test]
+async fn pose_is_broadcast_to_other_participants() {
+    let token = "CORRECT_TOKEN_ABC";
+    unsafe { std::env::set_var("SIDECAR_TOKEN", token) };
+
+    let server = sidecar::run_for_tests("127.0.0.1:0")
+        .await
+        .expect("server start");
+    let ws_url = format!("ws://{}/sidecar", server.local_addr());
+
+    // Client A join
+    let (mut stream_a, participant_a) = join_and_get_participant(&ws_url, token).await;
+    // Client B join
+    let (mut stream_b, participant_b) = join_and_get_participant(&ws_url, token).await;
+    assert_ne!(participant_a, participant_b);
+
+    // A sends pose
+    let pose_payload = serde_json::json!({
+        "type": "SendPose",
+        "head": {"position": {"x":1.0,"y":2.0,"z":3.0}, "rotation": {"x":0.0,"y":0.0,"z":0.0,"w":1.0}},
+        "hand_l": null,
+        "hand_r": null
+    })
+    .to_string();
+    stream_a
+        .send(tokio_tungstenite::tungstenite::Message::Text(pose_payload))
+        .await
+        .expect("send pose");
+
+    // B should receive PoseReceived
+    let msg_b = tokio::time::timeout(Duration::from_secs(2), stream_b.next())
+        .await
+        .expect("recv B timeout")
+        .expect("ws msg B")
+        .expect("ok msg B");
+    match msg_b {
+        tokio_tungstenite::tungstenite::Message::Text(body) => {
+            let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+            assert_eq!(v["type"], "PoseReceived");
+            assert_eq!(v["from"], participant_a);
+            assert_eq!(v["pose"]["head"]["position"]["x"], 1.0);
+        }
+        other => panic!("unexpected message to B: {other:?}"),
+    }
+
+    // A should NOT receive its own PoseReceived within short timeout
+    let res_a = tokio::time::timeout(Duration::from_millis(200), stream_a.next()).await;
+    assert!(res_a.is_err(), "A should not receive its own pose");
+}
+
+async fn join_and_get_participant(
+    ws_url: &str,
+    token: &str,
+) -> (
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    String,
+) {
+    let mut req = ws_url.into_client_request().expect("req");
+    req.headers_mut()
+        .insert(http::header::AUTHORIZATION, format!("Bearer {}", token).parse().unwrap());
+    let (mut stream, _resp) = tokio_tungstenite::connect_async(req)
+        .await
+        .expect("ws connect");
+
+    let join_payload = serde_json::json!({
+        "type": "Join",
+        "room_id": null,
+        "bloom_ws_url": "ws://dummy",
+        "ice_servers": []
+    })
+    .to_string();
+    stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(join_payload))
+        .await
+        .expect("send join");
+    let msg = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("recv join")
+        .expect("ws msg")
+        .expect("ok msg");
+    match msg {
+        tokio_tungstenite::tungstenite::Message::Text(body) => {
+            let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+            let pid = v["participant_id"].as_str().unwrap().to_string();
+            (stream, pid)
+        }
+        other => panic!("unexpected join response: {other:?}"),
+    }
+}
