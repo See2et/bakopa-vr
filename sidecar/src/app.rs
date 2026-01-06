@@ -1,12 +1,14 @@
 use anyhow::{anyhow, Result};
 use axum::{
     extract::{State, WebSocketUpgrade},
-    http::{header::AUTHORIZATION, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Router,
 };
 use std::sync::Arc;
+
+use crate::auth::{check_bearer_token, check_origin, AuthError};
 
 #[derive(Clone)]
 struct AppState {
@@ -45,34 +47,12 @@ async fn ws_upgrade(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // Reject non-null Origin per spec (TC-000f); allow missing/null.
-    if let Some(origin) = headers.get(axum::http::header::ORIGIN).and_then(|v| v.to_str().ok()) {
-        if origin != "null" {
-            return Err(StatusCode::FORBIDDEN);
-        }
-    }
+    check_origin(&headers)
+        .and_then(|_| check_bearer_token(&headers, &state.token))
+        .map_err(AuthError::status_code)?;
 
-    let auth_header = headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok());
-    let Some(bearer) = auth_header else {
-        return Err(StatusCode::UNAUTHORIZED);
-    };
-
-    let Some(provided) = bearer.strip_prefix("Bearer ") else {
-        return Err(StatusCode::UNAUTHORIZED);
-    };
-
-    if subtle_equals(provided.as_bytes(), state.token.as_bytes()) {
-        Ok(ws.on_upgrade(|socket| async move {
-            // Placeholder: drop immediately until real session handling is added.
-            drop(socket);
-        }))
-    } else {
-        Err(StatusCode::UNAUTHORIZED)
-    }
-}
-
-/// Constant-time comparison to avoid timing leaks.
-fn subtle_equals(a: &[u8], b: &[u8]) -> bool {
-    use subtle::ConstantTimeEq;
-    a.ct_eq(b).into()
+    Ok(ws.on_upgrade(|socket| async move {
+        // Placeholder: drop immediately until real session handling is added.
+        drop(socket);
+    }))
 }
