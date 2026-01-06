@@ -199,8 +199,20 @@ async fn join_existing_room_returns_participants() {
         Ok(other) => panic!("unexpected message: {:?}", other),
         Err(err) => panic!("ws error: {err:?}"),
     };
+
+    let value: serde_json::Value = serde_json::from_str(&text).expect("parse selfjoined");
+    let msg_type = value.get("type").and_then(|v| v.as_str());
+    assert_eq!(msg_type, Some("SelfJoined"));
+
+    let participants = value
+        .get("participants")
+        .and_then(|v| v.as_array())
+        .expect("participants array");
+    let contains_x = participants
+        .iter()
+        .any(|v| v.as_str() == Some(&participant_x));
     assert!(
-        text.contains(&participant_x),
+        contains_x,
         "expected participants to include {participant_x}, got: {text}"
     );
 }
