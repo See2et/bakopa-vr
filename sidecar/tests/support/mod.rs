@@ -3,6 +3,8 @@ use axum::Router;
 use std::net::SocketAddr;
 use tokio::{net::TcpListener, task::JoinHandle};
 
+pub mod bloom;
+
 /// A spawned axum test server that lives for the duration of the handle.
 pub struct TestServer {
     pub addr: SocketAddr,

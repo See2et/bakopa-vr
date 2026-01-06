@@ -31,6 +31,39 @@ fn build_ws_request(url: &Url) -> Request {
         .expect("request")
 }
 
+
+async fn recv_room_created(
+    ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+) -> (String, String) {
+    let msg = timeout(Duration::from_millis(500), ws.next())
+        .await
+        .expect("timeout waiting for RoomCreated")
+        .expect("stream closed");
+    let text = match msg {
+        Ok(Message::Text(t)) => t,
+        Ok(other) => panic!("unexpected message: {:?}", other),
+        Err(err) => panic!("ws error: {err:?}"),
+    };
+    let value: serde_json::Value = serde_json::from_str(&text).expect("parse json");
+    let msg_type = value.get("type").and_then(|v| v.as_str());
+    if msg_type != Some("RoomCreated") {
+        panic!("expected RoomCreated, got: {text}");
+    }
+    let room_id = value
+        .get("room_id")
+        .and_then(|v| v.as_str())
+        .expect("room_id")
+        .to_string();
+    let self_id = value
+        .get("self_id")
+        .and_then(|v| v.as_str())
+        .expect("self_id")
+        .to_string();
+    (room_id, self_id)
+}
+
 #[tokio::test]
 async fn send_pose_before_join_returns_not_joined() {
     let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
@@ -78,6 +111,11 @@ async fn join_without_room_creates_room_and_selfjoined() {
         .expect("spawn server");
     let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
 
+    let bloom = support::bloom::spawn_bloom_ws()
+        .await
+        .expect("spawn bloom ws");
+    let bloom_ws_url = bloom.ws_url();
+
     let mut request = build_ws_request(&url);
     request
         .headers_mut()
@@ -87,8 +125,10 @@ async fn join_without_room_creates_room_and_selfjoined() {
         .await
         .expect("handshake should succeed");
 
-    let join_payload =
-        r#"{"type":"Join","room_id":null,"bloom_ws_url":"ws://127.0.0.1:12345/ws","ice_servers":[]}"#;
+    let join_payload = format!(
+        "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+        bloom_ws_url
+    );
     ws.send(Message::Text(join_payload.into()))
         .await
         .expect("send join");
@@ -114,6 +154,22 @@ async fn join_without_room_creates_room_and_selfjoined() {
 #[tokio::test]
 async fn join_existing_room_returns_participants() {
     let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+
+    let bloom = support::bloom::spawn_bloom_ws()
+        .await
+        .expect("spawn bloom ws");
+    let bloom_ws_url = bloom.ws_url();
+
+    // Participant X: CreateRoom
+    let (mut ws_x, _resp_x) = connect_async(&bloom_ws_url)
+        .await
+        .expect("connect bloom ws");
+    ws_x
+        .send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+        .await
+        .expect("send create room");
+    let (room_id, participant_x) = recv_room_created(&mut ws_x).await;
+
     let app = sidecar::app::App::new().await.expect("app new");
     let server = support::spawn_axum(app.router())
         .await
@@ -129,8 +185,10 @@ async fn join_existing_room_returns_participants() {
         .await
         .expect("handshake should succeed");
 
-    let join_payload =
-        r#"{"type":"Join","room_id":"room-1","bloom_ws_url":"ws://127.0.0.1:12345/ws","ice_servers":[]}"#;
+    let join_payload = format!(
+        "{{\"type\":\"Join\",\"room_id\":\"{}\",\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+        room_id, bloom_ws_url
+    );
     ws.send(Message::Text(join_payload.into()))
         .await
         .expect("send join");
@@ -145,7 +203,7 @@ async fn join_existing_room_returns_participants() {
         Err(err) => panic!("ws error: {err:?}"),
     };
     assert!(
-        text.contains("participant_x"),
-        "expected participants to include participant_x, got: {text}"
+        text.contains(&participant_x),
+        "expected participants to include {participant_x}, got: {text}"
     );
 }
