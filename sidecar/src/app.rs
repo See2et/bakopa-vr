@@ -17,11 +17,11 @@ use tokio::time::{interval, Duration};
 
 use crate::auth::{check_bearer_token, check_origin, AuthError};
 use crate::test_support;
-use syncer::{
-    BasicSyncer, Pose, PoseTransform, StreamKind, Syncer, SyncerEvent, SyncerRequest, Transport,
-    TransportPayload, TracingContext,
-};
 use syncer::messages::SyncMessageEnvelope;
+use syncer::{
+    BasicSyncer, Pose, PoseTransform, StreamKind, Syncer, SyncerEvent, SyncerRequest,
+    TracingContext, Transport, TransportPayload,
+};
 
 #[derive(Default)]
 struct SyncerBus {
@@ -55,7 +55,12 @@ impl Transport for BusTransport {
         }
     }
 
-    fn send(&mut self, to: ParticipantId, payload: TransportPayload, _params: syncer::TransportSendParams) {
+    fn send(
+        &mut self,
+        to: ParticipantId,
+        payload: TransportPayload,
+        _params: syncer::TransportSendParams,
+    ) {
         if !self.registered {
             return;
         }
@@ -67,12 +72,12 @@ impl Transport for BusTransport {
         };
         if let Ok(mut bus) = self.bus.lock() {
             if is_control {
-                let recipients: Vec<ParticipantId> = bus
-                    .participants
-                    .iter()
-                    .cloned()
-                    .filter(|p| p != &self.me)
-                    .collect();
+            let recipients: Vec<ParticipantId> = bus
+                .participants
+                .iter()
+                .filter(|&p| p != &self.me)
+                .cloned()
+                .collect();
                 for recipient in recipients {
                     bus.messages
                         .push((recipient, self.me.clone(), payload.clone()));
@@ -179,12 +184,11 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                         let value = match serde_json::from_str::<serde_json::Value>(&text) {
                             Ok(v) => v,
                             Err(_) => {
-                                let err = serde_json::json!({
-                                    "type": "Error",
-                                    "kind": "InvalidPayload",
-                                    "message": "invalid JSON payload",
-                                });
-                                let _ = socket.send(Message::Text(err.to_string())).await;
+                                let _ = socket
+                                    .send(Message::Text(invalid_payload_message(
+                                        "invalid JSON payload",
+                                    )))
+                                    .await;
                                 continue;
                             }
                         };
@@ -262,12 +266,11 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                     (syncer.as_mut(), room_id.as_ref(), participant_id.as_ref())
                                 {
                                     let Some(pose) = parse_pose_message(&value) else {
-                                        let err = serde_json::json!({
-                                            "type": "Error",
-                                            "kind": "InvalidPayload",
-                                            "message": "invalid SendPose payload",
-                                        });
-                                        let _ = socket.send(Message::Text(err.to_string())).await;
+                                        let _ = socket
+                                            .send(Message::Text(invalid_payload_message(
+                                                "invalid SendPose payload",
+                                            )))
+                                            .await;
                                         continue;
                                     };
                                     let ctx = TracingContext {
@@ -288,11 +291,11 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                                 }
                                             }
                                             SyncerEvent::RateLimited { stream_kind } => {
-                                                let payload = serde_json::json!({
-                                                    "type": "RateLimited",
-                                                    "stream_kind": stream_kind.as_str(),
-                                                });
-                                                let _ = socket.send(Message::Text(payload.to_string())).await;
+                                                let _ = socket
+                                                    .send(Message::Text(rate_limited_payload(
+                                                        stream_kind,
+                                                    )))
+                                                    .await;
                                             }
                                             _ => {}
                                         }
@@ -314,11 +317,9 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                 }
                             }
                             SyncerEvent::RateLimited { stream_kind } => {
-                                let payload = serde_json::json!({
-                                    "type": "RateLimited",
-                                    "stream_kind": stream_kind.as_str(),
-                                });
-                                let _ = socket.send(Message::Text(payload.to_string())).await;
+                                let _ = socket
+                                    .send(Message::Text(rate_limited_payload(stream_kind)))
+                                    .await;
                             }
                             _ => {}
                         }
@@ -383,6 +384,23 @@ fn pose_received_payload(from: &ParticipantId, pose: &Pose) -> Option<String> {
         }
     });
     Some(payload.to_string())
+}
+
+fn rate_limited_payload(stream_kind: StreamKind) -> String {
+    serde_json::json!({
+        "type": "RateLimited",
+        "stream_kind": stream_kind.as_str(),
+    })
+    .to_string()
+}
+
+fn invalid_payload_message(message: &str) -> String {
+    serde_json::json!({
+        "type": "Error",
+        "kind": "InvalidPayload",
+        "message": message,
+    })
+    .to_string()
 }
 
 fn pose_transform_to_json(pose: &PoseTransform) -> serde_json::Value {
