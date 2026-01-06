@@ -1,4 +1,4 @@
-use crate::bloom_client::join_via_bloom;
+use crate::bloom_client::{join_via_bloom_session, BloomWs};
 use anyhow::{anyhow, Result};
 use axum::{
     extract::ws::{Message, WebSocket},
@@ -9,7 +9,7 @@ use axum::{
     Router,
 };
 use bloom_core::{ParticipantId, RoomId};
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -18,6 +18,7 @@ use tokio::time::{interval, Duration};
 use crate::auth::{check_bearer_token, check_origin, AuthError};
 use crate::test_support;
 use syncer::messages::SyncMessageEnvelope;
+use tokio_tungstenite::tungstenite::Message as WsMessage;
 use syncer::{
     BasicSyncer, Pose, PoseTransform, StreamKind, Syncer, SyncerEvent, SyncerRequest,
     TracingContext, Transport, TransportPayload,
@@ -173,6 +174,7 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
     let mut syncer: Option<BasicSyncer<BusTransport>> = None;
     let mut room_id: Option<RoomId> = None;
     let mut participant_id: Option<ParticipantId> = None;
+    let mut bloom_ws: Option<BloomWs> = None;
     let mut poll_tick = interval(Duration::from_millis(10));
 
     loop {
@@ -209,20 +211,23 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                     .and_then(|v| v.as_str())
                                     .map(|s| s.to_string());
 
-                                let result = if let Some(url) = bloom_ws_url {
-                                    join_via_bloom(&url, room_id_opt).await
-                                } else {
-                                    // Fallback: local generation (should be replaced by Bloom WS in tests)
-                                    let rid =
-                                        room_id_opt.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                                    let pid = uuid::Uuid::new_v4().to_string();
-                                    Ok((rid, pid.clone(), vec![pid]))
-                                };
+                        let result = if let Some(url) = bloom_ws_url {
+                            join_via_bloom_session(&url, room_id_opt)
+                                .await
+                                .map(|(rid, pid, ps, ws)| (rid, pid, ps, Some(ws)))
+                        } else {
+                            // Fallback: local generation (should be replaced by Bloom WS in tests)
+                            let rid =
+                                room_id_opt.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                            let pid = uuid::Uuid::new_v4().to_string();
+                            Ok((rid, pid.clone(), vec![pid], None))
+                        };
 
-                                match result {
-                                    Ok((rid, pid, participants)) => {
-                                        joined = true;
-                                        if let (Ok(rid_parsed), Ok(pid_parsed)) = (
+                        match result {
+                            Ok((rid, pid, participants, ws)) => {
+                                joined = true;
+                                bloom_ws = ws;
+                                if let (Ok(rid_parsed), Ok(pid_parsed)) = (
                                             RoomId::from_str(&rid),
                                             ParticipantId::from_str(&pid),
                                         ) {
@@ -327,6 +332,15 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                 }
             }
         }
+    }
+
+    if joined {
+        if let Some(mut ws) = bloom_ws {
+            let _ = ws.send(WsMessage::Text(r#"{"type":"LeaveRoom"}"#.into())).await;
+        }
+        syncer = None;
+        room_id = None;
+        participant_id = None;
     }
 }
 

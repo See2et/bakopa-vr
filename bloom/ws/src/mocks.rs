@@ -1,5 +1,7 @@
 use bloom_api::{ErrorCode, RelayIce, RelaySdp};
 use bloom_core::{CreateRoomResult, JoinRoomError, ParticipantId, RoomId};
+use std::sync::Arc;
+use tokio::sync::Notify;
 
 use crate::core_api::{CoreApi, RelayAction};
 
@@ -13,6 +15,7 @@ pub struct MockCore {
     pub join_room_calls: Vec<(RoomId, ParticipantId)>,
     pub leave_room_result: Option<Vec<ParticipantId>>,
     pub leave_room_calls: Vec<(RoomId, ParticipantId)>,
+    pub leave_room_notify: Option<Arc<Notify>>,
     pub relay_offer_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelaySdp)>,
     pub relay_offer_result: Option<Result<RelayAction, ErrorCode>>,
     pub relay_answer_calls: Vec<(RoomId, ParticipantId, ParticipantId, RelaySdp)>,
@@ -31,6 +34,7 @@ impl MockCore {
             join_room_calls: Vec::new(),
             leave_room_result: None,
             leave_room_calls: Vec::new(),
+            leave_room_notify: None,
             relay_offer_calls: Vec::new(),
             relay_offer_result: None,
             relay_answer_calls: Vec::new(),
@@ -51,6 +55,11 @@ impl MockCore {
 
     pub fn with_leave_result(mut self, result: Option<Vec<ParticipantId>>) -> Self {
         self.leave_room_result = result;
+        self
+    }
+
+    pub fn with_leave_notify(mut self, notify: Arc<Notify>) -> Self {
+        self.leave_room_notify = Some(notify);
         self
     }
 
@@ -117,6 +126,9 @@ impl CoreApi for MockCore {
     ) -> Option<Vec<ParticipantId>> {
         self.leave_room_calls
             .push((room_id.clone(), participant.clone()));
+        if let Some(notify) = &self.leave_room_notify {
+            notify.notify_waiters();
+        }
         self.leave_room_result.clone()
     }
 

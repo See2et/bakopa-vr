@@ -2,11 +2,15 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::time::{Duration, Instant};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use tokio::net::TcpStream;
 
-pub async fn join_via_bloom(
+pub type BloomWs = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+pub async fn join_via_bloom_session(
     bloom_ws_url: &str,
     room_id: Option<String>,
-) -> Result<(String, String, Vec<String>), String> {
+) -> Result<(String, String, Vec<String>, BloomWs), String> {
     let (mut ws, _resp) = connect_async(bloom_ws_url)
         .await
         .map_err(|e| format!("connect bloom ws failed: {e:?}"))?;
@@ -50,13 +54,13 @@ pub async fn join_via_bloom(
             }
 
             if let (Some(pid), Some(ps)) = (self_id.clone(), participants.clone()) {
-                return Ok((room_id.clone(), pid, ps));
+                return Ok((room_id.clone(), pid, ps, ws));
             }
         }
 
         let ps = participants.unwrap_or_default();
         let pid = self_id.or_else(|| ps.last().cloned()).unwrap_or_default();
-        Ok((room_id, pid, ps))
+        Ok((room_id, pid, ps, ws))
     } else {
         ws.send(WsMessage::Text(r#"{"type":"CreateRoom"}"#.into()))
             .await
@@ -84,9 +88,17 @@ pub async fn join_via_bloom(
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| "missing self_id".to_string())?
                     .to_string();
-                return Ok((rid, pid.clone(), vec![pid]));
+                return Ok((rid, pid.clone(), vec![pid], ws));
             }
         }
         Err("timeout waiting for RoomCreated".to_string())
     }
+}
+
+pub async fn join_via_bloom(
+    bloom_ws_url: &str,
+    room_id: Option<String>,
+) -> Result<(String, String, Vec<String>), String> {
+    let (rid, pid, ps, _ws) = join_via_bloom_session(bloom_ws_url, room_id).await?;
+    Ok((rid, pid, ps))
 }
