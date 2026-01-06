@@ -1,11 +1,13 @@
 use anyhow::{anyhow, Result};
 use axum::{
     extract::{State, WebSocketUpgrade},
+    extract::ws::{Message, WebSocket},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Router,
 };
+use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 
 use crate::auth::{check_bearer_token, check_origin, AuthError};
@@ -51,8 +53,30 @@ async fn ws_upgrade(
         .and_then(|_| check_bearer_token(&headers, &state.token))
         .map_err(AuthError::status_code)?;
 
-    Ok(ws.on_upgrade(|socket| async move {
-        // Placeholder: drop immediately until real session handling is added.
-        drop(socket);
-    }))
+    Ok(ws.on_upgrade(handle_ws))
+}
+
+async fn handle_ws(mut socket: WebSocket) {
+    let mut joined = false;
+
+    while let Some(Ok(msg)) = socket.next().await {
+        match msg {
+            Message::Text(text) => {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                    let msg_type = value.get("type").and_then(|v| v.as_str());
+                    if msg_type == Some("SendPose") && !joined {
+                        let _ = socket
+                            .send(Message::Text(
+                                r#"{"type":"Error","kind":"NotJoined","message":"Join is required before SendPose"}"#.into(),
+                            ))
+                            .await;
+                    } else if msg_type == Some("Join") {
+                        joined = true;
+                    }
+                }
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
 }
