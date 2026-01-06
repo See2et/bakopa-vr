@@ -256,11 +256,28 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                             participant_id: participant_id.clone(),
                                             stream_kind: StreamKind::Pose,
                                         };
-                                        let _ = syncer.handle(SyncerRequest::SendPose {
+                                        let events = syncer.handle(SyncerRequest::SendPose {
                                             from: participant_id.clone(),
                                             pose,
                                             ctx,
                                         });
+                                        for event in events {
+                                            match event {
+                                                SyncerEvent::PoseReceived { from, pose, .. } => {
+                                                    if let Some(payload) = pose_received_payload(&from, &pose) {
+                                                        let _ = socket.send(Message::Text(payload)).await;
+                                                    }
+                                                }
+                                                SyncerEvent::RateLimited { stream_kind } => {
+                                                    let payload = serde_json::json!({
+                                                        "type": "RateLimited",
+                                                        "stream_kind": stream_kind.as_str(),
+                                                    });
+                                                    let _ = socket.send(Message::Text(payload.to_string())).await;
+                                                }
+                                                _ => {}
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -273,10 +290,20 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
             _ = poll_tick.tick() => {
                 if let Some(syncer) = syncer.as_mut() {
                     for event in syncer.poll_only() {
-                        if let SyncerEvent::PoseReceived { from, pose, .. } = event {
-                            if let Some(payload) = pose_received_payload(&from, &pose) {
-                                let _ = socket.send(Message::Text(payload)).await;
+                        match event {
+                            SyncerEvent::PoseReceived { from, pose, .. } => {
+                                if let Some(payload) = pose_received_payload(&from, &pose) {
+                                    let _ = socket.send(Message::Text(payload)).await;
+                                }
                             }
+                            SyncerEvent::RateLimited { stream_kind } => {
+                                let payload = serde_json::json!({
+                                    "type": "RateLimited",
+                                    "stream_kind": stream_kind.as_str(),
+                                });
+                                let _ = socket.send(Message::Text(payload.to_string())).await;
+                            }
+                            _ => {}
                         }
                     }
                 }
