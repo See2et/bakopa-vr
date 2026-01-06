@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::net::SocketAddr;
 
 /// A spawned Bloom WS server for tests.
+#[allow(dead_code)]
 pub struct BloomWsServer {
     pub addr: SocketAddr,
     handle: Option<bloom_ws::WsServerHandle>,
@@ -9,6 +10,7 @@ pub struct BloomWsServer {
 
 impl BloomWsServer {
     /// ws://{addr}/ws
+    #[allow(dead_code)]
     pub fn ws_url(&self) -> String {
         format!("ws://{}/ws", self.addr)
     }
@@ -17,13 +19,14 @@ impl BloomWsServer {
 impl Drop for BloomWsServer {
     fn drop(&mut self) {
         if let Some(handle) = self.handle.take() {
-            let _ = tokio::spawn(async move {
+            std::mem::drop(tokio::spawn(async move {
                 handle.shutdown().await;
-            });
+            }));
         }
     }
 }
 
+#[allow(dead_code)]
 pub async fn spawn_bloom_ws() -> Result<BloomWsServer> {
     let bind_addr: SocketAddr = "127.0.0.1:0".parse()?;
     let core = bloom_ws::SharedCore::new(bloom_ws::RealCore::new());

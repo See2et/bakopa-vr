@@ -31,7 +31,6 @@ fn build_ws_request(url: &Url) -> Request {
         .expect("request")
 }
 
-
 async fn recv_room_created(
     ws: &mut tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
@@ -129,7 +128,7 @@ async fn join_without_room_creates_room_and_selfjoined() {
         "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
         bloom_ws_url
     );
-    ws.send(Message::Text(join_payload.into()))
+    ws.send(Message::Text(join_payload))
         .await
         .expect("send join");
 
@@ -148,7 +147,6 @@ async fn join_without_room_creates_room_and_selfjoined() {
     );
 }
 
-
 // Current Phase: RED (TC-002)
 // Spec: 既存ルームJoinでparticipantsに既存参加者が含まれる
 #[tokio::test]
@@ -164,8 +162,7 @@ async fn join_existing_room_returns_participants() {
     let (mut ws_x, _resp_x) = connect_async(&bloom_ws_url)
         .await
         .expect("connect bloom ws");
-    ws_x
-        .send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
+    ws_x.send(Message::Text(r#"{"type":"CreateRoom"}"#.into()))
         .await
         .expect("send create room");
     let (room_id, participant_x) = recv_room_created(&mut ws_x).await;
@@ -189,7 +186,7 @@ async fn join_existing_room_returns_participants() {
         "{{\"type\":\"Join\",\"room_id\":\"{}\",\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
         room_id, bloom_ws_url
     );
-    ws.send(Message::Text(join_payload.into()))
+    ws.send(Message::Text(join_payload))
         .await
         .expect("send join");
 
