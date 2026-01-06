@@ -31,34 +31,36 @@ fn build_ws_request(url: &Url) -> Request {
         .expect("request")
 }
 
-#[tokio::test]
-async fn disconnect_triggers_leave() {
-    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
-
-    let leave_notify = Arc::new(Notify::new());
-    let (bloom, core) = support::bloom::spawn_bloom_ws_with_mock_core(Some(leave_notify.clone()))
-        .await
-        .expect("spawn bloom ws");
-    let bloom_ws_url = bloom.ws_url();
-
-    let app = sidecar::app::App::new().await.expect("app new");
-    let server = support::spawn_axum(app.router())
-        .await
-        .expect("spawn server");
-    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
-
-    let mut request = build_ws_request(&url);
+async fn connect_sidecar(
+    url: &Url,
+) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+    let mut request = build_ws_request(url);
     request
         .headers_mut()
         .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
-    let (mut ws, _resp) = connect_async(request)
+    let (ws, _resp) = connect_async(request)
         .await
         .expect("handshake should succeed");
+    ws
+}
 
-    let join_payload = format!(
-        "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
-        bloom_ws_url
-    );
+async fn join_sidecar(
+    ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    bloom_ws_url: &str,
+    room_id: Option<&str>,
+) -> serde_json::Value {
+    let join_payload = match room_id {
+        Some(room_id) => format!(
+            "{{\"type\":\"Join\",\"room_id\":\"{}\",\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+            room_id, bloom_ws_url
+        ),
+        None => format!(
+            "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+            bloom_ws_url
+        ),
+    };
     ws.send(Message::Text(join_payload))
         .await
         .expect("send join");
@@ -76,6 +78,48 @@ async fn disconnect_triggers_leave() {
         json.get("type").and_then(|v| v.as_str()),
         Some("SelfJoined")
     );
+    json
+}
+
+async fn wait_leave_with_args(
+    core: &Arc<std::sync::Mutex<bloom_ws::MockCore>>,
+    leave_notify: &Notify,
+    expected_room: &RoomId,
+    expected_participant: &ParticipantId,
+) {
+    tokio::time::timeout(std::time::Duration::from_secs(2), leave_notify.notified())
+        .await
+        .expect("timeout waiting leave_room");
+
+    let (called_room, called_participant) = {
+        let core = core.lock().expect("lock core");
+        core.leave_room_calls
+            .first()
+            .cloned()
+            .expect("leave_room calls")
+    };
+    assert_eq!(&called_room, expected_room);
+    assert_eq!(&called_participant, expected_participant);
+}
+
+#[tokio::test]
+async fn disconnect_triggers_leave() {
+    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+
+    let leave_notify = Arc::new(Notify::new());
+    let (bloom, core) = support::bloom::spawn_bloom_ws_with_mock_core(Some(leave_notify.clone()))
+        .await
+        .expect("spawn bloom ws");
+    let bloom_ws_url = bloom.ws_url();
+
+    let app = sidecar::app::App::new().await.expect("app new");
+    let server = support::spawn_axum(app.router())
+        .await
+        .expect("spawn server");
+    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
+
+    let mut ws = connect_sidecar(&url).await;
+    let json = join_sidecar(&mut ws, &bloom_ws_url, None).await;
     let room_id_str = json
         .get("room_id")
         .and_then(|v| v.as_str())
@@ -88,22 +132,10 @@ async fn disconnect_triggers_leave() {
     ws.send(Message::Close(None)).await.expect("send close");
     drop(ws);
 
-    tokio::time::timeout(std::time::Duration::from_secs(2), leave_notify.notified())
-        .await
-        .expect("timeout waiting leave_room");
-
-    let (called_room, called_participant) = {
-        let core = core.lock().expect("lock core");
-        core.leave_room_calls
-            .first()
-            .cloned()
-            .expect("leave_room calls")
-    };
     let expected_room = RoomId::from_str(room_id_str).expect("room_id parse");
     let expected_participant =
         ParticipantId::from_str(participant_id_str).expect("participant_id parse");
-    assert_eq!(called_room, expected_room);
-    assert_eq!(called_participant, expected_participant);
+    wait_leave_with_args(&core, &leave_notify, &expected_room, &expected_participant).await;
 }
 
 #[tokio::test]
@@ -122,35 +154,8 @@ async fn abrupt_disconnect_triggers_leave() {
         .expect("spawn server");
     let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
 
-    let mut request = build_ws_request(&url);
-    request
-        .headers_mut()
-        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
-    let (mut ws, _resp) = connect_async(request)
-        .await
-        .expect("handshake should succeed");
-
-    let join_payload = format!(
-        "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
-        bloom_ws_url
-    );
-    ws.send(Message::Text(join_payload))
-        .await
-        .expect("send join");
-    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next())
-        .await
-        .expect("timeout waiting selfjoined")
-        .expect("stream closed")
-        .expect("ws error");
-    let text = match msg {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response: {:?}", other),
-    };
-    let json: serde_json::Value = serde_json::from_str(&text).expect("parse SelfJoined");
-    assert_eq!(
-        json.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let mut ws = connect_sidecar(&url).await;
+    let json = join_sidecar(&mut ws, &bloom_ws_url, None).await;
     let room_id_str = json
         .get("room_id")
         .and_then(|v| v.as_str())
@@ -163,22 +168,10 @@ async fn abrupt_disconnect_triggers_leave() {
     // drop without sending Close
     drop(ws);
 
-    tokio::time::timeout(std::time::Duration::from_secs(2), leave_notify.notified())
-        .await
-        .expect("timeout waiting leave_room");
-
-    let (called_room, called_participant) = {
-        let core = core.lock().expect("lock core");
-        core.leave_room_calls
-            .first()
-            .cloned()
-            .expect("leave_room calls")
-    };
     let expected_room = RoomId::from_str(room_id_str).expect("room_id parse");
     let expected_participant =
         ParticipantId::from_str(participant_id_str).expect("participant_id parse");
-    assert_eq!(called_room, expected_room);
-    assert_eq!(called_participant, expected_participant);
+    wait_leave_with_args(&core, &leave_notify, &expected_room, &expected_participant).await;
 }
 
 #[tokio::test]
@@ -186,10 +179,9 @@ async fn reconnect_creates_new_session_after_leave() {
     let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
 
     let leave_notify = Arc::new(Notify::new());
-    let (bloom, core) =
-        support::bloom::spawn_bloom_ws_with_mock_core(Some(leave_notify.clone()))
-            .await
-            .expect("spawn bloom ws");
+    let (bloom, core) = support::bloom::spawn_bloom_ws_with_mock_core(Some(leave_notify.clone()))
+        .await
+        .expect("spawn bloom ws");
     let bloom_ws_url = bloom.ws_url();
     {
         let mut core = core.lock().expect("lock core");
@@ -202,35 +194,8 @@ async fn reconnect_creates_new_session_after_leave() {
         .expect("spawn server");
     let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
 
-    let mut request_a = build_ws_request(&url);
-    request_a
-        .headers_mut()
-        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
-    let (mut ws_a, _resp) = connect_async(request_a)
-        .await
-        .expect("handshake should succeed (A)");
-
-    let join_payload_a = format!(
-        "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
-        bloom_ws_url
-    );
-    ws_a.send(Message::Text(join_payload_a))
-        .await
-        .expect("send join A");
-    let msg_a = tokio::time::timeout(std::time::Duration::from_millis(500), ws_a.next())
-        .await
-        .expect("timeout waiting selfjoined A")
-        .expect("stream closed A")
-        .expect("ws error A");
-    let text_a = match msg_a {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response A: {:?}", other),
-    };
-    let json_a: serde_json::Value = serde_json::from_str(&text_a).expect("parse SelfJoined A");
-    assert_eq!(
-        json_a.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let mut ws_a = connect_sidecar(&url).await;
+    let json_a = join_sidecar(&mut ws_a, &bloom_ws_url, None).await;
     let room_id = json_a
         .get("room_id")
         .and_then(|v| v.as_str())
@@ -245,45 +210,13 @@ async fn reconnect_creates_new_session_after_leave() {
     ws_a.send(Message::Close(None)).await.expect("send close A");
     drop(ws_a);
 
-    tokio::time::timeout(std::time::Duration::from_secs(2), leave_notify.notified())
-        .await
-        .expect("timeout waiting leave_room A");
+    let expected_room = RoomId::from_str(&room_id).expect("room_id parse");
+    let expected_participant =
+        ParticipantId::from_str(&participant_a).expect("participant_id parse");
+    wait_leave_with_args(&core, &leave_notify, &expected_room, &expected_participant).await;
 
-    let leave_calls = {
-        let core = core.lock().expect("lock core");
-        core.leave_room_calls.len()
-    };
-    assert!(leave_calls >= 1, "expected leave_room called before rejoin");
-
-    let mut request_b = build_ws_request(&url);
-    request_b
-        .headers_mut()
-        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
-    let (mut ws_b, _resp) = connect_async(request_b)
-        .await
-        .expect("handshake should succeed (B)");
-
-    let join_payload_b = format!(
-        "{{\"type\":\"Join\",\"room_id\":\"{}\",\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
-        room_id, bloom_ws_url
-    );
-    ws_b.send(Message::Text(join_payload_b))
-        .await
-        .expect("send join B");
-    let msg_b = tokio::time::timeout(std::time::Duration::from_millis(500), ws_b.next())
-        .await
-        .expect("timeout waiting selfjoined B")
-        .expect("stream closed B")
-        .expect("ws error B");
-    let text_b = match msg_b {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response B: {:?}", other),
-    };
-    let json_b: serde_json::Value = serde_json::from_str(&text_b).expect("parse SelfJoined B");
-    assert_eq!(
-        json_b.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let mut ws_b = connect_sidecar(&url).await;
+    let json_b = join_sidecar(&mut ws_b, &bloom_ws_url, Some(&room_id)).await;
     let participant_b = json_b
         .get("participant_id")
         .and_then(|v| v.as_str())

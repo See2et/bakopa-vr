@@ -18,11 +18,11 @@ use tokio::time::{interval, Duration};
 use crate::auth::{check_bearer_token, check_origin, AuthError};
 use crate::test_support;
 use syncer::messages::SyncMessageEnvelope;
-use tokio_tungstenite::tungstenite::Message as WsMessage;
 use syncer::{
     BasicSyncer, Pose, PoseTransform, StreamKind, Syncer, SyncerEvent, SyncerRequest,
     TracingContext, Transport, TransportPayload,
 };
+use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 #[derive(Default)]
 struct SyncerBus {
@@ -73,12 +73,12 @@ impl Transport for BusTransport {
         };
         if let Ok(mut bus) = self.bus.lock() {
             if is_control {
-            let recipients: Vec<ParticipantId> = bus
-                .participants
-                .iter()
-                .filter(|&p| p != &self.me)
-                .cloned()
-                .collect();
+                let recipients: Vec<ParticipantId> = bus
+                    .participants
+                    .iter()
+                    .filter(|&p| p != &self.me)
+                    .cloned()
+                    .collect();
                 for recipient in recipients {
                     bus.messages
                         .push((recipient, self.me.clone(), payload.clone()));
@@ -336,11 +336,10 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
 
     if joined {
         if let Some(mut ws) = bloom_ws {
-            let _ = ws.send(WsMessage::Text(r#"{"type":"LeaveRoom"}"#.into())).await;
+            let _ = ws
+                .send(WsMessage::Text(r#"{"type":"LeaveRoom"}"#.into()))
+                .await;
         }
-        syncer = None;
-        room_id = None;
-        participant_id = None;
     }
 }
 

@@ -1,9 +1,9 @@
 use futures_util::{SinkExt, StreamExt};
+use tokio::net::TcpStream;
 use tokio::time::{Duration, Instant};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use tokio::net::TcpStream;
 
 pub type BloomWs = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -93,12 +93,4 @@ pub async fn join_via_bloom_session(
         }
         Err("timeout waiting for RoomCreated".to_string())
     }
-}
-
-pub async fn join_via_bloom(
-    bloom_ws_url: &str,
-    room_id: Option<String>,
-) -> Result<(String, String, Vec<String>), String> {
-    let (rid, pid, ps, _ws) = join_via_bloom_session(bloom_ws_url, room_id).await?;
-    Ok((rid, pid, ps))
 }
