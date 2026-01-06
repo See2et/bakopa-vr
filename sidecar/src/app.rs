@@ -12,6 +12,7 @@ use futures_util::StreamExt;
 use std::sync::Arc;
 
 use crate::auth::{check_bearer_token, check_origin, AuthError};
+use crate::test_support;
 
 #[derive(Clone)]
 struct AppState {
@@ -113,6 +114,9 @@ async fn handle_ws(mut socket: WebSocket) {
                         }
                     } else if msg_type == Some("Join") {
                         // Ignore duplicate Join for now.
+                    } else if msg_type == Some("SendPose") && joined {
+                        let params = syncer::TransportSendParams::for_stream(syncer::StreamKind::Pose);
+                        test_support::record_send_params(params);
                     }
                 }
             }

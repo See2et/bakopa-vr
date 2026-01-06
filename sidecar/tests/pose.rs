@@ -1,0 +1,98 @@
+mod support;
+
+use futures_util::{SinkExt, StreamExt};
+use syncer::{StreamKind, TransportSendParams};
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::handshake::client::{generate_key, Request};
+use tokio_tungstenite::tungstenite::http::{
+    header::{AUTHORIZATION, CONNECTION, HOST, SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_VERSION, UPGRADE},
+    HeaderValue,
+};
+use tokio_tungstenite::tungstenite::Message;
+use url::Url;
+
+fn build_ws_request(url: &Url) -> Request {
+    let host = url.host_str().unwrap_or("localhost");
+    let port = url.port_or_known_default().unwrap_or(80);
+    let host_header = HeaderValue::from_str(&format!("{host}:{port}")).unwrap();
+
+    Request::builder()
+        .method("GET")
+        .uri(url.as_str())
+        .header(HOST, host_header)
+        .header(UPGRADE, "websocket")
+        .header(CONNECTION, "Upgrade")
+        .header(SEC_WEBSOCKET_VERSION, "13")
+        .header(SEC_WEBSOCKET_KEY, generate_key())
+        .body(())
+        .expect("request")
+}
+
+// Current Phase: RED (TC-003)
+// Spec: SendPose は Syncer へ unordered/unreliable (Pose) で送られる
+#[tokio::test]
+async fn send_pose_is_forwarded_with_params() {
+    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+
+    let bloom = support::bloom::spawn_bloom_ws()
+        .await
+        .expect("spawn bloom ws");
+    let bloom_ws_url = bloom.ws_url();
+
+    // TODO: inject recording syncer once App supports it
+    let app = sidecar::app::App::new().await.expect("app new");
+    let server = support::spawn_axum(app.router())
+        .await
+        .expect("spawn server");
+    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
+
+    let mut request = build_ws_request(&url);
+    request
+        .headers_mut()
+        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
+
+    let (mut ws, _resp) = connect_async(request)
+        .await
+        .expect("handshake should succeed");
+
+    // Join first
+    let join_payload = format!(
+        "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+        bloom_ws_url
+    );
+    ws.send(Message::Text(join_payload))
+        .await
+        .expect("send join");
+
+    // Wait SelfJoined
+    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next())
+        .await
+        .expect("timeout waiting for selfjoined")
+        .expect("stream closed");
+    let text = match msg {
+        Ok(Message::Text(t)) => t,
+        Ok(other) => panic!("unexpected message: {:?}", other),
+        Err(err) => panic!("ws error: {err:?}"),
+    };
+    assert!(text.contains("SelfJoined"), "expected SelfJoined, got: {text}");
+
+    // SendPose
+    let pose_payload = r#"{"type":"SendPose","head":{"position":{"x":0.0,"y":1.0,"z":2.0},"rotation":{"x":0.0,"y":0.0,"z":0.0,"w":1.0}},"hand_l":null,"hand_r":null}"#;
+    ws.send(Message::Text(pose_payload.into()))
+        .await
+        .expect("send pose");
+
+    // Expect Syncer send params to be Pose (unordered/unreliable)
+    let expected = TransportSendParams::for_stream(StreamKind::Pose);
+    let recorded = tokio::time::timeout(std::time::Duration::from_millis(200), async {
+        loop {
+            if let Some(p) = sidecar::test_support::last_send_params() {
+                break p;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("expected syncer to record send params");
+    assert_eq!(recorded, expected);
+}
