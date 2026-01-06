@@ -17,6 +17,7 @@ subtle = "2.6"
 uuid = { version = "1.18.1", features = ["v4"] }
 bloom-ws = { path = "../bloom/ws" }
 syncer = { path = "../syncer" }
+bloom-core = { path = "../bloom/core" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros", "time", "test-util"] }
