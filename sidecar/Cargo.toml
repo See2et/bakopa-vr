@@ -22,3 +22,4 @@ bloom-core = { path = "../bloom/core" }
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros", "time", "test-util"] }
 url = "2.5"
+tracing-subscriber = "0.3"

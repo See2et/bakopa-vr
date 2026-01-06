@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::time::{interval, Duration};
+use tracing::info_span;
 
 use crate::auth::{check_bearer_token, check_origin, AuthError};
 use crate::test_support;
@@ -270,6 +271,13 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                 if let (Some(syncer), Some(room_id), Some(participant_id)) =
                                     (syncer.as_mut(), room_id.as_ref(), participant_id.as_ref())
                                 {
+                                    let span = info_span!(
+                                        "sidecar.send_pose",
+                                        room_id = %room_id,
+                                        participant_id = %participant_id,
+                                        stream_kind = "pose"
+                                    );
+                                    let _enter = span.enter();
                                     let Some(pose) = parse_pose_message(&value) else {
                                         let _ = socket
                                             .send(Message::Text(invalid_payload_message(
