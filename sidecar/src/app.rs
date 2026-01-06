@@ -176,15 +176,26 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                 let Some(Ok(msg)) = incoming else { break; };
                 match msg {
                     Message::Text(text) => {
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-                            let msg_type = value.get("type").and_then(|v| v.as_str());
-                            if msg_type == Some("SendPose") && !joined {
-                                let _ = socket
-                                    .send(Message::Text(
-                                        r#"{"type":"Error","kind":"NotJoined","message":"Join is required before SendPose"}"#.into(),
-                                    ))
-                                    .await;
-                            } else if msg_type == Some("Join") && !joined {
+                        let value = match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(v) => v,
+                            Err(_) => {
+                                let err = serde_json::json!({
+                                    "type": "Error",
+                                    "kind": "InvalidPayload",
+                                    "message": "invalid JSON payload",
+                                });
+                                let _ = socket.send(Message::Text(err.to_string())).await;
+                                continue;
+                            }
+                        };
+                        let msg_type = value.get("type").and_then(|v| v.as_str());
+                        if msg_type == Some("SendPose") && !joined {
+                            let _ = socket
+                                .send(Message::Text(
+                                    r#"{"type":"Error","kind":"NotJoined","message":"Join is required before SendPose"}"#.into(),
+                                ))
+                                .await;
+                        } else if msg_type == Some("Join") && !joined {
                                 let room_id_opt = value
                                     .get("room_id")
                                     .and_then(|v| v.as_str())
@@ -241,9 +252,9 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                         let _ = socket.send(Message::Text(err.to_string())).await;
                                     }
                                 }
-                            } else if msg_type == Some("Join") {
-                                // Ignore duplicate Join for now.
-                            } else if msg_type == Some("SendPose") && joined {
+                        } else if msg_type == Some("Join") {
+                            // Ignore duplicate Join for now.
+                        } else if msg_type == Some("SendPose") && joined {
                                 let params = syncer::TransportSendParams::for_stream(syncer::StreamKind::Pose);
                                 test_support::record_send_params(params);
 
@@ -287,7 +298,6 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                         }
                                     }
                                 }
-                            }
                         }
                     }
                     Message::Close(_) => break,
@@ -353,6 +363,9 @@ fn parse_transform(value: &serde_json::Value) -> Option<PoseTransform> {
         rot.get("z")?.as_f64()? as f32,
         rot.get("w")?.as_f64()? as f32,
     ];
+    if !position.iter().all(|v| v.is_finite()) || !rotation.iter().all(|v| v.is_finite()) {
+        return None;
+    }
     Some(PoseTransform { position, rotation })
 }
 
