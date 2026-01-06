@@ -54,7 +54,12 @@ impl Drop for EnvGuard {
 
 /// Spawn an axum server bound to 127.0.0.1:0 for tests.
 pub async fn spawn_axum(router: Router) -> Result<TestServer> {
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let port = std::env::var("SIDECAR_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(0);
+    let bind_addr = format!("127.0.0.1:{port}");
+    let listener = TcpListener::bind(bind_addr).await?;
     let addr = listener.local_addr()?;
     let handle = tokio::spawn(async move {
         // If the server errors, bubble up via panic to fail the test.

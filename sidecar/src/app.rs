@@ -1,13 +1,14 @@
 use crate::bloom_client::{join_via_bloom_session, BloomWs};
 use anyhow::{anyhow, Result};
 use axum::{
-    extract::ws::{Message, WebSocket},
-    extract::{State, WebSocketUpgrade},
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Router,
 };
+use axum::extract::ws::rejection::WebSocketUpgradeRejection;
 use bloom_core::{ParticipantId, RoomId};
 use futures_util::{SinkExt, StreamExt};
 use std::collections::{HashMap, HashSet};
@@ -161,8 +162,13 @@ impl App {
 async fn ws_upgrade(
     State(state): State<AppState>,
     headers: HeaderMap,
-    ws: WebSocketUpgrade,
+    ws: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    let ws: WebSocketUpgrade = match ws {
+        Ok(ws) => ws,
+        Err(_) => return Err(StatusCode::UPGRADE_REQUIRED),
+    };
+
     check_origin(&headers)
         .and_then(|_| check_bearer_token(&headers, &state.token))
         .map_err(AuthError::status_code)?;
