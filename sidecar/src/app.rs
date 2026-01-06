@@ -45,6 +45,13 @@ async fn ws_upgrade(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, StatusCode> {
+    // Reject non-null Origin per spec (TC-000f); allow missing/null.
+    if let Some(origin) = headers.get(axum::http::header::ORIGIN).and_then(|v| v.to_str().ok()) {
+        if origin != "null" {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+
     let auth_header = headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok());
     let Some(bearer) = auth_header else {
         return Err(StatusCode::UNAUTHORIZED);
