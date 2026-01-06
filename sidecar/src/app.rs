@@ -250,33 +250,40 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                 if let (Some(syncer), Some(room_id), Some(participant_id)) =
                                     (syncer.as_mut(), room_id.as_ref(), participant_id.as_ref())
                                 {
-                                    if let Some(pose) = parse_pose_message(&value) {
-                                        let ctx = TracingContext {
-                                            room_id: room_id.clone(),
-                                            participant_id: participant_id.clone(),
-                                            stream_kind: StreamKind::Pose,
-                                        };
-                                        let events = syncer.handle(SyncerRequest::SendPose {
-                                            from: participant_id.clone(),
-                                            pose,
-                                            ctx,
+                                    let Some(pose) = parse_pose_message(&value) else {
+                                        let err = serde_json::json!({
+                                            "type": "Error",
+                                            "kind": "InvalidPayload",
+                                            "message": "invalid SendPose payload",
                                         });
-                                        for event in events {
-                                            match event {
-                                                SyncerEvent::PoseReceived { from, pose, .. } => {
-                                                    if let Some(payload) = pose_received_payload(&from, &pose) {
-                                                        let _ = socket.send(Message::Text(payload)).await;
-                                                    }
+                                        let _ = socket.send(Message::Text(err.to_string())).await;
+                                        continue;
+                                    };
+                                    let ctx = TracingContext {
+                                        room_id: room_id.clone(),
+                                        participant_id: participant_id.clone(),
+                                        stream_kind: StreamKind::Pose,
+                                    };
+                                    let events = syncer.handle(SyncerRequest::SendPose {
+                                        from: participant_id.clone(),
+                                        pose,
+                                        ctx,
+                                    });
+                                    for event in events {
+                                        match event {
+                                            SyncerEvent::PoseReceived { from, pose, .. } => {
+                                                if let Some(payload) = pose_received_payload(&from, &pose) {
+                                                    let _ = socket.send(Message::Text(payload)).await;
                                                 }
-                                                SyncerEvent::RateLimited { stream_kind } => {
-                                                    let payload = serde_json::json!({
-                                                        "type": "RateLimited",
-                                                        "stream_kind": stream_kind.as_str(),
-                                                    });
-                                                    let _ = socket.send(Message::Text(payload.to_string())).await;
-                                                }
-                                                _ => {}
                                             }
+                                            SyncerEvent::RateLimited { stream_kind } => {
+                                                let payload = serde_json::json!({
+                                                    "type": "RateLimited",
+                                                    "stream_kind": stream_kind.as_str(),
+                                                });
+                                                let _ = socket.send(Message::Text(payload.to_string())).await;
+                                            }
+                                            _ => {}
                                         }
                                     }
                                 }

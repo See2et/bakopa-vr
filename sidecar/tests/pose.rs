@@ -28,8 +28,6 @@ fn build_ws_request(url: &Url) -> Request {
         .expect("request")
 }
 
-// Current Phase: RED (TC-003)
-// Spec: SendPose は Syncer へ unordered/unreliable (Pose) で送られる
 #[tokio::test]
 async fn send_pose_is_forwarded_with_params() {
     let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
@@ -384,7 +382,11 @@ async fn rate_limit_recovery_allows_send() {
             Ok(Some(Ok(Message::Text(text)))) => {
                 let parsed = serde_json::from_str::<serde_json::Value>(&text)
                     .ok()
-                    .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(|t| t.to_string()));
+                    .and_then(|v| {
+                        v.get("type")
+                            .and_then(|t| t.as_str())
+                            .map(|t| t.to_string())
+                    });
                 if parsed.as_deref() == Some("PoseReceived") {
                     continue;
                 }
@@ -402,8 +404,7 @@ async fn rate_limit_recovery_allows_send() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
     let mut recovered_text: Option<String> = pending_texts.pop();
     while std::time::Instant::now() < deadline && recovered_text.is_none() {
-        ws_a
-            .send(Message::Text(pose_payload.into()))
+        ws_a.send(Message::Text(pose_payload.into()))
             .await
             .expect("send pose after recovery");
 
@@ -411,7 +412,11 @@ async fn rate_limit_recovery_allows_send() {
             Ok(Some(Ok(Message::Text(text)))) => {
                 let parsed = serde_json::from_str::<serde_json::Value>(&text)
                     .ok()
-                    .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(|t| t.to_string()));
+                    .and_then(|v| {
+                        v.get("type")
+                            .and_then(|t| t.as_str())
+                            .map(|t| t.to_string())
+                    });
                 if parsed.as_deref() == Some("PoseReceived") {
                     recovered_text = Some(text);
                     break;
@@ -435,4 +440,79 @@ async fn rate_limit_recovery_allows_send() {
         recovered_json.get("from").and_then(|v| v.as_str()),
         Some(participant_a.as_str())
     );
+}
+
+// Current Phase: RED (TC-007)
+// Spec: 不正 SendPose は Error { kind="InvalidPayload" } を返す
+#[tokio::test]
+async fn invalid_payload_is_reported() {
+    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+
+    let bloom = support::bloom::spawn_bloom_ws()
+        .await
+        .expect("spawn bloom ws");
+    let bloom_ws_url = bloom.ws_url();
+
+    let app = sidecar::app::App::new().await.expect("app new");
+    let server = support::spawn_axum(app.router())
+        .await
+        .expect("spawn server");
+    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
+
+    let mut request = build_ws_request(&url);
+    request
+        .headers_mut()
+        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
+    let (mut ws, _resp) = connect_async(request)
+        .await
+        .expect("handshake should succeed");
+
+    let join_payload = format!(
+        "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+        bloom_ws_url
+    );
+    ws.send(Message::Text(join_payload))
+        .await
+        .expect("send join");
+    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next())
+        .await
+        .expect("timeout waiting selfjoined")
+        .expect("stream closed")
+        .expect("ws error");
+    let text = match msg {
+        Message::Text(t) => t,
+        other => panic!("unexpected join response: {:?}", other),
+    };
+    let json: serde_json::Value = serde_json::from_str(&text).expect("parse SelfJoined");
+    assert_eq!(
+        json.get("type").and_then(|v| v.as_str()),
+        Some("SelfJoined")
+    );
+
+    // invalid payload: missing head
+    let invalid_payload = r#"{"type":"SendPose","hand_l":null,"hand_r":null}"#;
+    ws.send(Message::Text(invalid_payload.into()))
+        .await
+        .expect("send invalid pose");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let mut found = false;
+    while std::time::Instant::now() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(300), ws.next()).await {
+            Ok(Some(Ok(Message::Text(text)))) => {
+                let json: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                if json.get("type").and_then(|v| v.as_str()) == Some("Error")
+                    && json.get("kind").and_then(|v| v.as_str()) == Some("InvalidPayload")
+                {
+                    found = true;
+                    break;
+                }
+            }
+            Ok(Some(Ok(_))) => {}
+            Ok(Some(Err(err))) => panic!("ws error: {err:?}"),
+            Ok(None) => break,
+            Err(_) => {}
+        }
+    }
+    assert!(found, "expected Error kind=InvalidPayload within timeout");
 }
