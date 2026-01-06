@@ -1,6 +1,12 @@
+use anyhow::Context;
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
-    // Minimal bootstrap; real server wiring will follow in later slices.
-    let _app = sidecar::app::App::new().await?;
+    let app = sidecar::app::App::new()
+        .await
+        .context("initialize sidecar app")?;
+    if app.bind_addr().port() == 0 {
+        anyhow::bail!("SIDECAR_PORT is required for sidecar binary");
+    }
     Ok(())
 }
