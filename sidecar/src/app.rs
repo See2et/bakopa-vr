@@ -10,6 +10,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 use crate::auth::{check_bearer_token, check_origin, AuthError};
 use crate::test_support;
@@ -17,6 +18,7 @@ use crate::test_support;
 #[derive(Clone)]
 struct AppState {
     token: Arc<String>,
+    pose_tx: broadcast::Sender<String>,
 }
 
 /// Core application handle for the Sidecar service.
@@ -30,9 +32,11 @@ impl App {
     pub async fn new() -> Result<Self> {
         let token = std::env::var("SIDECAR_TOKEN")
             .map_err(|_| anyhow!("SIDECAR_TOKEN is required to start sidecar"))?;
+        let (pose_tx, _pose_rx) = broadcast::channel(32);
         Ok(Self {
             state: AppState {
                 token: Arc::new(token),
+                pose_tx,
             },
         })
     }
@@ -55,73 +59,111 @@ async fn ws_upgrade(
         .and_then(|_| check_bearer_token(&headers, &state.token))
         .map_err(AuthError::status_code)?;
 
-    Ok(ws.on_upgrade(handle_ws))
+    Ok(ws.on_upgrade(move |socket| handle_ws(socket, state.clone())))
 }
 
-async fn handle_ws(mut socket: WebSocket) {
+async fn handle_ws(mut socket: WebSocket, state: AppState) {
     let mut joined = false;
+    let mut self_id: Option<String> = None;
+    let mut pose_rx = state.pose_tx.subscribe();
 
-    while let Some(Ok(msg)) = socket.next().await {
-        match msg {
-            Message::Text(text) => {
-                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-                    let msg_type = value.get("type").and_then(|v| v.as_str());
-                    if msg_type == Some("SendPose") && !joined {
-                        let _ = socket
-                            .send(Message::Text(
-                                r#"{"type":"Error","kind":"NotJoined","message":"Join is required before SendPose"}"#.into(),
-                            ))
-                            .await;
-                    } else if msg_type == Some("Join") && !joined {
-                        let room_id_opt = value
-                            .get("room_id")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let bloom_ws_url = value
-                            .get("bloom_ws_url")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
+    loop {
+        tokio::select! {
+            incoming = socket.next() => {
+                let Some(Ok(msg)) = incoming else { break; };
+                match msg {
+                    Message::Text(text) => {
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                            let msg_type = value.get("type").and_then(|v| v.as_str());
+                            if msg_type == Some("SendPose") && !joined {
+                                let _ = socket
+                                    .send(Message::Text(
+                                        r#"{"type":"Error","kind":"NotJoined","message":"Join is required before SendPose"}"#.into(),
+                                    ))
+                                    .await;
+                            } else if msg_type == Some("Join") && !joined {
+                                let room_id_opt = value
+                                    .get("room_id")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                let bloom_ws_url = value
+                                    .get("bloom_ws_url")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
 
-                        let result = if let Some(url) = bloom_ws_url {
-                            join_via_bloom(&url, room_id_opt).await
-                        } else {
-                            // Fallback: local generation (should be replaced by Bloom WS in tests)
-                            let rid =
-                                room_id_opt.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                            let pid = uuid::Uuid::new_v4().to_string();
-                            Ok((rid, pid.clone(), vec![pid]))
-                        };
+                                let result = if let Some(url) = bloom_ws_url {
+                                    join_via_bloom(&url, room_id_opt).await
+                                } else {
+                                    // Fallback: local generation (should be replaced by Bloom WS in tests)
+                                    let rid =
+                                        room_id_opt.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                                    let pid = uuid::Uuid::new_v4().to_string();
+                                    Ok((rid, pid.clone(), vec![pid]))
+                                };
 
-                        match result {
-                            Ok((rid, pid, participants)) => {
-                                joined = true;
-                                let self_joined = serde_json::json!({
-                                    "type": "SelfJoined",
-                                    "room_id": rid,
-                                    "participant_id": pid,
-                                    "participants": participants,
-                                });
-                                let _ = socket.send(Message::Text(self_joined.to_string())).await;
-                            }
-                            Err(message) => {
-                                let err = serde_json::json!({
-                                    "type": "Error",
-                                    "kind": "BloomError",
-                                    "message": message,
-                                });
-                                let _ = socket.send(Message::Text(err.to_string())).await;
+                                match result {
+                                    Ok((rid, pid, participants)) => {
+                                        joined = true;
+                                        self_id = Some(pid.clone());
+                                        let self_joined = serde_json::json!({
+                                            "type": "SelfJoined",
+                                            "room_id": rid,
+                                            "participant_id": pid,
+                                            "participants": participants,
+                                        });
+                                        let _ = socket.send(Message::Text(self_joined.to_string())).await;
+                                    }
+                                    Err(message) => {
+                                        let err = serde_json::json!({
+                                            "type": "Error",
+                                            "kind": "BloomError",
+                                            "message": message,
+                                        });
+                                        let _ = socket.send(Message::Text(err.to_string())).await;
+                                    }
+                                }
+                            } else if msg_type == Some("Join") {
+                                // Ignore duplicate Join for now.
+                            } else if msg_type == Some("SendPose") && joined {
+                                let params = syncer::TransportSendParams::for_stream(syncer::StreamKind::Pose);
+                                test_support::record_send_params(params);
+
+                                if let Some(from) = self_id.clone() {
+                                    let pose = serde_json::json!({
+                                        "head": value.get("head").cloned().unwrap_or(serde_json::Value::Null),
+                                        "hand_l": value.get("hand_l").cloned().unwrap_or(serde_json::Value::Null),
+                                        "hand_r": value.get("hand_r").cloned().unwrap_or(serde_json::Value::Null),
+                                    });
+                                    let payload = serde_json::json!({
+                                        "type": "PoseReceived",
+                                        "from": from,
+                                        "pose": pose,
+                                    })
+                                    .to_string();
+                                    let _ = state.pose_tx.send(payload);
+                                }
                             }
                         }
-                    } else if msg_type == Some("Join") {
-                        // Ignore duplicate Join for now.
-                    } else if msg_type == Some("SendPose") && joined {
-                        let params = syncer::TransportSendParams::for_stream(syncer::StreamKind::Pose);
-                        test_support::record_send_params(params);
+                    }
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+            received = pose_rx.recv() => {
+                if let Ok(payload) = received {
+                    let skip = if let Some(ref me) = self_id {
+                        serde_json::from_str::<serde_json::Value>(&payload)
+                            .ok()
+                            .and_then(|v| v.get("from").and_then(|f| f.as_str()).map(|s| s == me))
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    };
+                    if !skip {
+                        let _ = socket.send(Message::Text(payload)).await;
                     }
                 }
             }
-            Message::Close(_) => break,
-            _ => {}
         }
     }
 }
