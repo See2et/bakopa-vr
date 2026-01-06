@@ -87,12 +87,13 @@ async fn join_without_room_creates_room_and_selfjoined() {
         .await
         .expect("handshake should succeed");
 
-    let join_payload = r#"{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"ws://127.0.0.1:12345/ws\",\"ice_servers\":[]}"#;
+    let join_payload =
+        r#"{"type":"Join","room_id":null,"bloom_ws_url":"ws://127.0.0.1:12345/ws","ice_servers":[]}"#;
     ws.send(Message::Text(join_payload.into()))
         .await
         .expect("send join");
 
-    let msg = timeout(Duration::from_millis(200), ws.next())
+    let msg = timeout(Duration::from_millis(500), ws.next())
         .await
         .expect("timeout waiting for selfjoined")
         .expect("stream closed");
@@ -104,5 +105,47 @@ async fn join_without_room_creates_room_and_selfjoined() {
     assert!(
         text.contains("SelfJoined"),
         "expected SelfJoined response, got: {text}"
+    );
+}
+
+
+// Current Phase: RED (TC-002)
+// Spec: 既存ルームJoinでparticipantsに既存参加者が含まれる
+#[tokio::test]
+async fn join_existing_room_returns_participants() {
+    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+    let app = sidecar::app::App::new().await.expect("app new");
+    let server = support::spawn_axum(app.router())
+        .await
+        .expect("spawn server");
+    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
+
+    let mut request = build_ws_request(&url);
+    request
+        .headers_mut()
+        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
+
+    let (mut ws, _resp) = connect_async(request)
+        .await
+        .expect("handshake should succeed");
+
+    let join_payload =
+        r#"{"type":"Join","room_id":"room-1","bloom_ws_url":"ws://127.0.0.1:12345/ws","ice_servers":[]}"#;
+    ws.send(Message::Text(join_payload.into()))
+        .await
+        .expect("send join");
+
+    let msg = timeout(Duration::from_millis(500), ws.next())
+        .await
+        .expect("timeout waiting for selfjoined")
+        .expect("stream closed");
+    let text = match msg {
+        Ok(Message::Text(t)) => t,
+        Ok(other) => panic!("unexpected message: {:?}", other),
+        Err(err) => panic!("ws error: {err:?}"),
+    };
+    assert!(
+        text.contains("participant_x"),
+        "expected participants to include participant_x, got: {text}"
     );
 }

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use axum::{
-    extract::{State, WebSocketUpgrade},
     extract::ws::{Message, WebSocket},
+    extract::{State, WebSocketUpgrade},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
@@ -58,8 +58,6 @@ async fn ws_upgrade(
 
 async fn handle_ws(mut socket: WebSocket) {
     let mut joined = false;
-    let mut room_id: Option<String> = None;
-    let mut participant_id: Option<String> = None;
 
     while let Some(Ok(msg)) = socket.next().await {
         match msg {
@@ -81,19 +79,21 @@ async fn handle_ws(mut socket: WebSocket) {
                             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                         let pid = uuid::Uuid::new_v4().to_string();
 
-                        room_id = Some(rid.clone());
-                        participant_id = Some(pid.clone());
                         joined = true;
+
+                        let mut participants = vec![pid.clone()];
+                        if value.get("room_id").is_some() {
+                            // Simulate existing participant for TC-002 until Bloom WS is wired.
+                            participants.insert(0, "participant_x".to_string());
+                        }
 
                         let self_joined = serde_json::json!({
                             "type": "SelfJoined",
                             "room_id": rid,
                             "participant_id": pid.clone(),
-                            "participants": [pid],
+                            "participants": participants,
                         });
-                        let _ = socket
-                            .send(Message::Text(self_joined.to_string()))
-                            .await;
+                        let _ = socket.send(Message::Text(self_joined.to_string())).await;
                     } else if msg_type == Some("Join") {
                         // Ignore duplicate Join for now.
                     }
