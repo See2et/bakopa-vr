@@ -180,3 +180,120 @@ async fn abrupt_disconnect_triggers_leave() {
     assert_eq!(called_room, expected_room);
     assert_eq!(called_participant, expected_participant);
 }
+
+#[tokio::test]
+async fn reconnect_creates_new_session_after_leave() {
+    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+
+    let leave_notify = Arc::new(Notify::new());
+    let (bloom, core) =
+        support::bloom::spawn_bloom_ws_with_mock_core(Some(leave_notify.clone()))
+            .await
+            .expect("spawn bloom ws");
+    let bloom_ws_url = bloom.ws_url();
+    {
+        let mut core = core.lock().expect("lock core");
+        core.join_room_result = Some(Ok(vec![]));
+    }
+
+    let app = sidecar::app::App::new().await.expect("app new");
+    let server = support::spawn_axum(app.router())
+        .await
+        .expect("spawn server");
+    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
+
+    let mut request_a = build_ws_request(&url);
+    request_a
+        .headers_mut()
+        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
+    let (mut ws_a, _resp) = connect_async(request_a)
+        .await
+        .expect("handshake should succeed (A)");
+
+    let join_payload_a = format!(
+        "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+        bloom_ws_url
+    );
+    ws_a.send(Message::Text(join_payload_a))
+        .await
+        .expect("send join A");
+    let msg_a = tokio::time::timeout(std::time::Duration::from_millis(500), ws_a.next())
+        .await
+        .expect("timeout waiting selfjoined A")
+        .expect("stream closed A")
+        .expect("ws error A");
+    let text_a = match msg_a {
+        Message::Text(t) => t,
+        other => panic!("unexpected join response A: {:?}", other),
+    };
+    let json_a: serde_json::Value = serde_json::from_str(&text_a).expect("parse SelfJoined A");
+    assert_eq!(
+        json_a.get("type").and_then(|v| v.as_str()),
+        Some("SelfJoined")
+    );
+    let room_id = json_a
+        .get("room_id")
+        .and_then(|v| v.as_str())
+        .expect("room_id A")
+        .to_string();
+    let participant_a = json_a
+        .get("participant_id")
+        .and_then(|v| v.as_str())
+        .expect("participant_id A")
+        .to_string();
+
+    ws_a.send(Message::Close(None)).await.expect("send close A");
+    drop(ws_a);
+
+    tokio::time::timeout(std::time::Duration::from_secs(2), leave_notify.notified())
+        .await
+        .expect("timeout waiting leave_room A");
+
+    let leave_calls = {
+        let core = core.lock().expect("lock core");
+        core.leave_room_calls.len()
+    };
+    assert!(leave_calls >= 1, "expected leave_room called before rejoin");
+
+    let mut request_b = build_ws_request(&url);
+    request_b
+        .headers_mut()
+        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
+    let (mut ws_b, _resp) = connect_async(request_b)
+        .await
+        .expect("handshake should succeed (B)");
+
+    let join_payload_b = format!(
+        "{{\"type\":\"Join\",\"room_id\":\"{}\",\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+        room_id, bloom_ws_url
+    );
+    ws_b.send(Message::Text(join_payload_b))
+        .await
+        .expect("send join B");
+    let msg_b = tokio::time::timeout(std::time::Duration::from_millis(500), ws_b.next())
+        .await
+        .expect("timeout waiting selfjoined B")
+        .expect("stream closed B")
+        .expect("ws error B");
+    let text_b = match msg_b {
+        Message::Text(t) => t,
+        other => panic!("unexpected join response B: {:?}", other),
+    };
+    let json_b: serde_json::Value = serde_json::from_str(&text_b).expect("parse SelfJoined B");
+    assert_eq!(
+        json_b.get("type").and_then(|v| v.as_str()),
+        Some("SelfJoined")
+    );
+    let participant_b = json_b
+        .get("participant_id")
+        .and_then(|v| v.as_str())
+        .expect("participant_id B")
+        .to_string();
+
+    let join_calls = {
+        let core = core.lock().expect("lock core");
+        core.join_room_calls.len()
+    };
+    assert!(join_calls >= 1, "expected join_room called after leave");
+    assert_ne!(participant_a, participant_b);
+}
