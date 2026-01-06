@@ -1,5 +1,6 @@
 use crate::bloom_client::{join_via_bloom_session, BloomWs};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
+use axum::extract::ws::rejection::WebSocketUpgradeRejection;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     extract::State,
@@ -8,7 +9,6 @@ use axum::{
     routing::get,
     Router,
 };
-use axum::extract::ws::rejection::WebSocketUpgradeRejection;
 use bloom_core::{ParticipantId, RoomId};
 use futures_util::{SinkExt, StreamExt};
 use std::collections::{HashMap, HashSet};
@@ -18,6 +18,7 @@ use tokio::time::{interval, Duration};
 use tracing::info_span;
 
 use crate::auth::{check_bearer_token, check_origin, AuthError};
+use crate::config::AppConfig;
 use crate::test_support;
 use syncer::messages::SyncMessageEnvelope;
 use syncer::{
@@ -134,20 +135,25 @@ struct AppState {
 /// Core application handle for the Sidecar service.
 pub struct App {
     state: AppState,
+    config: AppConfig,
 }
 
 impl App {
     /// Construct a new application instance.
     /// Fails if the required SIDECAR_TOKEN env var is missing.
     pub async fn new() -> Result<Self> {
-        let token = std::env::var("SIDECAR_TOKEN")
-            .map_err(|_| anyhow!("SIDECAR_TOKEN is required to start sidecar"))?;
+        let config = AppConfig::from_env()?;
         Ok(Self {
             state: AppState {
-                token: Arc::new(token),
+                token: Arc::new(config.token.clone()),
                 syncer_hub: Arc::new(Mutex::new(SyncerHub::default())),
             },
+            config,
         })
+    }
+
+    pub fn bind_addr(&self) -> std::net::SocketAddr {
+        self.config.bind_addr
     }
 
     /// Build the HTTP/WebSocket router.

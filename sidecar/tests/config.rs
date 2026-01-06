@@ -15,7 +15,7 @@ async fn default_bind_is_loopback_and_non_sidecar_returns_404() {
     let _port_guard = support::EnvGuard::set("SIDECAR_PORT", port.to_string());
 
     let app = sidecar::app::App::new().await.expect("app new");
-    let server = support::spawn_axum(app.router())
+    let server = support::spawn_axum_on(app.bind_addr(), app.router())
         .await
         .expect("spawn server");
 

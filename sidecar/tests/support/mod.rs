@@ -53,12 +53,12 @@ impl Drop for EnvGuard {
 }
 
 /// Spawn an axum server bound to 127.0.0.1:0 for tests.
+#[allow(dead_code)]
 pub async fn spawn_axum(router: Router) -> Result<TestServer> {
-    let port = std::env::var("SIDECAR_PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(0);
-    let bind_addr = format!("127.0.0.1:{port}");
+    spawn_axum_on("127.0.0.1:0".parse().expect("default bind addr"), router).await
+}
+
+pub async fn spawn_axum_on(bind_addr: SocketAddr, router: Router) -> Result<TestServer> {
     let listener = TcpListener::bind(bind_addr).await?;
     let addr = listener.local_addr()?;
     let handle = tokio::spawn(async move {
