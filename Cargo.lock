@@ -1843,10 +1843,12 @@ dependencies = [
  "futures-util",
  "serde",
  "serde_json",
+ "subtle",
  "thiserror",
  "tokio",
  "tokio-tungstenite 0.23.1",
  "tracing",
+ "url",
 ]
 
 [[package]]
