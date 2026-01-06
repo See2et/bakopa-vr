@@ -58,6 +58,8 @@ async fn ws_upgrade(
 
 async fn handle_ws(mut socket: WebSocket) {
     let mut joined = false;
+    let mut room_id: Option<String> = None;
+    let mut participant_id: Option<String> = None;
 
     while let Some(Ok(msg)) = socket.next().await {
         match msg {
@@ -70,8 +72,30 @@ async fn handle_ws(mut socket: WebSocket) {
                                 r#"{"type":"Error","kind":"NotJoined","message":"Join is required before SendPose"}"#.into(),
                             ))
                             .await;
-                    } else if msg_type == Some("Join") {
+                    } else if msg_type == Some("Join") && !joined {
+                        // Minimal bridge: generate IDs locally until Bloom WS integration arrives.
+                        let rid = value
+                            .get("room_id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                        let pid = uuid::Uuid::new_v4().to_string();
+
+                        room_id = Some(rid.clone());
+                        participant_id = Some(pid.clone());
                         joined = true;
+
+                        let self_joined = serde_json::json!({
+                            "type": "SelfJoined",
+                            "room_id": rid,
+                            "participant_id": pid.clone(),
+                            "participants": [pid],
+                        });
+                        let _ = socket
+                            .send(Message::Text(self_joined.to_string()))
+                            .await;
+                    } else if msg_type == Some("Join") {
+                        // Ignore duplicate Join for now.
                     }
                 }
             }
