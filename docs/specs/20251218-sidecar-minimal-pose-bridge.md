@@ -43,7 +43,9 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 ### FR-001: ローカル接続と Join
 - Client は Sidecar の `ws://127.0.0.1:{port}/sidecar` に接続し、`Join` リクエストを送る。
     - もちろん、Tokenによる認証が済んでいることが前提
-- `Join` は `room_id`（省略時は CreateRoom）、`bloom_ws_url`、`ice_servers` を含む。
+- `Join` は `room_id`（省略時は CreateRoom）、`bloom_ws_url`（必須）、`ice_servers` を含む。
+    - `bloom_ws_url` が欠損している場合は `Error { kind="SignalingError", message=... }` を返す
+    - `ice_servers` は空配列を許容する
 - Sidecar は Bloom の WebSocket に接続し、room 参加に成功したら Syncer を初期化し、自身を登録する。
 - 成功時に Client へ `SelfJoined { room_id, participant_id, participants }` を返す。
 - また、ブラウザからのアクセスは原則として拒否する。
@@ -59,13 +61,23 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
 ### FR-004: レートリミット/エラー伝達
 - Syncer から `RateLimited { stream_kind }` を受け取った場合、Client に同名イベントを返す。
 - Bloom/Syncer いずれかでの InvalidPayload/接続断など recoverable な失敗は `Error { kind, message }` として Client に通知し、Sidecar プロセスは継続する。
+    - `Error.kind` は以下の粗い粒度に限定する
+        - `InvalidPayload` / `NotJoined` / `SignalingError` / `TransportError`
+    - Bloom WS の接続失敗・中継失敗は `SignalingError`
+    - Syncer の `Error`/Transport 由来の失敗は `TransportError`
 
 ### FR-005: 切断・再接続
 - Client が WebSocket 接続を正常終了した場合、Sidecar は Syncer を通じて Bloom へ Leave を送り、Syncer 内状態をクリアする。
 - Client 再接続時は新規 session として扱い、既存 participant_id が残っていても重複しないようにする（Bloom 側で再発行された場合を優先）。
 - Sidecarは同時に1つのClientに対してのみWebSocketセッションを保持する。
     - 既存セッションがある状態で新しい接続が来た場合、新しい方に接続する。
-    - ただし、既存セッションの切断は、新規接続が認証に成功しWebSocket Upgradeが完了した後にのみ行う。
+    - ただし、既存セッションの切断は、新規接続が認証に成功しWebSocket Upgradeが完了した直後にのみ行う。
+
+### FR-006: シグナリング中継（Bloom互換）
+- Client/Sidecar 間のシグナリングメッセージは Bloom WS と同一スキーマを用いる。
+    - `Offer { to, sdp }` / `Answer { to, sdp }` / `IceCandidate { to, candidate }`
+    - 受信側は `Offer { from, sdp }` / `Answer { from, sdp }` / `IceCandidate { from, candidate }`
+- Sidecar は上記メッセージを Bloom WS へ中継し、Bloom からの受信を Client へ中継する（変換は行わない）。
 
 ## 非機能要件
 ### NFR-001: ログ/トレース
@@ -83,6 +95,13 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
   - `sidecar/src/bin/sidecar.rs`
   - `sidecar/tests/`（最小 E2E: 2 クライアント相当の Pose ラウンドトリップ）
 
+## 決定事項
+- Client/Sidecar 間のシグナリングは Bloom WS と同一スキーマで中継する
+- `Error.kind` は `InvalidPayload` / `NotJoined` / `SignalingError` / `TransportError` のみ
+- 単一セッション切替は Upgrade 完了直後に既存セッションを切断する
+- `Join` の `bloom_ws_url` は必須とする
+- E2E はまず 1 Sidecar + 2 Client で実 WebRTC、次に 2 Sidecar を追加する
+
 ## 未決事項 / オープンクエッション
 - 座標系: 左手系/右手系、単位（m）と基準姿勢の定義をどうするか？
     - A. 本仕様では、暫定的にUnityが採用する座標系に従う
@@ -98,16 +117,15 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
     - Bloom/Sidecar 間はスコープ外（将来拡張）。
 - エンドポイント設計: `ws://.../sidecar` のパス固定でよいか、ポート/パスの設定方法は？
     - `ws://127.0.0.1:{port}/sidecar`に固定。ポート設定のみ残します
-- エラー列挙: Client への `Error.kind` をどの粒度で公開するか？（Bloom/Syncer の内部理由をどこまで露出させるか）
-    - `Error.kind`は粗い粒度に保ち、`message`に人間向けの文章を差し込みましょう
 - 現段階ではClientは未実装だが、テスト／デバッグの際にどうするのか？
     - `sidecar/tests`配下にFakeClient（テストヘルパ）を実装する
     - crate外への公開はせず、プロトコル契約の回帰防止とE2Eの再現性確保に目的を限定する
 
 ## テスト戦略
 - Unit: JSONシリアライズ/デシリアライズ、Envelope v1 への変換、RateLimitイベント伝達、接続状態管理（再接続時の participant_id リセット）、エラー分類。
-- Integration: Bloom WS とのシグナリング往復（Create/Join/Offer/Answer/Ice）、Syncer との Pose 送受信（テストダブル or 実WebRTC）、RateLimiter 1 秒 20 件の境界。
-- E2E（最小）: 2 クライアント相当（2 本の Sidecar）で Join → Pose 片方向配送、RateLimit 発火と回復、切断→再接続。
+- Integration: Bloom WS とのシグナリング往復（Create/Join/Offer/Answer/Ice）、Syncer との Pose 送受信（実 WebRTC を含む）、RateLimiter 1 秒 20 件の境界。
+- E2E（最小）: 1 Sidecar + 2 Client で Join → シグナリング → DataChannel 確立 → Pose 片方向配送（実 WebRTC）。
+- E2E（拡張）: 2 Sidecar で同 room Join → シグナリング → Pose 片方向配送（実 WebRTC）。
 - 依存の扱い: Clock をテストダブル化してレートリミットの境界を再現、Bloom/Syncer はローカルで立ち上げるかモックに差し替え。ネットワークポートは Ephemeral を使い衝突回避。
 
 ## テストケース一覧
@@ -296,12 +314,78 @@ Bloom/Syncer と疎通するローカル Sidecar を用意し、外部クライ�
     - Sidecar は当該 `SendPose` を **InvalidPayload** として扱い、Client に次を返す
     - `Error { kind="InvalidPayload", message=... }`
 
+### TC-015: Offer/Answer/IceCandidate が Bloom へ中継される
+- 対応要件: FR-006, FR-001
+- 種別: Happy
+- テスト層: Integration
+- Given:
+    - Sidecar が Bloom WS に接続できる状態で起動している
+    - Client が `Join` 済みで、Bloom から `participants` が取得できている
+- When:
+    - Client が `Offer { to, sdp }` / `Answer { to, sdp }` / `IceCandidate { to, candidate }` を送信する
+- Then:
+    - Bloom WS は同一 payload を受け取る（type と fields が一致する）
+
+### TC-016: Bloom からの Offer/Answer/IceCandidate を Client へ中継
+- 対応要件: FR-006
+- 種別: Happy
+- テスト層: Integration
+- Given:
+    - Sidecar が Bloom WS に接続し、Client が `Join` 済み
+- When:
+    - Bloom WS から `Offer { from, sdp }` / `Answer { from, sdp }` / `IceCandidate { from, candidate }` が到着
+- Then:
+    - Client は同一 payload を受け取る（type と fields が一致する）
+
+### TC-017: Join に bloom_ws_url が無い場合は SignalingError
+- 対応要件: FR-001, FR-004
+- 種別: Failure
+- テスト層: Unit/Integration
+- Given:
+    - Client が認証済みで /sidecar に接続している
+- When:
+    - `Join { room_id, bloom_ws_url: null, ice_servers: [] }` を送信する
+- Then:
+    - Client は `Error { kind="SignalingError", message=... }` を受け取る
+    - Sidecar は Bloom/Syncer に接続しない
+
+### TC-018: E2E 最小（1 Sidecar + 2 Client, 実 WebRTC）
+- 対応要件: FR-001, FR-002, FR-003, FR-006
+- 種別: Happy / E2E
+- テスト層: E2E
+- Given:
+    - Bloom WS が起動している
+    - Sidecar が実 WebRTC で起動できる
+- When:
+    - Client A/B が同 room に Join し、Offer/Answer/IceCandidate を通じて接続する
+    - Client A が `SendPose` を送る
+- Then:
+    - Client B は `PoseReceived` を受け取る
+
+### TC-019: E2E 拡張（2 Sidecar, 実 WebRTC）
+- 対応要件: FR-001, FR-002, FR-003, FR-006
+- 種別: Happy / E2E
+- テスト層: E2E
+- Given:
+    - Bloom WS が起動している
+    - Sidecar A/B が実 WebRTC で起動できる
+- When:
+    - Client A が Sidecar A に、Client B が Sidecar B に接続し同 room に Join
+    - Offer/Answer/IceCandidate を通じて接続する
+    - Client A が `SendPose` を送る
+- Then:
+    - Client B は `PoseReceived` を受け取る
+
 ## カバレッジ確認チェックリスト
 - [x] Join 成功/既存ルーム/参加者リスト
 - [x] Pose 送信/受信（unordered/unreliable）と Envelope v1
 - [x] レートリミット発火と回復（1 秒 20 件）
 - [x] InvalidPayload/未知 kind のハンドリング
 - [x] 切断・再接続・状態クリア
+- [x] シグナリング中継（Offer/Answer/IceCandidate）と Bloom 互換性
+- [x] `bloom_ws_url` 必須の検証
+- [x] 単一セッション切替（Upgrade 完了直後の切断）
+- [x] 実 WebRTC を使った最小 E2E
 - [x] トレーシングフィールド付与
 - [x] デフォルトバインド/設定パス
 - [x] 座標系の定義に基づく値検証（未決: 左手/右手系と単位の厳密テスト）
