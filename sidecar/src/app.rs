@@ -350,6 +350,9 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                 .send(WsMessage::Text(r#"{"type":"LeaveRoom"}"#.into()))
                 .await;
         }
+        if let Some(room_id) = room_id {
+            test_support::record_cleared_room_id(room_id.to_string());
+        }
     }
 }
 

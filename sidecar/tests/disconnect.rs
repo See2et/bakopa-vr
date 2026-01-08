@@ -217,3 +217,34 @@ async fn reconnect_creates_new_session_after_leave() {
     assert!(join_calls >= 1, "expected join_room called after leave");
     assert_ne!(participant_a, participant_b);
 }
+
+#[tokio::test]
+async fn disconnect_clears_syncer_state() {
+    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+
+    let bloom = support::bloom::spawn_bloom_ws()
+        .await
+        .expect("spawn bloom ws");
+    let bloom_ws_url = bloom.ws_url();
+
+    let app = sidecar::app::App::new().await.expect("app new");
+    let server = support::spawn_axum(app.router())
+        .await
+        .expect("spawn server");
+    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
+
+    let mut ws = connect_sidecar(&url).await;
+    let json = join_sidecar(&mut ws, &bloom_ws_url, None).await;
+    let room_id = json
+        .get("room_id")
+        .and_then(|v| v.as_str())
+        .expect("room_id");
+
+    ws.send(Message::Close(None)).await.expect("send close");
+    drop(ws);
+
+    let cleared = sidecar::test_support::wait_for_cleared_room_id(std::time::Duration::from_secs(3))
+        .await
+        .expect("expected syncer state to be cleared");
+    assert_eq!(cleared, room_id);
+}
