@@ -10,7 +10,7 @@ use axum::{
     Router,
 };
 use bloom_core::{ParticipantId, RoomId};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{future::pending, SinkExt, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -276,6 +276,18 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                             Some("Join") => {
                                 // Ignore duplicate Join for now.
                             }
+                            Some("Offer") | Some("Answer") | Some("IceCandidate") => {
+                                if let Some(ws) = bloom_ws.as_mut() {
+                                    let _ = ws.send(WsMessage::Text(text)).await;
+                                } else {
+                                    let err = serde_json::json!({
+                                        "type": "Error",
+                                        "kind": "SignalingError",
+                                        "message": "bloom ws is not connected",
+                                    });
+                                    let _ = socket.send(Message::Text(err.to_string())).await;
+                                }
+                            }
                             Some("SendPose") if joined => {
                                 let params = syncer::TransportSendParams::for_stream(syncer::StreamKind::Pose);
                                 test_support::record_send_params(params);
@@ -325,6 +337,17 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                     }
                     Message::Close(_) => break,
                     _ => {}
+                }
+            }
+            bloom_in = async {
+                if let Some(ws) = bloom_ws.as_mut() {
+                    ws.next().await
+                } else {
+                    pending().await
+                }
+            } => {
+                if let Some(Ok(WsMessage::Text(text))) = bloom_in {
+                    let _ = socket.send(Message::Text(text)).await;
                 }
             }
             _ = poll_tick.tick() => {
