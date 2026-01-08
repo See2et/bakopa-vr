@@ -229,11 +229,7 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                 .await
                                 .map(|(rid, pid, ps, ws)| (rid, pid, ps, Some(ws)))
                         } else {
-                            // Fallback: local generation (should be replaced by Bloom WS in tests)
-                            let rid =
-                                room_id_opt.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                            let pid = uuid::Uuid::new_v4().to_string();
-                            Ok((rid, pid.clone(), vec![pid], None))
+                            Err("missing bloom_ws_url".to_string())
                         };
 
                         match result {
@@ -268,7 +264,7 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                     Err(message) => {
                                         let err = serde_json::json!({
                                             "type": "Error",
-                                            "kind": "BloomError",
+                                            "kind": "SignalingError",
                                             "message": message,
                                         });
                                         let _ = socket.send(Message::Text(err.to_string())).await;

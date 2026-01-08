@@ -216,3 +216,55 @@ async fn join_existing_room_returns_participants() {
         "expected participants to include {participant_x}, got: {text}"
     );
 }
+
+#[tokio::test]
+async fn join_without_bloom_ws_url_returns_signaling_error() {
+    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+
+    let app = sidecar::app::App::new().await.expect("app new");
+    let server = support::spawn_axum(app.router())
+        .await
+        .expect("spawn server");
+    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
+
+    let mut request = build_ws_request(&url);
+    request
+        .headers_mut()
+        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
+
+    let (mut ws, _resp) = connect_async(request)
+        .await
+        .expect("handshake should succeed");
+
+    let join_payload = r#"{"type":"Join","room_id":null,"bloom_ws_url":null,"ice_servers":[]}"#;
+    ws.send(Message::Text(join_payload.into()))
+        .await
+        .expect("send join");
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    let mut found = None;
+    while std::time::Instant::now() < deadline {
+        match timeout(Duration::from_millis(200), ws.next()).await {
+            Ok(Some(Ok(Message::Text(text)))) => {
+                let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
+                if value.get("type").and_then(|v| v.as_str()) == Some("Error") {
+                    found = Some(value);
+                    break;
+                }
+            }
+            Ok(Some(Ok(_))) => {}
+            Ok(Some(Err(err))) => panic!("ws error: {err:?}"),
+            Ok(None) => break,
+            Err(_) => {}
+        }
+    }
+
+    let value = found.expect("expected Error response within deadline");
+    assert_eq!(value.get("type").and_then(|v| v.as_str()), Some("Error"));
+    assert_eq!(
+        value.get("kind").and_then(|v| v.as_str()),
+        Some("SignalingError")
+    );
+}
