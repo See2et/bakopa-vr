@@ -1,6 +1,6 @@
 use anyhow::Result;
-use futures_util::StreamExt;
 use axum::Router;
+use futures_util::StreamExt;
 use std::net::SocketAddr;
 use tokio::{net::TcpListener, task::JoinHandle};
 use tokio_tungstenite::tungstenite::Message;

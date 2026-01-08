@@ -208,13 +208,15 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                             }
                         };
                         let msg_type = value.get("type").and_then(|v| v.as_str());
-                        if msg_type == Some("SendPose") && !joined {
-                            let _ = socket
-                                .send(Message::Text(
-                                    r#"{"type":"Error","kind":"NotJoined","message":"Join is required before SendPose"}"#.into(),
-                                ))
-                                .await;
-                        } else if msg_type == Some("Join") && !joined {
+                        match msg_type {
+                            Some("SendPose") if !joined => {
+                                let _ = socket
+                                    .send(Message::Text(
+                                        r#"{"type":"Error","kind":"NotJoined","message":"Join is required before SendPose"}"#.into(),
+                                    ))
+                                    .await;
+                            }
+                            Some("Join") if !joined => {
                                 let room_id_opt = value
                                     .get("room_id")
                                     .and_then(|v| v.as_str())
@@ -270,9 +272,11 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                         let _ = socket.send(Message::Text(err.to_string())).await;
                                     }
                                 }
-                        } else if msg_type == Some("Join") {
-                            // Ignore duplicate Join for now.
-                        } else if msg_type == Some("SendPose") && joined {
+                            }
+                            Some("Join") => {
+                                // Ignore duplicate Join for now.
+                            }
+                            Some("SendPose") if joined => {
                                 let params = syncer::TransportSendParams::for_stream(syncer::StreamKind::Pose);
                                 test_support::record_send_params(params);
 
@@ -322,12 +326,15 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                         }
                                     }
                                 }
-                        } else if msg_type.is_some() {
-                            let _ = socket
-                                .send(Message::Text(invalid_payload_message(
-                                    "unknown message type",
-                                )))
-                                .await;
+                            }
+                            Some(_) => {
+                                let _ = socket
+                                    .send(Message::Text(invalid_payload_message(
+                                        "unknown message type",
+                                    )))
+                                    .await;
+                            }
+                            None => {}
                         }
                     }
                     Message::Close(_) => break,
