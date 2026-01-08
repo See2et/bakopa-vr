@@ -132,18 +132,10 @@ async fn join_without_room_creates_room_and_selfjoined() {
         .await
         .expect("send join");
 
-    let msg = timeout(Duration::from_millis(500), ws.next())
-        .await
-        .expect("timeout waiting for selfjoined")
-        .expect("stream closed");
-    let text = match msg {
-        Ok(Message::Text(t)) => t,
-        Ok(other) => panic!("unexpected message: {:?}", other),
-        Err(err) => panic!("ws error: {err:?}"),
-    };
-    assert!(
-        text.contains("SelfJoined"),
-        "expected SelfJoined response, got: {text}"
+    let text = support::wait_for_self_joined(&mut ws).await;
+    assert_eq!(
+        text.get("type").and_then(|v| v.as_str()),
+        Some("SelfJoined")
     );
 }
 
@@ -190,19 +182,7 @@ async fn join_existing_room_returns_participants() {
         .await
         .expect("send join");
 
-    let msg = timeout(Duration::from_millis(500), ws.next())
-        .await
-        .expect("timeout waiting for selfjoined")
-        .expect("stream closed");
-    let text = match msg {
-        Ok(Message::Text(t)) => t,
-        Ok(other) => panic!("unexpected message: {:?}", other),
-        Err(err) => panic!("ws error: {err:?}"),
-    };
-
-    let value: serde_json::Value = serde_json::from_str(&text).expect("parse selfjoined");
-    let msg_type = value.get("type").and_then(|v| v.as_str());
-    assert_eq!(msg_type, Some("SelfJoined"));
+    let value = support::wait_for_self_joined(&mut ws).await;
 
     let participants = value
         .get("participants")
@@ -213,7 +193,7 @@ async fn join_existing_room_returns_participants() {
         .any(|v| v.as_str() == Some(&participant_x));
     assert!(
         contains_x,
-        "expected participants to include {participant_x}, got: {text}"
+        "expected participants to include {participant_x}, got: {value}"
     );
 }
 

@@ -59,26 +59,7 @@ async fn unknown_message_type_is_invalid_payload() {
     ws.send(Message::Text(join_payload))
         .await
         .expect("send join");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-    let mut joined = false;
-    while std::time::Instant::now() < deadline {
-        match tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await {
-            Ok(Some(Ok(Message::Text(text)))) => {
-                let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
-                    continue;
-                };
-                if json.get("type").and_then(|v| v.as_str()) == Some("SelfJoined") {
-                    joined = true;
-                    break;
-                }
-            }
-            Ok(Some(Ok(_))) => {}
-            Ok(Some(Err(err))) => panic!("ws error: {err:?}"),
-            Ok(None) => break,
-            Err(_) => {}
-        }
-    }
-    assert!(joined, "expected SelfJoined within deadline");
+    let _ = support::wait_for_self_joined(&mut ws).await;
 
     // unknown type
     let unknown_payload = r#"{"type":"MysteryMessage","foo":"bar"}"#;
@@ -145,19 +126,7 @@ async fn send_pose_is_forwarded_with_params() {
         .expect("send join");
 
     // Wait SelfJoined
-    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next())
-        .await
-        .expect("timeout waiting for selfjoined")
-        .expect("stream closed");
-    let text = match msg {
-        Ok(Message::Text(t)) => t,
-        Ok(other) => panic!("unexpected message: {:?}", other),
-        Err(err) => panic!("ws error: {err:?}"),
-    };
-    assert!(
-        text.contains("SelfJoined"),
-        "expected SelfJoined, got: {text}"
-    );
+    let _ = support::wait_for_self_joined(&mut ws).await;
 
     // SendPose
     let pose_payload = r#"{"type":"SendPose","head":{"position":{"x":0.0,"y":1.0,"z":2.0},"rotation":{"x":0.0,"y":0.0,"z":0.0,"w":1.0}},"hand_l":null,"hand_r":null}"#;
@@ -210,16 +179,7 @@ async fn pose_received_is_pushed_to_client() {
     ws_a.send(Message::Text(join_payload_a))
         .await
         .expect("send join A");
-    let text_a = match tokio::time::timeout(std::time::Duration::from_millis(500), ws_a.next())
-        .await
-        .expect("timeout waiting selfjoined A")
-        .expect("stream closed A")
-    {
-        Ok(Message::Text(t)) => t,
-        Ok(other) => panic!("unexpected message A: {:?}", other),
-        Err(err) => panic!("ws error A: {err:?}"),
-    };
-    let json_a: serde_json::Value = serde_json::from_str(&text_a).expect("parse SelfJoined A");
+    let json_a = support::wait_for_self_joined(&mut ws_a).await;
     let room_id = json_a
         .get("room_id")
         .and_then(|v| v.as_str())
@@ -246,11 +206,7 @@ async fn pose_received_is_pushed_to_client() {
     ws_b.send(Message::Text(join_payload_b))
         .await
         .expect("send join B");
-    let _ = tokio::time::timeout(std::time::Duration::from_millis(500), ws_b.next())
-        .await
-        .expect("timeout waiting selfjoined B")
-        .expect("stream closed B")
-        .expect("ws error B");
+    let _ = support::wait_for_self_joined(&mut ws_b).await;
 
     let pose_payload = r#"{"type":"SendPose","head":{"position":{"x":0.0,"y":1.0,"z":2.0},"rotation":{"x":0.0,"y":0.0,"z":0.0,"w":1.0}},"hand_l":null,"hand_r":null}"#;
     ws_a.send(Message::Text(pose_payload.into()))
@@ -308,20 +264,7 @@ async fn rate_limit_emits_rate_limited() {
     ws.send(Message::Text(join_payload))
         .await
         .expect("send join");
-    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next())
-        .await
-        .expect("timeout waiting selfjoined")
-        .expect("stream closed")
-        .expect("ws error");
-    let text = match msg {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response: {:?}", other),
-    };
-    let json: serde_json::Value = serde_json::from_str(&text).expect("parse SelfJoined");
-    assert_eq!(
-        json.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let _ = support::wait_for_self_joined(&mut ws).await;
 
     let pose_payload = r#"{"type":"SendPose","head":{"position":{"x":0.0,"y":1.0,"z":2.0},"rotation":{"x":0.0,"y":0.0,"z":0.0,"w":1.0}},"hand_l":null,"hand_r":null}"#;
     for _ in 0..21 {
@@ -380,20 +323,7 @@ async fn rate_limit_recovery_allows_send() {
     ws_a.send(Message::Text(join_payload_a))
         .await
         .expect("send join A");
-    let msg_a = tokio::time::timeout(std::time::Duration::from_millis(500), ws_a.next())
-        .await
-        .expect("timeout waiting selfjoined A")
-        .expect("stream closed A")
-        .expect("ws error A");
-    let text_a = match msg_a {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response A: {:?}", other),
-    };
-    let json_a: serde_json::Value = serde_json::from_str(&text_a).expect("parse SelfJoined A");
-    assert_eq!(
-        json_a.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let json_a = support::wait_for_self_joined(&mut ws_a).await;
     let room_id = json_a
         .get("room_id")
         .and_then(|v| v.as_str())
@@ -420,20 +350,7 @@ async fn rate_limit_recovery_allows_send() {
     ws_b.send(Message::Text(join_payload_b))
         .await
         .expect("send join B");
-    let msg_b = tokio::time::timeout(std::time::Duration::from_millis(500), ws_b.next())
-        .await
-        .expect("timeout waiting selfjoined B")
-        .expect("stream closed B")
-        .expect("ws error B");
-    let text_b = match msg_b {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response B: {:?}", other),
-    };
-    let json_b: serde_json::Value = serde_json::from_str(&text_b).expect("parse SelfJoined B");
-    assert_eq!(
-        json_b.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let _ = support::wait_for_self_joined(&mut ws_b).await;
 
     let pose_payload = r#"{"type":"SendPose","head":{"position":{"x":0.0,"y":1.0,"z":2.0},"rotation":{"x":0.0,"y":0.0,"z":0.0,"w":1.0}},"hand_l":null,"hand_r":null}"#;
     for _ in 0..21 {
@@ -556,20 +473,7 @@ async fn invalid_payload_is_reported() {
     ws.send(Message::Text(join_payload))
         .await
         .expect("send join");
-    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next())
-        .await
-        .expect("timeout waiting selfjoined")
-        .expect("stream closed")
-        .expect("ws error");
-    let text = match msg {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response: {:?}", other),
-    };
-    let json: serde_json::Value = serde_json::from_str(&text).expect("parse SelfJoined");
-    assert_eq!(
-        json.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let _ = support::wait_for_self_joined(&mut ws).await;
 
     // invalid payload: missing head
     let invalid_payload = r#"{"type":"SendPose","hand_l":null,"hand_r":null}"#;
@@ -631,20 +535,7 @@ async fn nan_or_inf_is_invalid() {
     ws.send(Message::Text(join_payload))
         .await
         .expect("send join");
-    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next())
-        .await
-        .expect("timeout waiting selfjoined")
-        .expect("stream closed")
-        .expect("ws error");
-    let text = match msg {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response: {:?}", other),
-    };
-    let json: serde_json::Value = serde_json::from_str(&text).expect("parse SelfJoined");
-    assert_eq!(
-        json.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let _ = support::wait_for_self_joined(&mut ws).await;
 
     let invalid_payload = r#"{"type":"SendPose","head":{"position":{"x":1e309,"y":1.0,"z":2.0},"rotation":{"x":0.0,"y":0.0,"z":0.0,"w":1.0}},"hand_l":null,"hand_r":null}"#;
     ws.send(Message::Text(invalid_payload.into()))

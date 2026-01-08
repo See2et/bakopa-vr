@@ -1,7 +1,7 @@
 mod support;
 
 use bloom_core::{ParticipantId, RoomId};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Notify;
@@ -64,20 +64,7 @@ async fn join_sidecar(
     ws.send(Message::Text(join_payload))
         .await
         .expect("send join");
-    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next())
-        .await
-        .expect("timeout waiting selfjoined")
-        .expect("stream closed")
-        .expect("ws error");
-    let text = match msg {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response: {:?}", other),
-    };
-    let json: serde_json::Value = serde_json::from_str(&text).expect("parse SelfJoined");
-    assert_eq!(
-        json.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let json = support::wait_for_self_joined(ws).await;
     json
 }
 

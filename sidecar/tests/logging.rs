@@ -1,6 +1,6 @@
 mod support;
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio_tungstenite::connect_async;
@@ -182,20 +182,7 @@ async fn tracing_emits_required_fields() {
     ws.send(Message::Text(join_payload))
         .await
         .expect("send join");
-    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next())
-        .await
-        .expect("timeout waiting selfjoined")
-        .expect("stream closed")
-        .expect("ws error");
-    let text = match msg {
-        Message::Text(t) => t,
-        other => panic!("unexpected join response: {:?}", other),
-    };
-    let json: serde_json::Value = serde_json::from_str(&text).expect("parse SelfJoined");
-    assert_eq!(
-        json.get("type").and_then(|v| v.as_str()),
-        Some("SelfJoined")
-    );
+    let json = support::wait_for_self_joined(&mut ws).await;
 
     let pose_payload = r#"{"type":"SendPose","head":{"position":{"x":0.0,"y":1.0,"z":2.0},"rotation":{"x":0.0,"y":0.0,"z":0.0,"w":1.0}},"hand_l":null,"hand_r":null}"#;
     ws.send(Message::Text(pose_payload.into()))

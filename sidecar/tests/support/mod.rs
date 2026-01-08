@@ -1,7 +1,35 @@
 use anyhow::Result;
+use futures_util::StreamExt;
 use axum::Router;
 use std::net::SocketAddr;
 use tokio::{net::TcpListener, task::JoinHandle};
+use tokio_tungstenite::tungstenite::Message;
+
+#[allow(dead_code)]
+pub async fn wait_for_self_joined(
+    ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+) -> serde_json::Value {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while std::time::Instant::now() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await {
+            Ok(Some(Ok(Message::Text(text)))) => {
+                let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
+                if json.get("type").and_then(|v| v.as_str()) == Some("SelfJoined") {
+                    return json;
+                }
+            }
+            Ok(Some(Ok(_))) => {}
+            Ok(Some(Err(err))) => panic!("ws error: {err:?}"),
+            Ok(None) => break,
+            Err(_) => {}
+        }
+    }
+    panic!("expected SelfJoined within deadline");
+}
 
 pub mod bloom;
 
