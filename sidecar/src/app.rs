@@ -322,6 +322,12 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                         }
                                     }
                                 }
+                        } else if msg_type.is_some() {
+                            let _ = socket
+                                .send(Message::Text(invalid_payload_message(
+                                    "unknown message type",
+                                )))
+                                .await;
                         }
                     }
                     Message::Close(_) => break,

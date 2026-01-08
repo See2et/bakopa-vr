@@ -29,6 +29,88 @@ fn build_ws_request(url: &Url) -> Request {
 }
 
 #[tokio::test]
+async fn unknown_message_type_is_invalid_payload() {
+    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+
+    let bloom = support::bloom::spawn_bloom_ws()
+        .await
+        .expect("spawn bloom ws");
+    let bloom_ws_url = bloom.ws_url();
+
+    let app = sidecar::app::App::new().await.expect("app new");
+    let server = support::spawn_axum(app.router())
+        .await
+        .expect("spawn server");
+    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
+
+    let mut request = build_ws_request(&url);
+    request
+        .headers_mut()
+        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
+
+    let (mut ws, _resp) = connect_async(request)
+        .await
+        .expect("handshake should succeed");
+
+    let join_payload = format!(
+        "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+        bloom_ws_url
+    );
+    ws.send(Message::Text(join_payload))
+        .await
+        .expect("send join");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let mut joined = false;
+    while std::time::Instant::now() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await {
+            Ok(Some(Ok(Message::Text(text)))) => {
+                let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
+                if json.get("type").and_then(|v| v.as_str()) == Some("SelfJoined") {
+                    joined = true;
+                    break;
+                }
+            }
+            Ok(Some(Ok(_))) => {}
+            Ok(Some(Err(err))) => panic!("ws error: {err:?}"),
+            Ok(None) => break,
+            Err(_) => {}
+        }
+    }
+    assert!(joined, "expected SelfJoined within deadline");
+
+    // unknown type
+    let unknown_payload = r#"{"type":"MysteryMessage","foo":"bar"}"#;
+    ws.send(Message::Text(unknown_payload.into()))
+        .await
+        .expect("send unknown message");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let mut found = false;
+    while std::time::Instant::now() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(300), ws.next()).await {
+            Ok(Some(Ok(Message::Text(text)))) => {
+                let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
+                if json.get("type").and_then(|v| v.as_str()) == Some("Error")
+                    && json.get("kind").and_then(|v| v.as_str()) == Some("InvalidPayload")
+                {
+                    found = true;
+                    break;
+                }
+            }
+            Ok(Some(Ok(_))) => {}
+            Ok(Some(Err(err))) => panic!("ws error: {err:?}"),
+            Ok(None) => break,
+            Err(_) => {}
+        }
+    }
+    assert!(found, "expected Error kind=InvalidPayload within timeout");
+}
+
+#[tokio::test]
 async fn send_pose_is_forwarded_with_params() {
     let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
 
