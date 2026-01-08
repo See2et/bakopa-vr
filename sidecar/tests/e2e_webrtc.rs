@@ -170,3 +170,39 @@ async fn webrtc_e2e_minimal_roundtrip() {
         Some(participant_a.as_str())
     );
 }
+
+#[tokio::test]
+async fn webrtc_e2e_requires_real_transport() {
+    let _guard = support::EnvGuard::set("SIDECAR_TOKEN", "CORRECT_TOKEN_ABC");
+    let _transport = support::EnvGuard::set("SIDECAR_TRANSPORT", "webrtc");
+
+    let bloom = support::bloom::spawn_bloom_ws()
+        .await
+        .expect("spawn bloom ws");
+    let bloom_ws_url = bloom.ws_url();
+
+    let app = sidecar::app::App::new().await.expect("app new");
+    let server = support::spawn_axum(app.router())
+        .await
+        .expect("spawn server");
+    let url = Url::parse(&format!("{}/sidecar", server.ws_url(""))).expect("url");
+
+    let mut request = build_ws_request(&url);
+    request
+        .headers_mut()
+        .insert(AUTHORIZATION, "Bearer CORRECT_TOKEN_ABC".parse().unwrap());
+    let (mut ws, _resp) = connect_async(request).await.expect("handshake");
+
+    let join_payload = format!(
+        "{{\"type\":\"Join\",\"room_id\":null,\"bloom_ws_url\":\"{}\",\"ice_servers\":[]}}",
+        bloom_ws_url
+    );
+    ws.send(Message::Text(join_payload))
+        .await
+        .expect("send join");
+    let _ = support::wait_for_self_joined(&mut ws).await;
+
+    let transport = sidecar::test_support::last_transport_kind()
+        .expect("expected transport kind to be recorded");
+    assert_eq!(transport, "webrtc");
+}

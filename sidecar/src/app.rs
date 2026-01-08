@@ -39,6 +39,26 @@ struct BusTransport {
     registered: bool,
 }
 
+enum AppSyncer {
+    Bus(BasicSyncer<BusTransport>),
+    Webrtc(BasicSyncer<syncer::webrtc_transport::RealWebrtcTransport>),
+}
+
+impl AppSyncer {
+    fn handle(&mut self, request: SyncerRequest) -> Vec<SyncerEvent> {
+        match self {
+            AppSyncer::Bus(syncer) => syncer.handle(request),
+            AppSyncer::Webrtc(syncer) => syncer.handle(request),
+        }
+    }
+
+    fn poll_only(&mut self) -> Vec<SyncerEvent> {
+        match self {
+            AppSyncer::Bus(syncer) => syncer.poll_only(),
+            AppSyncer::Webrtc(syncer) => syncer.poll_only(),
+        }
+    }
+}
 impl BusTransport {
     fn new(me: ParticipantId, bus: Arc<Mutex<SyncerBus>>) -> Self {
         Self {
@@ -184,7 +204,7 @@ async fn ws_upgrade(
 
 async fn handle_ws(mut socket: WebSocket, state: AppState) {
     let mut joined = false;
-    let mut syncer: Option<BasicSyncer<BusTransport>> = None;
+    let mut syncer: Option<AppSyncer> = None;
     let mut room_id: Option<RoomId> = None;
     let mut participant_id: Option<ParticipantId> = None;
     let mut bloom_ws: Option<BloomWs> = None;
@@ -225,6 +245,15 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                     .get("bloom_ws_url")
                                     .and_then(|v| v.as_str())
                                     .map(|s| s.to_string());
+                                let ice_servers = value
+                                    .get("ice_servers")
+                                    .and_then(|v| v.as_array())
+                                    .map(|list| {
+                                        list.iter()
+                                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                            .collect::<Vec<_>>()
+                                    })
+                                    .unwrap_or_default();
 
                         let result = if let Some(url) = bloom_ws_url {
                             join_via_bloom_session(&url, room_id_opt)
@@ -238,11 +267,42 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                             Ok((rid, pid, participants, ws)) => {
                                 joined = true;
                                 bloom_ws = ws;
-                                if let (Ok(rid_parsed), Ok(pid_parsed)) = (
+                                        if let (Ok(rid_parsed), Ok(pid_parsed)) = (
                                             RoomId::from_str(&rid),
                                             ParticipantId::from_str(&pid),
                                         ) {
-                                            if let Ok(mut hub) = state.syncer_hub.lock() {
+                                            let transport_kind =
+                                                std::env::var("SIDECAR_TRANSPORT").unwrap_or_default();
+                                            if transport_kind == "webrtc" {
+                                                test_support::record_transport_kind("webrtc");
+                                                match syncer::webrtc_transport::RealWebrtcTransport::new(
+                                                    pid_parsed.clone(),
+                                                    ice_servers,
+                                                ) {
+                                                    Ok(transport) => {
+                                                        let mut s = BasicSyncer::new(
+                                                            pid_parsed.clone(),
+                                                            transport,
+                                                        );
+                                                        let _ = s.handle(SyncerRequest::Join {
+                                                            room_id: rid_parsed.clone(),
+                                                            participant_id: pid_parsed.clone(),
+                                                        });
+                                                        syncer = Some(AppSyncer::Webrtc(s));
+                                                    }
+                                                    Err(_) => {
+                                                        let err = serde_json::json!({
+                                                            "type": "Error",
+                                                            "kind": "SignalingError",
+                                                            "message": "webrtc transport init failed",
+                                                        });
+                                                        let _ =
+                                                            socket.send(Message::Text(err.to_string())).await;
+                                                        continue;
+                                                    }
+                                                }
+                                            } else if let Ok(mut hub) = state.syncer_hub.lock() {
+                                                test_support::record_transport_kind("bus");
                                                 let bus = hub.bus_for_room(&rid_parsed);
                                                 let transport = BusTransport::new(pid_parsed.clone(), bus);
                                                 let mut s = BasicSyncer::new(pid_parsed.clone(), transport);
@@ -250,10 +310,10 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                                     room_id: rid_parsed.clone(),
                                                     participant_id: pid_parsed.clone(),
                                                 });
-                                                syncer = Some(s);
-                                                room_id = Some(rid_parsed);
-                                                participant_id = Some(pid_parsed);
+                                                syncer = Some(AppSyncer::Bus(s));
                                             }
+                                            room_id = Some(rid_parsed);
+                                            participant_id = Some(pid_parsed);
                                         }
                                         let self_joined = serde_json::json!({
                                             "type": "SelfJoined",
