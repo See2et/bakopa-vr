@@ -309,21 +309,7 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                                         ctx,
                                     });
                                     for event in events {
-                                        match event {
-                                            SyncerEvent::PoseReceived { from, pose, .. } => {
-                                                if let Some(payload) = pose_received_payload(&from, &pose) {
-                                                    let _ = socket.send(Message::Text(payload)).await;
-                                                }
-                                            }
-                                            SyncerEvent::RateLimited { stream_kind } => {
-                                                let _ = socket
-                                                    .send(Message::Text(rate_limited_payload(
-                                                        stream_kind,
-                                                    )))
-                                                    .await;
-                                            }
-                                            _ => {}
-                                        }
+                                        forward_syncer_event(&mut socket, event).await;
                                     }
                                 }
                             }
@@ -342,21 +328,16 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
                 }
             }
             _ = poll_tick.tick() => {
+                for event in test_support::take_injected_events() {
+                    if let SyncerEvent::Error { kind } = event {
+                        let _ = socket
+                            .send(Message::Text(syncer_error_payload(&kind)))
+                            .await;
+                    }
+                }
                 if let Some(syncer) = syncer.as_mut() {
                     for event in syncer.poll_only() {
-                        match event {
-                            SyncerEvent::PoseReceived { from, pose, .. } => {
-                                if let Some(payload) = pose_received_payload(&from, &pose) {
-                                    let _ = socket.send(Message::Text(payload)).await;
-                                }
-                            }
-                            SyncerEvent::RateLimited { stream_kind } => {
-                                let _ = socket
-                                    .send(Message::Text(rate_limited_payload(stream_kind)))
-                                    .await;
-                            }
-                            _ => {}
-                        }
+                        forward_syncer_event(&mut socket, event).await;
                     }
                 }
             }
@@ -426,6 +407,27 @@ fn pose_received_payload(from: &ParticipantId, pose: &Pose) -> Option<String> {
         }
     });
     Some(payload.to_string())
+}
+
+async fn forward_syncer_event(socket: &mut WebSocket, event: SyncerEvent) {
+    match event {
+        SyncerEvent::PoseReceived { from, pose, .. } => {
+            if let Some(payload) = pose_received_payload(&from, &pose) {
+                let _ = socket.send(Message::Text(payload)).await;
+            }
+        }
+        SyncerEvent::RateLimited { stream_kind } => {
+            let _ = socket
+                .send(Message::Text(rate_limited_payload(stream_kind)))
+                .await;
+        }
+        SyncerEvent::Error { kind } => {
+            let _ = socket
+                .send(Message::Text(syncer_error_payload(&kind)))
+                .await;
+        }
+        _ => {}
+    }
 }
 
 fn rate_limited_payload(stream_kind: StreamKind) -> String {
