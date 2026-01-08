@@ -432,6 +432,15 @@ fn invalid_payload_message(message: &str) -> String {
     .to_string()
 }
 
+pub fn syncer_error_payload(_err: &syncer::SyncerError) -> String {
+    serde_json::json!({
+        "type": "Error",
+        "kind": "TransportError",
+        "message": "syncer error",
+    })
+    .to_string()
+}
+
 fn pose_transform_to_json(pose: &PoseTransform) -> serde_json::Value {
     serde_json::json!({
         "position": {
