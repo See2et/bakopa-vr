@@ -445,11 +445,15 @@ fn invalid_payload_message(message: &str) -> String {
     .to_string()
 }
 
-pub fn syncer_error_payload(_err: &syncer::SyncerError) -> String {
+pub fn syncer_error_payload(err: &syncer::SyncerError) -> String {
+    let message = match err {
+        syncer::SyncerError::InvalidPayload(_) => "invalid payload",
+        syncer::SyncerError::InvalidParticipantId { .. } => "invalid participant id",
+    };
     serde_json::json!({
         "type": "Error",
         "kind": "TransportError",
-        "message": "syncer error",
+        "message": message,
     })
     .to_string()
 }
