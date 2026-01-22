@@ -1,30 +1,55 @@
-## Project Overview
+# AI-DLC and Spec-Driven Development
 
-このプロジェクトは、分散型Social-VR「SuteraVR」と呼称されるものです。従来のSocial-VRが特にインフラ／通信コストに苛まれていることに課題意識を持ち、それをFederationとP2Pによる二重分散により解決することを志向しています。
+Kiro-style Spec Driven Development implementation on AI-DLC (AI Development Life Cycle)
 
-詳細は`docs/product.md`と`docs/architecture.md`を参照して下さい。
+## Project Memory
+Project memory keeps persistent guidance (steering, specs notes, component docs) so Codex honors your standards each run. Treat it as the long-lived source of truth for patterns, conventions, and decisions.
 
-## Do Test-Driven Development & Spec-Driven Development
+- Use `docs/steering/` for project-wide policies: architecture principles, naming schemes, security constraints, tech stack decisions, api standards, etc.
+- Use local `AGENTS.md` files for feature or library context (e.g. `src/lib/payments/AGENTS.md`): describe domain assumptions, API contracts, or testing conventions specific to that folder. Codex auto-loads these when working in the matching path.
+- Specs notes stay with each spec (under `docs/specs/`) to guide specification-level workflows.
 
-和田卓人（t-wada）氏が提唱するテスト駆動開発（TDD）と、仕様駆動開発（SDD）に則って開発を進めて下さい。
+## Project Context
 
-- **テストが開発を駆動する:** すべてのプロダクションコードは、失敗するテストをパスさせるためだけに書かれます。テストは後付けの作業ではありません。それ自身が仕様書であり、設計の駆動役です。
-- **リファクタリングへの自信:** 包括的なテストスイートは我々のセーフティネットです。これにより、私たちは恐れることなく継続的にコードベースのリファクタリングと改善を行えます。
-- **テスト容易性は良い設計に等しい:** コードがテストしにくい場合、それは悪い設計の兆候です。エージェントは、テスト容易性の高いコード作成を最優先しなければなりません。それは自然と、疎結合で凝集度の高いアーキテクチャにつながります。
+### Paths
+- Steering: `docs/steering/`
+- Specs: `docs/specs/`
 
-Coding Agentは、いかに小さな変更であっても、必ずこの反復的なサイクルに従わなければなりません。コードを生成する際は、現在どのフェーズにいるのかを明示してください。
+### Steering vs Specification
 
-また、**仕様が不明瞭なときは勝手に「良さそうな実装」をしない**で下さい。適宜ユーザーに仕様書の更新提案や質疑応答を行って下さい。
-加えて、**YAGNI原則を強く意識し**、仕様書に記載されている内容以上のことに勝手に取り組もうとしないて下さい。
+**Steering** (`docs/steering/`) - Guide AI with project-wide rules and context
+**Specs** (`docs/specs/`) - Formalize development process for individual features
 
-1. Spec: 仕様を明文化する
-    - ユーザーのやりたいことが1Spec=1PRとして過剰・過大であるかを判断。そうである場合、適切な要件と規模に落とし込む(skill: sdd-slice-wish)
-    - ユーザーからヒアリングした内容を元に、Specのドラフトを作成する(skill: sdd-init)
-    - ドラフトの内容に合意できたら、TDDのための充分なテストケースをSpecに網羅する(skill: sdd-test-cases)
-1. Red: 失敗するテストを書く(skill: tdd-red)
-1. Green: テストをパスさせる(skill: tdd-green)
-1. Refactor: コードの品質を向上させる(skill: tdd-refactor)
-1. Commit: 進捗を保存する
+### Active Specifications
+- Check `docs/specs/` for active specifications
+- Use `/prompts:kiro-spec-status [feature-name]` to check progress
+
+## Development Guidelines
+- Think in English, generate responses in Japanese. All Markdown content written to project files (e.g., requirements.md, design.md, tasks.md, research.md, validation reports) MUST be written in the target language configured for this specification (see spec.json.language).
+
+## Minimal Workflow
+- Phase 0 (optional): `/prompts:kiro-steering`, `/prompts:kiro-steering-custom`
+- Phase 1 (Specification):
+  - `/prompts:kiro-spec-init "description"`
+  - `/prompts:kiro-spec-requirements {feature}`
+  - `/prompts:kiro-validate-gap {feature}` (optional: for existing codebase)
+  - `/prompts:kiro-spec-design {feature} [-y]`
+  - `/prompts:kiro-validate-design {feature}` (optional: design review)
+  - `/prompts:kiro-spec-tasks {feature} [-y]`
+- Phase 2 (Implementation): `/prompts:kiro-spec-impl {feature} [tasks]`
+  - `/prompts:kiro-validate-impl {feature}` (optional: after implementation)
+- Progress check: `/prompts:kiro-spec-status {feature}` (use anytime)
+
+## Development Rules
+- 3-phase approval workflow: Requirements → Design → Tasks → Implementation
+- Human review required each phase; use `-y` only for intentional fast-track
+- Keep steering current and verify alignment with `/prompts:kiro-spec-status`
+- Follow the user's instructions precisely, and within that scope act autonomously: gather the necessary context and complete the requested work end-to-end in this run, asking questions only when essential information is missing or the instructions are critically ambiguous.
+
+## Steering Configuration
+- Load entire `docs/steering/` as project memory
+- Default files: `product.md`, `tech.md`, `structure.md`
+- Custom files are supported (managed via `/prompts:kiro-steering-custom`)
 
 ## Rust Coding Rules
 
