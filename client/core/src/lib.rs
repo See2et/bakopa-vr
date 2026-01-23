@@ -1,3 +1,4 @@
+use bevy_ecs::prelude::*;
 use godot::prelude::*;
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -115,6 +116,101 @@ pub struct FrameId(u64);
 pub enum FrameError {
     #[error("client is not running")]
     NotRunning,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CoreError {
+    #[error("ecs world is not initialized")]
+    NotInitialized,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vec3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UnitQuat {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub w: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pose {
+    pub position: Vec3,
+    pub orientation: UnitQuat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InputEvent {
+    Noop,
+}
+
+#[derive(Resource, Debug, Clone, PartialEq)]
+pub struct InputSnapshot {
+    pub frame: FrameId,
+    pub inputs: Vec<InputEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RenderFrame {
+    pub frame: FrameId,
+    pub poses: Vec<Pose>,
+}
+
+pub trait EcsCore {
+    fn init_world(&mut self) -> Result<(), CoreError>;
+    fn tick(&mut self, input: InputSnapshot) -> Result<RenderFrame, CoreError>;
+}
+
+pub struct CoreEcs {
+    world: Option<World>,
+    schedule: Schedule,
+}
+
+impl CoreEcs {
+    pub fn new() -> Self {
+        let mut schedule = Schedule::default();
+        schedule.add_systems(advance_frame);
+        Self {
+            world: None,
+            schedule,
+        }
+    }
+}
+
+impl EcsCore for CoreEcs {
+    fn init_world(&mut self) -> Result<(), CoreError> {
+        let mut world = World::new();
+        world.insert_resource(GameState { frame: FrameId(0) });
+        self.world = Some(world);
+        Ok(())
+    }
+
+    fn tick(&mut self, input: InputSnapshot) -> Result<RenderFrame, CoreError> {
+        let world = self.world.as_mut().ok_or(CoreError::NotInitialized)?;
+        world.insert_resource(input);
+        self.schedule.run(world);
+        let frame = world.resource::<GameState>().frame;
+        world.remove_resource::<InputSnapshot>();
+        Ok(RenderFrame {
+            frame,
+            poses: Vec::new(),
+        })
+    }
+}
+
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+struct GameState {
+    frame: FrameId,
+}
+
+fn advance_frame(mut state: ResMut<GameState>) {
+    state.frame.0 += 1;
 }
 
 struct SuteraClientCore;
@@ -345,5 +441,53 @@ mod tests {
         assert!(matches!(result, Err(ShutdownError::BridgeShutdown(_))));
         assert_eq!(bootstrap.bridge.shutdown_calls, 1);
         assert_eq!(bootstrap.xr.shutdown_calls, 0);
+    }
+
+    #[test]
+    fn init_world_creates_game_state_resource() {
+        let mut ecs = CoreEcs::new();
+
+        ecs.init_world().expect("init succeeds");
+
+        let world = ecs.world.as_ref().expect("world initialized");
+        assert!(world.contains_resource::<GameState>());
+        assert_eq!(world.resource::<GameState>().frame, FrameId(0));
+    }
+
+    #[test]
+    fn tick_runs_systems_and_advances_frame() {
+        let mut ecs = CoreEcs::new();
+        ecs.init_world().expect("init succeeds");
+
+        let first = ecs
+            .tick(InputSnapshot {
+                frame: FrameId(0),
+                inputs: Vec::new(),
+            })
+            .expect("first tick");
+        let second = ecs
+            .tick(InputSnapshot {
+                frame: FrameId(1),
+                inputs: Vec::new(),
+            })
+            .expect("second tick");
+
+        assert_eq!(first.frame, FrameId(1));
+        assert_eq!(second.frame, FrameId(2));
+
+        let world = ecs.world.as_ref().expect("world initialized");
+        assert_eq!(world.resource::<GameState>().frame, FrameId(2));
+    }
+
+    #[test]
+    fn tick_fails_when_world_not_initialized() {
+        let mut ecs = CoreEcs::new();
+
+        let result = ecs.tick(InputSnapshot {
+            frame: FrameId(0),
+            inputs: Vec::new(),
+        });
+
+        assert!(matches!(result, Err(CoreError::NotInitialized)));
     }
 }
