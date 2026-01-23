@@ -1,14 +1,15 @@
 # Technical Design: minimal-godot-client
 
 ## Overview
-本設計は、Godot Engine と bevy_ecs を組み合わせた最小クライアントを構築し、SteamVR で起動できることを到達点とする。状態の真実は bevy_ecs に集中させ、Godot は描画・入出力に専念させることで、テスト可能性と拡張性を確保する。
+本設計は、Godot Engine と bevy_ecs を組み合わせた最小クライアントを構築し、SteamVR で起動できることを到達点とする。ゲーム状態の正本は bevy_ecs に集中させ、Godot は描画・入出力に専念させることで、テスト可能性と拡張性を確保する。なお XR 追跡の一次情報は Godot/OpenXR が提供し、ECS は入力として取り込む。
 
 本機能は既存の Bloom/Syncer とは独立したクライアント領域の新規追加であり、GDExtension を通じて Godot と Rust の橋渡しを行う。Godot の実行時 API への直接依存を避け、依存性逆転による Port/Adapter 構成を採用する。
 
 ### Goals
 - SteamVR 上でクライアントが起動し、最小の描画フレームが表示できる
 - Godot から bevy_ecs への呼び出しを GDExtension 経由で成立させる
-- bevy_ecs が状態の正本となり、Godot は描画/入力に集中する
+- bevy_ecs がゲーム状態の正本となり、Godot は描画/入力に集中する
+- XR 追跡の一次情報は Godot/OpenXR から入力として取り込む
 - Godot 依存を隔離し、Core を純 Rust でテスト可能にする
 
 ### Non-Goals
@@ -55,7 +56,7 @@ graph TB
 ```
 
 **Architecture Integration**
-- Domain/feature boundaries: CoreECS が状態の正本、Godot は描画・入力
+- Domain/feature boundaries: ゲーム状態の正本は CoreECS、XR 追跡の一次情報は Godot/OpenXR、Godot は描画・入力に集中
 - Existing patterns preserved: Rust workspace 分割、強い型、ラッパー型非露出
 - New components rationale: Adapter 層で Godot API 依存を隔離
 - Testability note: Godot クラスの直接操作は実行時依存が強いため、trait による抽象化でテスト可能性を確保
@@ -65,7 +66,7 @@ graph TB
 
 | Layer | Choice / Version | Role in Feature | Notes |
 |-------|------------------|-----------------|-------|
-| Client Runtime | Godot Engine 4.x | 3D/VR 実行環境 | GDExtension 対応 |
+| Client Runtime | Godot Engine 4.5.1 | 3D/VR 実行環境 | GDExtension 対応 |
 | Native Extension | GDExtension API | Godot-Rust ブリッジ | Godot minor 互換が必要 |
 | Rust Binding | godot-rust (gdext) | Rust 側の Godot API | 公式ドキュメント準拠 |
 | ECS | bevy_ecs | 状態管理と更新ループ | 単体利用可能 |
@@ -89,7 +90,8 @@ sequenceDiagram
     OpenXR->>SteamVR: ConnectRuntime
     GodotApp->>GDExtension: LoadExtension
     GDExtension->>CoreECS: InitWorld
-    GodotApp->>CoreECS: TickFrame
+    GodotApp->>GDExtension: TickFrameInput
+    GDExtension->>CoreECS: TickInput
     CoreECS->>GodotApp: RenderState
 ```
 
@@ -126,8 +128,8 @@ sequenceDiagram
 | ClientBootstrap | App Shell | 起動/終了と依存初期化 | 1.1, 1.3, 1.4, 2.1, 2.2 | GodotApp (P0), XRAdapter (P0) | Service |
 | XRAdapter | Adapter | OpenXR 初期化と SteamVR 接続 | 2.1, 2.2 | OpenXR (P0) | Service |
 | GodotBridgeAdapter | Adapter | Godot から ECS へ橋渡し | 3.1, 3.2, 3.3, 3.4, 5.4 | GDExtension (P0), CoreECS (P0) | Service |
-| CoreECS | Domain | ECS 状態正本と更新 | 4.1, 4.2, 4.3, 5.1 | bevy_ecs (P0) | Service, State |
-| InputCollector | Adapter | Godot 入力を ECS へ | 5.2 | Godot Input (P1) | Service |
+| CoreECS | Domain | ゲーム状態正本と更新 | 4.1, 4.2, 4.3, 5.1 | bevy_ecs (P0) | Service, State |
+| InputCollector | Adapter | Godot/XR 入力を ECS へ | 5.2 | Godot Input, OpenXR (P1) | Service |
 | RenderStateProjector | Adapter | ECS 状態を描画へ反映 | 2.3, 5.3 | Godot Render (P1) | State |
 | Docs | Docs | 実行/検証手順の明確化 | 6.1, 6.2, 6.3 | N/A | N/A |
 
@@ -141,7 +143,7 @@ sequenceDiagram
 | Requirements | 4.1, 4.2, 4.3, 5.1 |
 
 **Responsibilities & Constraints**
-- 状態の正本と更新順序の維持
+- ゲーム状態の正本と更新順序の維持
 - Godot 依存を持たない純 Rust の境界
 - 依存性逆転のための抽象インターフェースのみ公開
 
@@ -155,7 +157,21 @@ sequenceDiagram
 ##### Service Interface
 ```rust
 pub struct FrameId(u64);
-pub struct Pose(pub [f32; 7]);
+pub struct Vec3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+pub struct UnitQuat {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub w: f32,
+}
+pub struct Pose {
+    pub position: Vec3,
+    pub orientation: UnitQuat,
+}
 pub struct InputSnapshot {
     pub frame: FrameId,
     pub inputs: Vec<InputEvent>,
@@ -172,7 +188,8 @@ pub trait EcsCore {
 ```
 - Preconditions: `init_world` 後に `tick` を呼ぶ
 - Postconditions: `tick` は最新の `RenderFrame` を返す
-- Invariants: 状態の正本は ECS 内にのみ存在
+- Invariants: ゲーム状態の正本は ECS 内にのみ存在。XR 追跡は入力として取り込む
+- Pose contract: `Vec3` はメートル単位、座標系は Godot/OpenXR の追跡座標に従う。`UnitQuat` は正規化済み (|q|=1) を保証する
 
 ### Adapters / Godot Integration
 
@@ -186,7 +203,7 @@ pub trait EcsCore {
 **Responsibilities & Constraints**
 - GDExtension 呼び出しの受け口を提供
 - Godot API 依存はこの層に閉じる
-- Godot が直接状態を書換する経路を遮断
+- Godot が直接ゲーム状態を書換する経路を遮断
 
 **Dependencies**
 - Inbound: GodotApp — 起動/入力 (P0)
@@ -199,13 +216,12 @@ pub trait EcsCore {
 ```rust
 pub trait GodotBridge {
     fn on_start(&mut self) -> Result<(), BridgeError>;
-    fn on_input(&mut self, input: InputSnapshot) -> Result<(), BridgeError>;
-    fn on_frame(&mut self) -> Result<RenderFrame, BridgeError>;
+    fn on_frame(&mut self, input: InputSnapshot) -> Result<RenderFrame, BridgeError>;
 }
 ```
 - Preconditions: GDExtension 初期化が完了していること
 - Postconditions: CoreECS の更新が反映される
-- Invariants: Godot から直接状態を書換しない
+- Invariants: Godot から直接ゲーム状態を書換しない
 
 #### XRAdapter
 
@@ -244,7 +260,7 @@ pub trait XrRuntime {
 
 **Responsibilities & Constraints**
 - RenderFrame を Godot ノードへ投影
-- Godot 側は描画専用で状態保持しない
+- Godot 側は描画専用でゲーム状態は保持しない
 
 **Dependencies**
 - Inbound: CoreECS — RenderFrame (P1)
@@ -287,7 +303,7 @@ pub trait ClientLifecycle {
 ### Domain Model
 - **Entity**: Player, Controller
 - **Value Objects**: Pose, FrameId, InputSnapshot
-- **Invariants**: 状態の正本は ECS にのみ存在し、Godot 側は投影のみ
+- **Invariants**: ゲーム状態の正本は ECS にのみ存在し、Godot 側は投影のみ。XR 追跡は入力として取り込む
 
 ### Logical Data Model
 **Structure Definition**
@@ -306,7 +322,8 @@ pub trait ClientLifecycle {
 ### Error Categories and Responses
 - **User Errors**: SteamVR 未起動 → 明示的理由提示
 - **System Errors**: GDExtension 初期化失敗 → 起動停止
-- **Business Logic Errors**: 状態直接変更要求 → 拒否し理由通知
+- **Business Logic Errors**: ゲーム状態の直接変更要求 → 拒否し理由通知
+- **Business Logic Errors**: フレーム入力が欠落 → 直前の入力を再利用または拒否（方針に従う）
 
 ### Monitoring
 - tracing による構造化ログ

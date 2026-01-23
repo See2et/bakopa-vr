@@ -75,6 +75,27 @@
 - **Trade-offs**: OpenXR 初期化の設定が必須
 - **Follow-up**: 具体的な Project Settings と XR viewport 設定の検証
 
+### Decision: XR 追跡は Godot/OpenXR を一次情報として扱う
+- **Context**: XR ノードはランタイムにより自動更新され、ECS 側で正本化できない
+- **Alternatives Considered**:
+  1. ECS がすべての状態正本を保持
+  2. XR 追跡のみ Godot/OpenXR を一次情報とする
+- **Selected Approach**: XR 追跡は Godot/OpenXR から入力として取り込み、ゲーム状態の正本は ECS に集中
+- **Rationale**: XR 追跡の現実と整合し、テスト性も確保できる
+- **Trade-offs**: 正本が一元化されないため、境界の明文化が必要
+- **Follow-up**: 入力スナップショットの定義とモック戦略の明確化
+
+### Decision: GodotBridge を on_frame(input) に統合
+- **Context**: on_input と on_frame の分離は入力フレームと描画フレームのズレを生みやすい
+- **Alternatives Considered**:
+  1. Bridge/API を統合して 1 フレーム 1 入力に限定
+  2. Core を分割 API に変更
+  3. FrameId 検証のみ追加
+- **Selected Approach**: Bridge は on_frame(input) の単一入口とし、CoreECS の tick に入力を渡す
+- **Rationale**: フレーム整合性を構造的に担保できる
+- **Trade-offs**: Godot 側で入力をフレームバッファする必要がある
+- **Follow-up**: InputSnapshot 生成タイミングの明確化
+
 ## Risks & Mitigations
 - GDExtension と Godot のバージョン不整合 — Godot のマイナーバージョン固定と拡張ビルドの同期
 - Godot API 直結によるテスト不能 — Port/Adapter で隔離し、Core を純 Rust でテスト
