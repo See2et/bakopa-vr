@@ -306,6 +306,7 @@ name = "client-core"
 version = "0.1.0"
 dependencies = [
  "godot",
+ "thiserror",
 ]
 
 [[package]]
