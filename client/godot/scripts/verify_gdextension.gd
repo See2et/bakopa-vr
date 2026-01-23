@@ -1,0 +1,36 @@
+extends Node
+
+@export var extension_path: String = "res://client_core.gdextension"
+
+func _ready() -> void:
+    var manager = Engine.get_singleton("GDExtensionManager")
+    if manager == null:
+        push_error("GDExtensionManager singleton not found")
+        return
+
+    var abs_path = ProjectSettings.globalize_path(extension_path)
+    var exists_res = FileAccess.file_exists(extension_path)
+    var exists_abs = FileAccess.file_exists(abs_path)
+    var loaded_res = manager.is_extension_loaded(extension_path)
+    var loaded_abs = manager.is_extension_loaded(abs_path)
+    var loaded = loaded_res or loaded_abs
+    var loaded_list = manager.get_loaded_extensions()
+
+    print("GDExtension check")
+    print("path(res): ", extension_path)
+    print("path(abs): ", abs_path)
+    print("exists(res): ", exists_res, " exists(abs): ", exists_abs)
+    print("loaded(res): ", loaded_res, " loaded(abs): ", loaded_abs)
+    print("loaded_extensions: ", loaded_list)
+
+    if loaded:
+        print("OK: GDExtension is loaded")
+        return
+
+    var status = manager.load_extension(abs_path)
+    print("load_extension status: ", status)
+    var loaded_after = manager.is_extension_loaded(abs_path)
+    if loaded_after:
+        print("OK: GDExtension loaded after manual load")
+    else:
+        push_error("NG: GDExtension not loaded")
