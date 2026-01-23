@@ -1,1 +1,30 @@
 # bakopa-vr
+
+## 開発環境 (Nix)
+
+WSL から Windows 向け DLL をクロスビルドするための dev shell を用意しています。
+
+### 1) 事前準備
+
+`nix` が使えることを確認してください。
+
+### 2) 開発シェルに入る
+
+```bash
+nix develop
+```
+
+### 3) Windows DLL をビルド
+
+```bash
+cargo build -p client-core --target x86_64-pc-windows-gnu
+```
+
+### 4) Godot 側の設定
+
+`client/godot/client_core.gdextension` は以下の DLL を参照します。
+
+```
+client/core/target/x86_64-pc-windows-gnu/debug/client_core.dll
+client/core/target/x86_64-pc-windows-gnu/release/client_core.dll
+```
