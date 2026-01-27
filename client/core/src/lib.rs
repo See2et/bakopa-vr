@@ -1,4 +1,5 @@
 use bevy_ecs::prelude::*;
+use godot::classes::{XrInterface, XrServer};
 use godot::prelude::*;
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -37,6 +38,124 @@ pub trait XrRuntime {
     fn enable(&mut self) -> Result<(), XrError>;
     fn is_ready(&self) -> bool;
     fn shutdown(&mut self) -> Result<(), XrError>;
+}
+
+trait XrInterfaceAccess {
+    fn initialize(&mut self) -> bool;
+    fn is_initialized(&self) -> bool;
+    fn uninitialize(&mut self);
+}
+
+trait XrInterfaceProvider {
+    type Interface: XrInterfaceAccess;
+    fn find_openxr(&self) -> Option<Self::Interface>;
+}
+
+struct OpenXrRuntime<P: XrInterfaceProvider> {
+    provider: P,
+    interface: Option<P::Interface>,
+    ready: bool,
+}
+
+impl<P: XrInterfaceProvider> OpenXrRuntime<P> {
+    fn new(provider: P) -> Self {
+        Self {
+            provider,
+            interface: None,
+            ready: false,
+        }
+    }
+}
+
+impl<P: XrInterfaceProvider> XrRuntime for OpenXrRuntime<P> {
+    fn enable(&mut self) -> Result<(), XrError> {
+        let mut interface = self.provider.find_openxr().ok_or_else(|| {
+            XrError::InitializationFailed {
+                reason: "openxr interface not found; enable OpenXR in project settings"
+                    .to_string(),
+            }
+        })?;
+
+        if !interface.initialize() {
+            self.ready = false;
+            return Err(XrError::InitializationFailed {
+                reason: "openxr initialization failed; ensure SteamVR is running".to_string(),
+            });
+        }
+
+        self.ready = interface.is_initialized();
+        if !self.ready {
+            return Err(XrError::InitializationFailed {
+                reason: "openxr runtime not ready; ensure SteamVR is running".to_string(),
+            });
+        }
+
+        self.interface = Some(interface);
+        Ok(())
+    }
+
+    fn is_ready(&self) -> bool {
+        self.ready
+    }
+
+    fn shutdown(&mut self) -> Result<(), XrError> {
+        if let Some(mut interface) = self.interface.take() {
+            interface.uninitialize();
+        }
+        self.ready = false;
+        Ok(())
+    }
+}
+
+struct GodotXrProvider;
+
+impl XrInterfaceProvider for GodotXrProvider {
+    type Interface = Gd<XrInterface>;
+
+    fn find_openxr(&self) -> Option<Self::Interface> {
+        let server = XrServer::singleton();
+        server.find_interface("OpenXR")
+    }
+}
+
+impl XrInterfaceAccess for Gd<XrInterface> {
+    fn initialize(&mut self) -> bool {
+        XrInterface::initialize(&mut *self)
+    }
+
+    fn is_initialized(&self) -> bool {
+        XrInterface::is_initialized(&*self)
+    }
+
+    fn uninitialize(&mut self) {
+        XrInterface::uninitialize(&mut *self)
+    }
+}
+
+pub struct GodotXrRuntime {
+    inner: OpenXrRuntime<GodotXrProvider>,
+}
+
+impl GodotXrRuntime {
+    pub fn new() -> Self {
+        Self {
+            inner: OpenXrRuntime::new(GodotXrProvider),
+        }
+    }
+}
+
+impl XrRuntime for GodotXrRuntime {
+    fn enable(&mut self) -> Result<(), XrError> {
+        self.inner.enable()
+    }
+
+    fn is_ready(&self) -> bool {
+        self.inner.is_ready()
+    }
+
+    fn shutdown(&mut self) -> Result<(), XrError> {
+        self.inner.shutdown()
+    }
 }
 
 pub trait GodotBridge {
@@ -280,6 +399,54 @@ unsafe impl ExtensionLibrary for SuteraClientCore {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone)]
+    struct FakeXrInterface {
+        initialize_calls: usize,
+        initialize_result: bool,
+        initialized: bool,
+        uninitialize_calls: usize,
+    }
+
+    impl Default for FakeXrInterface {
+        fn default() -> Self {
+            Self {
+                initialize_calls: 0,
+                initialize_result: true,
+                initialized: true,
+                uninitialize_calls: 0,
+            }
+        }
+    }
+
+    impl XrInterfaceAccess for FakeXrInterface {
+        fn initialize(&mut self) -> bool {
+            self.initialize_calls += 1;
+            self.initialized = self.initialize_result;
+            self.initialize_result
+        }
+
+        fn is_initialized(&self) -> bool {
+            self.initialized
+        }
+
+        fn uninitialize(&mut self) {
+            self.uninitialize_calls += 1;
+            self.initialized = false;
+        }
+    }
+
+    struct FakeXrProvider {
+        interface: Option<FakeXrInterface>,
+    }
+
+    impl XrInterfaceProvider for FakeXrProvider {
+        type Interface = FakeXrInterface;
+
+        fn find_openxr(&self) -> Option<Self::Interface> {
+            self.interface.clone()
+        }
+    }
 
     struct FakeXr {
         enable_calls: usize,
@@ -639,7 +806,7 @@ mod tests {
 
     #[test]
     fn godot_bridge_forwards_frame_input_to_core() {
-        let mut core = FakeCore::with_tick_result(Ok(RenderFrame {
+        let core = FakeCore::with_tick_result(Ok(RenderFrame {
             frame: FrameId(1),
             poses: Vec::new(),
         }));
@@ -670,5 +837,46 @@ mod tests {
             result,
             Err(BridgeError::DirectStateMutationDenied)
         ));
+    }
+
+    #[test]
+    fn openxr_enable_succeeds_when_ready() {
+        let provider = FakeXrProvider {
+            interface: Some(FakeXrInterface::default()),
+        };
+        let mut runtime = OpenXrRuntime::new(provider);
+
+        let result = runtime.enable();
+
+        assert!(result.is_ok());
+        assert!(runtime.is_ready());
+    }
+
+    #[test]
+    fn openxr_enable_reports_missing_interface() {
+        let provider = FakeXrProvider { interface: None };
+        let mut runtime = OpenXrRuntime::new(provider);
+
+        let result = runtime.enable();
+
+        assert!(matches!(result, Err(XrError::InitializationFailed { .. })));
+        assert!(!runtime.is_ready());
+    }
+
+    #[test]
+    fn openxr_enable_reports_not_ready() {
+        let provider = FakeXrProvider {
+            interface: Some(FakeXrInterface {
+                initialize_result: false,
+                initialized: false,
+                ..FakeXrInterface::default()
+            }),
+        };
+        let mut runtime = OpenXrRuntime::new(provider);
+
+        let result = runtime.enable();
+
+        assert!(matches!(result, Err(XrError::InitializationFailed { .. })));
+        assert!(!runtime.is_ready());
     }
 }
