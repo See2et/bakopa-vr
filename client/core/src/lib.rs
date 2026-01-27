@@ -15,6 +15,12 @@ pub enum BridgeError {
     InitializationFailed { reason: String },
     #[error("bridge shutdown failed: {reason}")]
     ShutdownFailed { reason: String },
+    #[error("bridge is not started")]
+    NotStarted,
+    #[error("direct state mutation is not allowed")]
+    DirectStateMutationDenied,
+    #[error("core error")]
+    Core(#[source] CoreError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +42,7 @@ pub trait XrRuntime {
 pub trait GodotBridge {
     fn on_start(&mut self) -> Result<(), BridgeError>;
     fn on_shutdown(&mut self) -> Result<(), BridgeError>;
+    fn on_frame(&mut self, input: InputSnapshot) -> Result<RenderFrame, BridgeError>;
 }
 
 pub trait ClientLifecycle {
@@ -118,10 +125,12 @@ pub enum FrameError {
     NotRunning,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum CoreError {
     #[error("ecs world is not initialized")]
     NotInitialized,
+    #[error("ecs world initialization failed: {reason}")]
+    InitFailed { reason: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -165,6 +174,56 @@ pub struct RenderFrame {
 pub trait EcsCore {
     fn init_world(&mut self) -> Result<(), CoreError>;
     fn tick(&mut self, input: InputSnapshot) -> Result<RenderFrame, CoreError>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateOverrideRequest {
+    pub reason: String,
+}
+
+pub struct GodotBridgeAdapter<C: EcsCore> {
+    core: C,
+    started: bool,
+}
+
+impl<C: EcsCore> GodotBridgeAdapter<C> {
+    pub fn new(core: C) -> Self {
+        Self {
+            core,
+            started: false,
+        }
+    }
+
+    pub fn request_state_override(
+        &mut self,
+        _request: StateOverrideRequest,
+    ) -> Result<(), BridgeError> {
+        Err(BridgeError::DirectStateMutationDenied)
+    }
+}
+
+impl<C: EcsCore> GodotBridge for GodotBridgeAdapter<C> {
+    fn on_start(&mut self) -> Result<(), BridgeError> {
+        self.core
+            .init_world()
+            .map_err(|err| BridgeError::InitializationFailed {
+                reason: err.to_string(),
+            })?;
+        self.started = true;
+        Ok(())
+    }
+
+    fn on_shutdown(&mut self) -> Result<(), BridgeError> {
+        self.started = false;
+        Ok(())
+    }
+
+    fn on_frame(&mut self, input: InputSnapshot) -> Result<RenderFrame, BridgeError> {
+        if !self.started {
+            return Err(BridgeError::NotStarted);
+        }
+        self.core.tick(input).map_err(BridgeError::Core)
+    }
 }
 
 pub struct CoreEcs {
@@ -285,6 +344,10 @@ mod tests {
         fn on_shutdown(&mut self) -> Result<(), BridgeError> {
             self.shutdown_calls += 1;
             self.shutdown_result.clone()
+        }
+
+        fn on_frame(&mut self, _input: InputSnapshot) -> Result<RenderFrame, BridgeError> {
+            Err(BridgeError::NotStarted)
         }
     }
 
@@ -489,5 +552,123 @@ mod tests {
         });
 
         assert!(matches!(result, Err(CoreError::NotInitialized)));
+    }
+
+    struct FakeCore {
+        init_calls: usize,
+        init_result: Result<(), CoreError>,
+        tick_calls: usize,
+        tick_result: Result<RenderFrame, CoreError>,
+        last_input: Option<InputSnapshot>,
+    }
+
+    impl FakeCore {
+        fn with_tick_result(result: Result<RenderFrame, CoreError>) -> Self {
+            Self {
+                init_calls: 0,
+                init_result: Ok(()),
+                tick_calls: 0,
+                tick_result: result,
+                last_input: None,
+            }
+        }
+    }
+
+    impl Default for FakeCore {
+        fn default() -> Self {
+            Self::with_tick_result(Ok(RenderFrame {
+                frame: FrameId(0),
+                poses: Vec::new(),
+            }))
+        }
+    }
+
+    impl EcsCore for FakeCore {
+        fn init_world(&mut self) -> Result<(), CoreError> {
+            self.init_calls += 1;
+            self.init_result.clone()
+        }
+
+        fn tick(&mut self, input: InputSnapshot) -> Result<RenderFrame, CoreError> {
+            self.tick_calls += 1;
+            self.last_input = Some(input);
+            self.tick_result.clone()
+        }
+    }
+
+    #[test]
+    fn godot_bridge_initializes_on_start() {
+        let core = FakeCore::default();
+        let mut bridge = GodotBridgeAdapter::new(core);
+
+        let result = bridge.on_start();
+
+        assert!(result.is_ok());
+        assert_eq!(bridge.core.init_calls, 1);
+    }
+
+    #[test]
+    fn godot_bridge_reports_initialization_failure() {
+        let mut core = FakeCore::default();
+        core.init_result = Err(CoreError::InitFailed {
+            reason: "init failed".to_string(),
+        });
+        let mut bridge = GodotBridgeAdapter::new(core);
+
+        let result = bridge.on_start();
+
+        assert!(matches!(
+            result,
+            Err(BridgeError::InitializationFailed { .. })
+        ));
+        assert_eq!(bridge.core.init_calls, 1);
+    }
+
+    #[test]
+    fn godot_bridge_rejects_frame_before_start() {
+        let core = FakeCore::default();
+        let mut bridge = GodotBridgeAdapter::new(core);
+
+        let result = bridge.on_frame(InputSnapshot {
+            frame: FrameId(0),
+            inputs: Vec::new(),
+        });
+
+        assert!(matches!(result, Err(BridgeError::NotStarted)));
+    }
+
+    #[test]
+    fn godot_bridge_forwards_frame_input_to_core() {
+        let mut core = FakeCore::with_tick_result(Ok(RenderFrame {
+            frame: FrameId(1),
+            poses: Vec::new(),
+        }));
+        let mut bridge = GodotBridgeAdapter::new(core);
+        bridge.on_start().expect("start succeeds");
+
+        let input = InputSnapshot {
+            frame: FrameId(0),
+            inputs: vec![InputEvent::Noop],
+        };
+        let result = bridge.on_frame(input.clone());
+
+        assert!(result.is_ok());
+        assert_eq!(bridge.core.tick_calls, 1);
+        assert_eq!(bridge.core.last_input, Some(input));
+    }
+
+    #[test]
+    fn godot_bridge_rejects_direct_state_override() {
+        let core = FakeCore::default();
+        let mut bridge = GodotBridgeAdapter::new(core);
+
+        let result = bridge.request_state_override(StateOverrideRequest {
+            reason: "direct change".to_string(),
+        });
+
+        assert!(matches!(
+            result,
+            Err(BridgeError::DirectStateMutationDenied)
+        ));
     }
 }
