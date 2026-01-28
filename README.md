@@ -14,10 +14,20 @@ WSL から Windows 向け DLL をクロスビルドするための dev shell を
 nix develop
 ```
 
+Windows DLL のクロスビルド用シェルが必要な場合:
+```bash
+nix develop .#windows
+```
+
 ### 3) Windows DLL をビルド
 
 ```bash
 cargo build -p client-core --target x86_64-pc-windows-gnu
+```
+
+スクリプト経由で Windows ビルドする場合:
+```bash
+scripts/build-client-core-windows.sh
 ```
 
 ### 4) Godot 側の設定

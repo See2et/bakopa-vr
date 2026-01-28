@@ -1,5 +1,5 @@
 use bevy_ecs::prelude::*;
-use godot::classes::{XrInterface, XrServer};
+use godot::classes::{Node3D, XrInterface, XrServer};
 use godot::prelude::*;
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -213,6 +213,18 @@ impl<X: XrRuntime, B: GodotBridge> ClientBootstrap<X, B> {
         self.frame_id.0 += 1;
         Ok(self.frame_id)
     }
+
+    pub fn tick(&mut self, inputs: Vec<InputEvent>) -> Result<RenderFrame, FrameError> {
+        if !self.running {
+            return Err(FrameError::NotRunning);
+        }
+        self.frame_id.0 += 1;
+        let input = InputSnapshot {
+            frame: self.frame_id,
+            inputs,
+        };
+        self.bridge.on_frame(input).map_err(FrameError::Bridge)
+    }
 }
 
 impl<X: XrRuntime, B: GodotBridge> ClientLifecycle for ClientBootstrap<X, B> {
@@ -242,6 +254,8 @@ pub struct FrameId(u64);
 pub enum FrameError {
     #[error("client is not running")]
     NotRunning,
+    #[error("frame update failed")]
+    Bridge(#[source] BridgeError),
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -259,6 +273,12 @@ pub struct Vec3 {
     pub z: f32,
 }
 
+impl Vec3 {
+    pub fn zero() -> Self {
+        Self { x: 0.0, y: 0.0, z: 0.0 }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UnitQuat {
     pub x: f32,
@@ -267,10 +287,30 @@ pub struct UnitQuat {
     pub w: f32,
 }
 
+impl UnitQuat {
+    pub fn identity() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            w: 1.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pose {
     pub position: Vec3,
     pub orientation: UnitQuat,
+}
+
+impl Pose {
+    pub fn identity() -> Self {
+        Self {
+            position: Vec3::zero(),
+            orientation: UnitQuat::identity(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -290,6 +330,140 @@ pub struct RenderFrame {
     pub poses: Vec<Pose>,
 }
 
+fn pose_to_transform3d(pose: &Pose) -> Transform3D {
+    let origin = Vector3::new(pose.position.x, pose.position.y, pose.position.z);
+    let quat = Quaternion::new(
+        pose.orientation.x,
+        pose.orientation.y,
+        pose.orientation.z,
+        pose.orientation.w,
+    );
+    let basis = Basis::from_quaternion(quat);
+    Transform3D::new(basis, origin)
+}
+
+fn render_frame_first_transform(frame: &RenderFrame) -> Option<Transform3D> {
+    frame.poses.first().map(pose_to_transform3d)
+}
+
+trait TransformTarget {
+    fn set_transform(&mut self, transform: Transform3D);
+}
+
+impl TransformTarget for Gd<Node3D> {
+    fn set_transform(&mut self, transform: Transform3D) {
+        self.call("set_transform", &[transform.to_variant()]);
+    }
+}
+
+fn project_render_frame_to_target(
+    frame: &RenderFrame,
+    target: &mut impl TransformTarget,
+) -> bool {
+    let transform = match render_frame_first_transform(frame) {
+        Some(transform) => transform,
+        None => return false,
+    };
+    target.set_transform(transform);
+    true
+}
+
+#[derive(Debug, Default)]
+pub struct RenderStateProjector;
+
+impl RenderStateProjector {
+    pub fn project(
+        &mut self,
+        frame: &RenderFrame,
+        target: &mut OnEditor<Gd<Node3D>>,
+    ) -> bool {
+        if target.is_invalid() {
+            return false;
+        }
+        let node = &mut **target;
+        project_render_frame_to_target(frame, node)
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct BridgeErrorState {
+    last_error: Option<String>,
+}
+
+impl BridgeErrorState {
+    pub fn record(&mut self, error: &BridgeError) {
+        self.last_error = Some(error.to_string());
+    }
+
+    pub fn last_error(&self) -> Option<&str> {
+        self.last_error.as_deref()
+    }
+}
+
+pub trait RenderSink {
+    fn project(&mut self, frame: RenderFrame);
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct RenderFrameBuffer {
+    last: Option<RenderFrame>,
+}
+
+impl RenderFrameBuffer {
+    pub fn last(&self) -> Option<&RenderFrame> {
+        self.last.as_ref()
+    }
+}
+
+impl RenderSink for RenderFrameBuffer {
+    fn project(&mut self, frame: RenderFrame) {
+        self.last = Some(frame);
+    }
+}
+
+pub struct BridgePipeline<B: GodotBridge, S: RenderSink> {
+    api: GodotBridgeApi<B>,
+    sink: S,
+}
+
+impl<B: GodotBridge, S: RenderSink> BridgePipeline<B, S> {
+    pub fn new(bridge: B, sink: S) -> Self {
+        Self {
+            api: GodotBridgeApi::new(bridge),
+            sink,
+        }
+    }
+
+    pub fn on_start(&mut self) -> Result<(), BridgeError> {
+        self.api.on_start()
+    }
+
+    pub fn on_shutdown(&mut self) -> Result<(), BridgeError> {
+        self.api.on_shutdown()
+    }
+
+    pub fn on_frame(&mut self, input: InputSnapshot) -> Result<(), BridgeError> {
+        let frame = self.api.on_frame(input)?;
+        self.sink.project(frame);
+        Ok(())
+    }
+}
+
+impl<B: GodotBridge + StateOverride, S: RenderSink> BridgePipeline<B, S> {
+    pub fn request_state_override(
+        &mut self,
+        request: StateOverrideRequest,
+    ) -> Result<(), BridgeError> {
+        self.api.request_state_override(request)
+    }
+}
+
+impl<B: GodotBridge> BridgePipeline<B, RenderFrameBuffer> {
+    pub fn last_frame(&self) -> Option<&RenderFrame> {
+        self.sink.last()
+    }
+}
+
 pub trait EcsCore {
     fn init_world(&mut self) -> Result<(), CoreError>;
     fn tick(&mut self, input: InputSnapshot) -> Result<RenderFrame, CoreError>;
@@ -300,9 +474,44 @@ pub struct StateOverrideRequest {
     pub reason: String,
 }
 
+pub trait StateOverride {
+    fn request_state_override(&mut self, request: StateOverrideRequest) -> Result<(), BridgeError>;
+}
+
 pub struct GodotBridgeAdapter<C: EcsCore> {
     core: C,
     started: bool,
+}
+
+pub struct GodotBridgeApi<B: GodotBridge> {
+    bridge: B,
+}
+
+impl<B: GodotBridge> GodotBridgeApi<B> {
+    pub fn new(bridge: B) -> Self {
+        Self { bridge }
+    }
+
+    pub fn on_start(&mut self) -> Result<(), BridgeError> {
+        self.bridge.on_start()
+    }
+
+    pub fn on_shutdown(&mut self) -> Result<(), BridgeError> {
+        self.bridge.on_shutdown()
+    }
+
+    pub fn on_frame(&mut self, input: InputSnapshot) -> Result<RenderFrame, BridgeError> {
+        self.bridge.on_frame(input)
+    }
+}
+
+impl<B: GodotBridge + StateOverride> GodotBridgeApi<B> {
+    pub fn request_state_override(
+        &mut self,
+        request: StateOverrideRequest,
+    ) -> Result<(), BridgeError> {
+        self.bridge.request_state_override(request)
+    }
 }
 
 impl<C: EcsCore> GodotBridgeAdapter<C> {
@@ -318,6 +527,12 @@ impl<C: EcsCore> GodotBridgeAdapter<C> {
         _request: StateOverrideRequest,
     ) -> Result<(), BridgeError> {
         Err(BridgeError::DirectStateMutationDenied)
+    }
+}
+
+impl<C: EcsCore> StateOverride for GodotBridgeAdapter<C> {
+    fn request_state_override(&mut self, request: StateOverrideRequest) -> Result<(), BridgeError> {
+        GodotBridgeAdapter::request_state_override(self, request)
     }
 }
 
@@ -364,7 +579,10 @@ impl CoreEcs {
 impl EcsCore for CoreEcs {
     fn init_world(&mut self) -> Result<(), CoreError> {
         let mut world = World::new();
-        world.insert_resource(GameState { frame: FrameId(0) });
+        world.insert_resource(GameState {
+            frame: FrameId(0),
+            poses: vec![Pose::identity()],
+        });
         self.world = Some(world);
         Ok(())
     }
@@ -373,22 +591,128 @@ impl EcsCore for CoreEcs {
         let world = self.world.as_mut().ok_or(CoreError::NotInitialized)?;
         world.insert_resource(input);
         self.schedule.run(world);
-        let frame = world.resource::<GameState>().frame;
+        let state = world.resource::<GameState>();
+        let frame = state.frame;
+        let poses = state.poses.clone();
         world.remove_resource::<InputSnapshot>();
         Ok(RenderFrame {
             frame,
-            poses: Vec::new(),
+            poses,
         })
     }
 }
 
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 struct GameState {
     frame: FrameId,
+    poses: Vec<Pose>,
 }
 
 fn advance_frame(mut state: ResMut<GameState>) {
     state.frame.0 += 1;
+}
+
+#[derive(GodotClass)]
+#[class(base=Node)]
+pub struct SuteraClientBridge {
+    base: Base<Node>,
+    pipeline: BridgePipeline<GodotBridgeAdapter<CoreEcs>, RenderFrameBuffer>,
+    frame_id: FrameId,
+    error_state: BridgeErrorState,
+    projector: RenderStateProjector,
+    #[export]
+    target_node: OnEditor<Gd<Node3D>>,
+}
+
+#[godot_api]
+impl INode for SuteraClientBridge {
+    fn init(base: Base<Node>) -> Self {
+        let core = CoreEcs::new();
+        let bridge = GodotBridgeAdapter::new(core);
+        Self {
+            base,
+            pipeline: BridgePipeline::new(bridge, RenderFrameBuffer::default()),
+            frame_id: FrameId(0),
+            error_state: BridgeErrorState::default(),
+            projector: RenderStateProjector::default(),
+            target_node: OnEditor::default(),
+        }
+    }
+}
+
+#[godot_api]
+impl SuteraClientBridge {
+    #[func]
+    pub fn on_start(&mut self) -> bool {
+        match self.pipeline.on_start() {
+            Ok(()) => true,
+            Err(err) => {
+                self.error_state.record(&err);
+                godot_error!("{err}");
+                false
+            }
+        }
+    }
+
+    #[func]
+    pub fn on_shutdown(&mut self) -> bool {
+        match self.pipeline.on_shutdown() {
+            Ok(()) => true,
+            Err(err) => {
+                self.error_state.record(&err);
+                godot_error!("{err}");
+                false
+            }
+        }
+    }
+
+    #[func]
+    pub fn on_frame(&mut self) -> bool {
+        self.frame_id.0 += 1;
+        let input = InputSnapshot {
+            frame: self.frame_id,
+            inputs: vec![InputEvent::Noop],
+        };
+        match self.pipeline.on_frame(input) {
+            Ok(()) => {
+                self.project_latest_frame();
+                true
+            }
+            Err(err) => {
+                self.error_state.record(&err);
+                godot_error!("{err}");
+                false
+            }
+        }
+    }
+
+    fn project_latest_frame(&mut self) {
+        let frame = match self.pipeline.last_frame() {
+            Some(frame) => frame,
+            None => return,
+        };
+        self.projector.project(frame, &mut self.target_node);
+    }
+
+    #[func]
+    pub fn last_error(&self) -> GString {
+        GString::from(self.error_state.last_error().unwrap_or_default())
+    }
+
+    #[func]
+    pub fn request_state_override(&mut self, reason: GString) -> bool {
+        let request = StateOverrideRequest {
+            reason: reason.to_string(),
+        };
+        match self.pipeline.request_state_override(request) {
+            Ok(()) => true,
+            Err(err) => {
+                self.error_state.record(&err);
+                godot_error!("{err}");
+                false
+            }
+        }
+    }
 }
 
 struct SuteraClientCore;
@@ -477,6 +801,9 @@ mod tests {
         start_result: Result<(), BridgeError>,
         shutdown_calls: usize,
         shutdown_result: Result<(), BridgeError>,
+        frame_calls: usize,
+        frame_result: Result<RenderFrame, BridgeError>,
+        last_input: Option<InputSnapshot>,
     }
 
     impl Default for FakeXr {
@@ -498,6 +825,9 @@ mod tests {
                 start_result: Ok(()),
                 shutdown_calls: 0,
                 shutdown_result: Ok(()),
+                frame_calls: 0,
+                frame_result: Err(BridgeError::NotStarted),
+                last_input: None,
             }
         }
     }
@@ -514,7 +844,9 @@ mod tests {
         }
 
         fn on_frame(&mut self, _input: InputSnapshot) -> Result<RenderFrame, BridgeError> {
-            Err(BridgeError::NotStarted)
+            self.frame_calls += 1;
+            self.last_input = Some(_input);
+            self.frame_result.clone()
         }
     }
 
@@ -626,6 +958,33 @@ mod tests {
     }
 
     #[test]
+    fn tick_fails_when_not_running() {
+        let xr = FakeXr::default();
+        let bridge = FakeBridge::default();
+        let mut bootstrap = ClientBootstrap::new(xr, bridge);
+
+        let result = bootstrap.tick(Vec::new());
+
+        assert!(matches!(result, Err(FrameError::NotRunning)));
+    }
+
+    #[test]
+    fn tick_reports_bridge_failure() {
+        let xr = FakeXr {
+            ready: true,
+            enable_result: Ok(()),
+            ..FakeXr::default()
+        };
+        let bridge = FakeBridge::default();
+        let mut bootstrap = ClientBootstrap::new(xr, bridge);
+
+        bootstrap.start().expect("start succeeds");
+        let result = bootstrap.tick(Vec::new());
+
+        assert!(matches!(result, Err(FrameError::Bridge(_))));
+    }
+
+    #[test]
     fn shutdown_releases_resources_and_stops_running() {
         let xr = FakeXr {
             ready: true,
@@ -681,7 +1040,9 @@ mod tests {
 
         let world = ecs.world.as_ref().expect("world initialized");
         assert!(world.contains_resource::<GameState>());
-        assert_eq!(world.resource::<GameState>().frame, FrameId(0));
+        let state = world.resource::<GameState>();
+        assert_eq!(state.frame, FrameId(0));
+        assert_eq!(state.poses, vec![Pose::identity()]);
     }
 
     #[test]
@@ -703,10 +1064,36 @@ mod tests {
             .expect("second tick");
 
         assert_eq!(first.frame, FrameId(1));
+        assert_eq!(first.poses, vec![Pose::identity()]);
         assert_eq!(second.frame, FrameId(2));
+        assert_eq!(second.poses, vec![Pose::identity()]);
 
         let world = ecs.world.as_ref().expect("world initialized");
-        assert_eq!(world.resource::<GameState>().frame, FrameId(2));
+        let state = world.resource::<GameState>();
+        assert_eq!(state.frame, FrameId(2));
+        assert_eq!(state.poses, vec![Pose::identity()]);
+    }
+
+    #[test]
+    fn tick_projects_state_to_render_frame() {
+        let mut ecs = CoreEcs::new();
+        ecs.init_world().expect("init succeeds");
+
+        let expected = vec![Pose {
+            position: Vec3 { x: 1.0, y: 2.0, z: 3.0 },
+            orientation: UnitQuat::identity(),
+        }];
+        let world = ecs.world.as_mut().expect("world initialized");
+        world.resource_mut::<GameState>().poses = expected.clone();
+
+        let render = ecs
+            .tick(InputSnapshot {
+                frame: FrameId(0),
+                inputs: Vec::new(),
+            })
+            .expect("tick succeeds");
+
+        assert_eq!(render.poses, expected);
     }
 
     #[test]
@@ -840,6 +1227,70 @@ mod tests {
     }
 
     #[test]
+    fn godot_bridge_api_forwards_start_and_shutdown() {
+        let bridge = FakeBridge::default();
+        let mut api = GodotBridgeApi::new(bridge);
+
+        let start = api.on_start();
+        let shutdown = api.on_shutdown();
+
+        assert!(start.is_ok());
+        assert!(shutdown.is_ok());
+        assert_eq!(api.bridge.start_calls, 1);
+        assert_eq!(api.bridge.shutdown_calls, 1);
+    }
+
+    #[test]
+    fn godot_bridge_api_forwards_frame_input() {
+        let mut bridge = FakeBridge::default();
+        bridge.frame_result = Ok(RenderFrame {
+            frame: FrameId(1),
+            poses: vec![Pose::identity()],
+        });
+        let mut api = GodotBridgeApi::new(bridge);
+        let input = InputSnapshot {
+            frame: FrameId(0),
+            inputs: vec![InputEvent::Noop],
+        };
+
+        let result = api.on_frame(input.clone());
+
+        assert!(result.is_ok());
+        assert_eq!(api.bridge.frame_calls, 1);
+        assert_eq!(api.bridge.last_input, Some(input));
+    }
+
+    #[test]
+    fn client_bootstrap_ticks_render_frame_with_core_and_openxr() {
+        let provider = FakeXrProvider {
+            interface: Some(FakeXrInterface::default()),
+        };
+        let xr = OpenXrRuntime::new(provider);
+        let core = CoreEcs::new();
+        let bridge = GodotBridgeAdapter::new(core);
+        let mut bootstrap = ClientBootstrap::new(xr, bridge);
+
+        bootstrap.start().expect("start succeeds");
+        let render = bootstrap.tick(Vec::new()).expect("tick succeeds");
+
+        assert_eq!(render.frame, FrameId(1));
+        assert_eq!(render.poses, vec![Pose::identity()]);
+    }
+
+    #[test]
+    fn client_bootstrap_reports_openxr_missing_interface() {
+        let provider = FakeXrProvider { interface: None };
+        let xr = OpenXrRuntime::new(provider);
+        let core = CoreEcs::new();
+        let bridge = GodotBridgeAdapter::new(core);
+        let mut bootstrap = ClientBootstrap::new(xr, bridge);
+
+        let result = bootstrap.start();
+
+        assert!(matches!(result, Err(StartError::XrInit(_))));
+    }
+
+    #[test]
     fn openxr_enable_succeeds_when_ready() {
         let provider = FakeXrProvider {
             interface: Some(FakeXrInterface::default()),
@@ -878,5 +1329,159 @@ mod tests {
 
         assert!(matches!(result, Err(XrError::InitializationFailed { .. })));
         assert!(!runtime.is_ready());
+    }
+
+    #[derive(Clone)]
+    struct CapturingSink {
+        captured: std::rc::Rc<std::cell::RefCell<Option<RenderFrame>>>,
+    }
+
+    impl RenderSink for CapturingSink {
+        fn project(&mut self, frame: RenderFrame) {
+            *self.captured.borrow_mut() = Some(frame);
+        }
+    }
+
+    #[test]
+    fn bridge_pipeline_projects_render_frame() {
+        let mut bridge = FakeBridge::default();
+        bridge.frame_result = Ok(RenderFrame {
+            frame: FrameId(1),
+            poses: vec![Pose::identity()],
+        });
+        let captured = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let sink = CapturingSink {
+            captured: captured.clone(),
+        };
+        let mut pipeline = BridgePipeline::new(bridge, sink);
+
+        pipeline.on_start().expect("start succeeds");
+        let input = InputSnapshot {
+            frame: FrameId(0),
+            inputs: vec![InputEvent::Noop],
+        };
+        pipeline.on_frame(input).expect("frame succeeds");
+
+        assert_eq!(
+            *captured.borrow(),
+            Some(RenderFrame {
+                frame: FrameId(1),
+                poses: vec![Pose::identity()],
+            })
+        );
+    }
+
+    #[test]
+    fn gdextension_entry_pipeline_runs_ecs_and_buffers_frame() {
+        let core = CoreEcs::new();
+        let bridge = GodotBridgeAdapter::new(core);
+        let mut pipeline = BridgePipeline::new(bridge, RenderFrameBuffer::default());
+
+        pipeline.on_start().expect("start succeeds");
+        let input = InputSnapshot {
+            frame: FrameId(0),
+            inputs: vec![InputEvent::Noop],
+        };
+        pipeline.on_frame(input).expect("frame succeeds");
+
+        assert_eq!(
+            pipeline.last_frame(),
+            Some(&RenderFrame {
+                frame: FrameId(1),
+                poses: vec![Pose::identity()],
+            })
+        );
+    }
+
+    #[test]
+    fn bridge_error_state_records_last_error() {
+        let mut state = BridgeErrorState::default();
+        let err = BridgeError::InitializationFailed {
+            reason: "gdext init failed".to_string(),
+        };
+
+        state.record(&err);
+
+        assert_eq!(state.last_error(), Some("bridge initialization failed: gdext init failed"));
+    }
+
+    #[test]
+    fn pose_to_transform3d_maps_translation_and_rotation() {
+        let pose = Pose {
+            position: Vec3 { x: 1.0, y: 2.0, z: 3.0 },
+            orientation: UnitQuat::identity(),
+        };
+
+        let transform = pose_to_transform3d(&pose);
+
+        assert_eq!(transform.origin, Vector3::new(1.0, 2.0, 3.0));
+        assert_eq!(transform.basis, Basis::IDENTITY);
+    }
+
+    #[test]
+    fn render_frame_first_transform_picks_first_pose() {
+        let frame = RenderFrame {
+            frame: FrameId(1),
+            poses: vec![
+                Pose {
+                    position: Vec3 { x: 0.2, y: 0.4, z: 0.6 },
+                    orientation: UnitQuat::identity(),
+                },
+                Pose {
+                    position: Vec3 { x: 9.0, y: 9.0, z: 9.0 },
+                    orientation: UnitQuat::identity(),
+                },
+            ],
+        };
+
+        let transform = render_frame_first_transform(&frame).expect("first pose");
+
+        assert_eq!(transform.origin, Vector3::new(0.2, 0.4, 0.6));
+    }
+
+    struct CapturingTarget {
+        last: Option<Transform3D>,
+    }
+
+    impl TransformTarget for CapturingTarget {
+        fn set_transform(&mut self, transform: Transform3D) {
+            self.last = Some(transform);
+        }
+    }
+
+    #[test]
+    fn render_frame_projects_pose_to_target_transform() {
+        let frame = RenderFrame {
+            frame: FrameId(1),
+            poses: vec![Pose {
+                position: Vec3 { x: 1.5, y: 2.5, z: 3.5 },
+                orientation: UnitQuat::identity(),
+            }],
+        };
+        let mut target = CapturingTarget { last: None };
+
+        let applied = project_render_frame_to_target(&frame, &mut target);
+
+        assert!(applied);
+        assert_eq!(
+            target.last.unwrap().origin,
+            Vector3::new(1.5, 2.5, 3.5)
+        );
+    }
+
+    #[test]
+    fn godot_bridge_api_rejects_state_override_request() {
+        let core = FakeCore::default();
+        let bridge = GodotBridgeAdapter::new(core);
+        let mut api = GodotBridgeApi::new(bridge);
+
+        let result = api.request_state_override(StateOverrideRequest {
+            reason: "manual override".to_string(),
+        });
+
+        assert!(matches!(
+            result,
+            Err(BridgeError::DirectStateMutationDenied)
+        ));
     }
 }

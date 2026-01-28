@@ -25,12 +25,39 @@ func _ready() -> void:
 
     if loaded:
         print("OK: GDExtension is loaded")
+    else:
+        var status = manager.load_extension(abs_path)
+        print("load_extension status: ", status)
+        var loaded_after = manager.is_extension_loaded(abs_path)
+        if loaded_after:
+            print("OK: GDExtension loaded after manual load")
+        else:
+            push_error("NG: GDExtension not loaded")
+            return
+
+    var xr_interface = XRServer.find_interface("OpenXR")
+    if xr_interface == null:
+        push_error("OpenXR interface not found: enable OpenXR in project settings")
         return
 
-    var status = manager.load_extension(abs_path)
-    print("load_extension status: ", status)
-    var loaded_after = manager.is_extension_loaded(abs_path)
-    if loaded_after:
-        print("OK: GDExtension loaded after manual load")
-    else:
-        push_error("NG: GDExtension not loaded")
+    print("OpenXR interface found")
+    var initialized = xr_interface.is_initialized()
+    if not initialized:
+        var init_result = xr_interface.initialize()
+        print("OpenXR initialize result: ", init_result)
+    var xr_ready = xr_interface.is_initialized()
+    if xr_ready:
+        XRServer.primary_interface = xr_interface
+        print("XR primary interface set")
+    print("OpenXR initialized: ", xr_ready)
+
+    _configure_viewport(xr_ready)
+
+func _configure_viewport(xr_ready: bool) -> void:
+    var viewport = get_viewport()
+    if viewport == null:
+        push_error("Viewport not found")
+        return
+
+    viewport.use_xr = xr_ready
+    print("Viewport use_xr set: ", viewport.use_xr)

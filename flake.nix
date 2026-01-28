@@ -19,14 +19,21 @@
       pthreads = pkgs.pkgsCross.mingwW64.windows.pthreads;
     in
     {
-      devShells.${system}.default = pkgs.mkShell {
-        packages = [
-          rustToolchain
-          pkgs.pkgsCross.mingwW64.stdenv.cc
-          pthreads
-        ];
-        CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS =
-          "-L native=${pthreads}/lib";
+      devShells.${system} = {
+        default = pkgs.mkShell {
+          packages = [
+            rustToolchain
+          ];
+        };
+        windows = pkgs.mkShell {
+          packages = [
+            rustToolchain
+            pkgs.pkgsCross.mingwW64.stdenv.cc
+            pthreads
+          ];
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS =
+            "-L native=${pthreads}/lib";
+        };
       };
     };
 }
