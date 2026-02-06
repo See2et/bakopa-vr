@@ -2,7 +2,7 @@ language: "ja-JP"
 reviews:
   profile: "assertive"
   request_changes_workflow: true
-  auto_title_placeholder: true
+  auto_title_placeholder: "@coderabbitai"
   high_level_summary: true
   poem: true
   review_status: true
