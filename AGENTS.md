@@ -45,6 +45,8 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 - Human review required each phase; use `-y` only for intentional fast-track
 - Keep steering current and verify alignment with `/prompts:kiro-spec-status`
 - Follow the user's instructions precisely, and within that scope act autonomously: gather the necessary context and complete the requested work end-to-end in this run, asking questions only when essential information is missing or the instructions are critically ambiguous.
+- 実装や編集を行った場合は、完了前に必ず `cargo fmt --all` を実行し、フォーマット差分を解消すること。
+- 実装や編集を行った場合は、完了前に必ず `cargo clippy --all-targets --all-features -- -D warnings` を実行し、警告・エラーを解消すること。
 
 ## Steering Configuration
 - Load entire `docs/steering/` as project memory
