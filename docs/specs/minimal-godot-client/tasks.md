@@ -110,3 +110,57 @@
 - [x] 10.2 RenderStateProjector の動作を確認する
   - RenderFrame の Pose が Godot 側の表示に反映されることを検証する
   - _Requirements: 2.3, 5.3_
+
+- [ ] 11. リファクタ: client/core の責務分割と API 整理を進める
+- [ ] 11.1 lib.rs のモジュール分割を行う
+  - xr / bridge / ecs / render / godot / errors / tests へ分割し、公開 API を最小化する
+
+- [ ] 11.2 Bridge 層のラッパー構成を整理する
+  - GodotBridgeApi / BridgePipeline / GodotBridgeAdapter の責務を再配置し、透過呼び出しを削減する
+
+- [ ] 11.3 FrameId 更新の責務を一元化する
+  - SuteraClientBridge と ClientBootstrap の二重インクリメントを解消する
+
+- [ ] 11.4 エラーの型情報を保持できる設計に修正する
+  - reason 文字列化の依存を減らし、BridgeErrorState に型情報を保持させる
+
+- [ ] 11.5 RenderFrame の Pose 構造を明確化する
+  - 単一 Pose か複数 Pose かを設計で決め、取得規約を整理する
+
+- [ ] 11.6 CoreEcs の初期化フローを安全化する
+  - 未初期化状態を露出しない生成 API に寄せる
+
+- [ ] 11.7 デモ用の挙動を本番ロジックから分離する
+  - advance_frame の仮想アニメを feature または専用システムに切り出す
+
+- [ ] 11.8 Windows DLL 配置ロジックを一本化する
+  - build.rs と scripts/build-client-core-windows.sh の責務を統合する
+
+- [ ] 11.9 GDExtension 検証スクリプトを再利用可能にする
+  - verify_gdextension.gd を検証ノード/ユーティリティとして整理する
+
+- [ ] 12. godot-bevy-ecs-boundary の境界規律を適用する
+- [ ] 12.1 Domain (client/core) を純 Rust に分離する
+  - Godot 型依存 (Gd<T> / Node3D / Transform3D / XrInterface など) を core から除去する
+  - Input/Output ports を純粋データ型で固定する
+  - _Requirements: 5.1, 5.2_
+
+- [ ] 12.2 Adapter 層に Godot 依存を集約する
+  - GDExtension 入口/描画投影/XR 初期化を adapter 側へ移す
+  - Godot 呼び出しは Adapter でのみ行う
+  - _Requirements: 3.1, 3.2, 5.3_
+
+- [ ] 12.3 公開 API を再整理する
+  - core は Domain 型のみ re-export する
+  - adapter は Godot 向け API を公開する
+  - _Requirements: 5.1, 5.3_
+
+- [ ] 12.4 テスト分離を行う
+  - core の unit tests は Godot 依存ゼロにする
+  - Godot 依存テストは adapter 側へ移動または feature 分離する
+  - _Requirements: 4.1, 5.1, 6.2_
+
+- [ ] 12.5 入出力ポートを整備する
+  - Godot InputEvent を Domain InputSnapshot に変換する adapter を追加する
+  - Domain output を Godot 変換へ適用する処理を adapter 側に集約する
+  - _Requirements: 3.2, 5.2, 5.3_
