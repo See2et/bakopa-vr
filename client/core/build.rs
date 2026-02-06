@@ -18,13 +18,23 @@ fn main() {
     };
 
     let dll_name = "client_core.dll";
-    let dll_path = target_dir.join("x86_64-pc-windows-gnu").join(&profile).join(dll_name);
+    let dll_path = target_dir
+        .join("x86_64-pc-windows-gnu")
+        .join(&profile)
+        .join(dll_name);
     if !dll_path.exists() {
         return;
     }
 
-    let repo_root = target_dir.parent().map(Path::to_path_buf).unwrap_or(target_dir);
-    let dest_dir = repo_root.join("client").join("godot").join("bin").join("windows");
+    let repo_root = target_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or(target_dir);
+    let dest_dir = repo_root
+        .join("client")
+        .join("godot")
+        .join("bin")
+        .join("windows");
     if let Err(err) = fs::create_dir_all(&dest_dir) {
         println!("cargo:warning=failed to create output dir: {}", err);
         return;
@@ -32,7 +42,6 @@ fn main() {
     let dest_path = dest_dir.join(dll_name);
     if let Err(err) = fs::copy(&dll_path, &dest_path) {
         println!("cargo:warning=failed to copy dll: {}", err);
-        return;
     }
 }
 

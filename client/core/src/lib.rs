@@ -69,12 +69,13 @@ impl<P: XrInterfaceProvider> OpenXrRuntime<P> {
 
 impl<P: XrInterfaceProvider> XrRuntime for OpenXrRuntime<P> {
     fn enable(&mut self) -> Result<(), XrError> {
-        let mut interface = self.provider.find_openxr().ok_or_else(|| {
-            XrError::InitializationFailed {
-                reason: "openxr interface not found; enable OpenXR in project settings"
-                    .to_string(),
-            }
-        })?;
+        let mut interface =
+            self.provider
+                .find_openxr()
+                .ok_or_else(|| XrError::InitializationFailed {
+                    reason: "openxr interface not found; enable OpenXR in project settings"
+                        .to_string(),
+                })?;
 
         if !interface.initialize() {
             self.ready = false;
@@ -124,7 +125,7 @@ impl XrInterfaceAccess for Gd<XrInterface> {
     }
 
     fn is_initialized(&self) -> bool {
-        XrInterface::is_initialized(&*self)
+        XrInterface::is_initialized(self)
     }
 
     fn uninitialize(&mut self) {
@@ -141,6 +142,12 @@ impl GodotXrRuntime {
         Self {
             inner: OpenXrRuntime::new(GodotXrProvider),
         }
+    }
+}
+
+impl Default for GodotXrRuntime {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -239,9 +246,7 @@ impl<X: XrRuntime, B: GodotBridge> ClientLifecycle for ClientBootstrap<X, B> {
         self.bridge
             .on_shutdown()
             .map_err(ShutdownError::BridgeShutdown)?;
-        self.xr
-            .shutdown()
-            .map_err(ShutdownError::XrShutdown)?;
+        self.xr.shutdown().map_err(ShutdownError::XrShutdown)?;
         self.running = false;
         Ok(())
     }
@@ -275,7 +280,11 @@ pub struct Vec3 {
 
 impl Vec3 {
     pub fn zero() -> Self {
-        Self { x: 0.0, y: 0.0, z: 0.0 }
+        Self {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        }
     }
 }
 
@@ -356,10 +365,7 @@ impl TransformTarget for Gd<Node3D> {
     }
 }
 
-fn project_render_frame_to_target(
-    frame: &RenderFrame,
-    target: &mut impl TransformTarget,
-) -> bool {
+fn project_render_frame_to_target(frame: &RenderFrame, target: &mut impl TransformTarget) -> bool {
     let transform = match render_frame_first_transform(frame) {
         Some(transform) => transform,
         None => return false,
@@ -372,11 +378,7 @@ fn project_render_frame_to_target(
 pub struct RenderStateProjector;
 
 impl RenderStateProjector {
-    pub fn project(
-        &mut self,
-        frame: &RenderFrame,
-        target: &mut OnEditor<Gd<Node3D>>,
-    ) -> bool {
+    pub fn project(&mut self, frame: &RenderFrame, target: &mut OnEditor<Gd<Node3D>>) -> bool {
         if target.is_invalid() {
             return false;
         }
@@ -576,6 +578,12 @@ impl CoreEcs {
     }
 }
 
+impl Default for CoreEcs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EcsCore for CoreEcs {
     fn init_world(&mut self) -> Result<(), CoreError> {
         let mut world = World::new();
@@ -595,10 +603,7 @@ impl EcsCore for CoreEcs {
         let frame = state.frame;
         let poses = state.poses.clone();
         world.remove_resource::<InputSnapshot>();
-        Ok(RenderFrame {
-            frame,
-            poses,
-        })
+        Ok(RenderFrame { frame, poses })
     }
 }
 
@@ -634,7 +639,7 @@ impl INode for SuteraClientBridge {
             pipeline: BridgePipeline::new(bridge, RenderFrameBuffer::default()),
             frame_id: FrameId(0),
             error_state: BridgeErrorState::default(),
-            projector: RenderStateProjector::default(),
+            projector: RenderStateProjector,
             target_node: OnEditor::default(),
         }
     }
@@ -1080,7 +1085,11 @@ mod tests {
         ecs.init_world().expect("init succeeds");
 
         let expected = vec![Pose {
-            position: Vec3 { x: 1.0, y: 2.0, z: 3.0 },
+            position: Vec3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            },
             orientation: UnitQuat::identity(),
         }];
         let world = ecs.world.as_mut().expect("world initialized");
@@ -1163,10 +1172,12 @@ mod tests {
 
     #[test]
     fn godot_bridge_reports_initialization_failure() {
-        let mut core = FakeCore::default();
-        core.init_result = Err(CoreError::InitFailed {
-            reason: "init failed".to_string(),
-        });
+        let core = FakeCore {
+            init_result: Err(CoreError::InitFailed {
+                reason: "init failed".to_string(),
+            }),
+            ..Default::default()
+        };
         let mut bridge = GodotBridgeAdapter::new(core);
 
         let result = bridge.on_start();
@@ -1242,11 +1253,13 @@ mod tests {
 
     #[test]
     fn godot_bridge_api_forwards_frame_input() {
-        let mut bridge = FakeBridge::default();
-        bridge.frame_result = Ok(RenderFrame {
-            frame: FrameId(1),
-            poses: vec![Pose::identity()],
-        });
+        let bridge = FakeBridge {
+            frame_result: Ok(RenderFrame {
+                frame: FrameId(1),
+                poses: vec![Pose::identity()],
+            }),
+            ..Default::default()
+        };
         let mut api = GodotBridgeApi::new(bridge);
         let input = InputSnapshot {
             frame: FrameId(0),
@@ -1344,11 +1357,13 @@ mod tests {
 
     #[test]
     fn bridge_pipeline_projects_render_frame() {
-        let mut bridge = FakeBridge::default();
-        bridge.frame_result = Ok(RenderFrame {
-            frame: FrameId(1),
-            poses: vec![Pose::identity()],
-        });
+        let bridge = FakeBridge {
+            frame_result: Ok(RenderFrame {
+                frame: FrameId(1),
+                poses: vec![Pose::identity()],
+            }),
+            ..Default::default()
+        };
         let captured = std::rc::Rc::new(std::cell::RefCell::new(None));
         let sink = CapturingSink {
             captured: captured.clone(),
@@ -1402,13 +1417,20 @@ mod tests {
 
         state.record(&err);
 
-        assert_eq!(state.last_error(), Some("bridge initialization failed: gdext init failed"));
+        assert_eq!(
+            state.last_error(),
+            Some("bridge initialization failed: gdext init failed")
+        );
     }
 
     #[test]
     fn pose_to_transform3d_maps_translation_and_rotation() {
         let pose = Pose {
-            position: Vec3 { x: 1.0, y: 2.0, z: 3.0 },
+            position: Vec3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            },
             orientation: UnitQuat::identity(),
         };
 
@@ -1424,11 +1446,19 @@ mod tests {
             frame: FrameId(1),
             poses: vec![
                 Pose {
-                    position: Vec3 { x: 0.2, y: 0.4, z: 0.6 },
+                    position: Vec3 {
+                        x: 0.2,
+                        y: 0.4,
+                        z: 0.6,
+                    },
                     orientation: UnitQuat::identity(),
                 },
                 Pose {
-                    position: Vec3 { x: 9.0, y: 9.0, z: 9.0 },
+                    position: Vec3 {
+                        x: 9.0,
+                        y: 9.0,
+                        z: 9.0,
+                    },
                     orientation: UnitQuat::identity(),
                 },
             ],
@@ -1454,7 +1484,11 @@ mod tests {
         let frame = RenderFrame {
             frame: FrameId(1),
             poses: vec![Pose {
-                position: Vec3 { x: 1.5, y: 2.5, z: 3.5 },
+                position: Vec3 {
+                    x: 1.5,
+                    y: 2.5,
+                    z: 3.5,
+                },
                 orientation: UnitQuat::identity(),
             }],
         };
@@ -1463,10 +1497,7 @@ mod tests {
         let applied = project_render_frame_to_target(&frame, &mut target);
 
         assert!(applied);
-        assert_eq!(
-            target.last.unwrap().origin,
-            Vector3::new(1.5, 2.5, 3.5)
-        );
+        assert_eq!(target.last.unwrap().origin, Vector3::new(1.5, 2.5, 3.5));
     }
 
     #[test]
