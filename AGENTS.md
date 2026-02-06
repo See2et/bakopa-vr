@@ -1,32 +1,3 @@
-<<<<<<< HEAD
-## Project Overview
-
-このプロジェクトは、分散型Social-VR「SuteraVR」と呼称されるものです。従来のSocial-VRが特にインフラ／通信コストに苛まれていることに課題意識を持ち、それをFederationとP2Pによる二重分散により解決することを志向しています。
-
-詳細は`docs/product.md`と`docs/architecture.md`を参照して下さい。
-
-## Do Test-Driven Development & Spec-Driven Development
-
-和田卓人（t-wada）氏が提唱するテスト駆動開発（TDD）と、仕様駆動開発（SDD）に則って開発を進めて下さい。
-
-- **テストが開発を駆動する:** すべてのプロダクションコードは、失敗するテストをパスさせるためだけに書かれます。テストは後付けの作業ではありません。それ自身が仕様書であり、設計の駆動役です。
-- **リファクタリングへの自信:** 包括的なテストスイートは我々のセーフティネットです。これにより、私たちは恐れることなく継続的にコードベースのリファクタリングと改善を行えます。
-- **テスト容易性は良い設計に等しい:** コードがテストしにくい場合、それは悪い設計の兆候です。エージェントは、テスト容易性の高いコード作成を最優先しなければなりません。それは自然と、疎結合で凝集度の高いアーキテクチャにつながります。
-
-Coding Agentは、いかに小さな変更であっても、必ずこの反復的なサイクルに従わなければなりません。コードを生成する際は、現在どのフェーズにいるのかを明示してください。
-
-また、**仕様が不明瞭なときは勝手に「良さそうな実装」をしない**で下さい。適宜ユーザーに仕様書の更新提案や質疑応答を行って下さい。
-加えて、**YAGNI原則を強く意識し**、仕様書に記載されている内容以上のことに勝手に取り組もうとしないて下さい。
-
-1. Spec: 仕様を明文化する
-    - ユーザーのやりたいことが1Spec=1PRとして過剰・過大であるかを判断。そうである場合、適切な要件と規模に落とし込む(skill: sdd-slice-wish)
-    - ユーザーからヒアリングした内容を元に、Specのドラフトを作成する(skill: sdd-init)
-    - ドラフトの内容に合意できたら、TDDのための充分なテストケースをSpecに網羅する(skill: sdd-test-cases)
-1. Red: 失敗するテストを書く(skill: tdd-red)
-1. Green: テストをパスさせる(skill: tdd-green)
-1. Refactor: コードの品質を向上させる(skill: tdd-refactor)
-1. Commit: 進捗を保存する
-=======
 # AI-DLC and Spec-Driven Development
 
 Kiro-style Spec Driven Development implementation on AI-DLC (AI Development Life Cycle)
@@ -79,7 +50,6 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 - Load entire `docs/steering/` as project memory
 - Default files: `product.md`, `tech.md`, `structure.md`
 - Custom files are supported (managed via `/prompts:kiro-steering-custom`)
->>>>>>> origin/minimal-godot-client
 
 ## Rust Coding Rules
 

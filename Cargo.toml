@@ -1,7 +1,3 @@
 [workspace]
-<<<<<<< HEAD
-members = ["bloom/api", "bloom/core", "bloom/ws", "syncer"]
-=======
 members = ["bloom/api", "bloom/core", "bloom/ws", "syncer", "client/core"]
->>>>>>> origin/minimal-godot-client
 resolver = "2"

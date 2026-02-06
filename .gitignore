@@ -21,8 +21,6 @@ target
 #.idea/
 
 .serena
-<<<<<<< HEAD
-=======
 
 # Godot 4+ specific ignores
 .godot/
@@ -41,4 +39,3 @@ data_*/
 mono_crash.*.json
 
 client/godot/bin/
->>>>>>> origin/minimal-godot-client

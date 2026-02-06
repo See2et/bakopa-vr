@@ -1,6 +1,4 @@
 # bakopa-vr
-<<<<<<< HEAD
-=======
 
 ## 開発環境 (Nix)
 
@@ -40,4 +38,3 @@ scripts/build-client-core-windows.sh
 client/core/target/x86_64-pc-windows-gnu/debug/client_core.dll
 client/core/target/x86_64-pc-windows-gnu/release/client_core.dll
 ```
->>>>>>> origin/minimal-godot-client
