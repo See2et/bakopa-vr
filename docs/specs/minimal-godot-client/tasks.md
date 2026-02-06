@@ -141,7 +141,7 @@
 
 - [x] 12. godot-bevy-ecs-boundary の境界規律を適用する
 - [x] 12.1 Domain (client/core) を純 Rust に分離する
-  - Godot 型依存 (Gd<T> / Node3D / Transform3D / XrInterface など) を core から除去する
+  - Godot 型依存 (`Gd<T>` / Node3D / Transform3D / XrInterface など) を core から除去する
   - Input/Output ports を純粋データ型で固定する
   - _Requirements: 5.1, 5.2_
 

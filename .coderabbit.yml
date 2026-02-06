@@ -12,3 +12,4 @@ reviews:
   path_filters:
     - "!.codex/prompts"
     - "!docs/settings/"
+    - "!docs/specs"

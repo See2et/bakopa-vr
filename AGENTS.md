@@ -47,6 +47,8 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 - Follow the user's instructions precisely, and within that scope act autonomously: gather the necessary context and complete the requested work end-to-end in this run, asking questions only when essential information is missing or the instructions are critically ambiguous.
 - 実装や編集を行った場合は、完了前に必ず `cargo fmt --all` を実行し、フォーマット差分を解消すること。
 - 実装や編集を行った場合は、完了前に必ず `cargo clippy --all-targets --all-features -- -D warnings` を実行し、警告・エラーを解消すること。
+- `docs/` 配下の Markdown を編集した場合は、完了前に必ず `npx markdownlint-cli2 --fix "docs/**/*.md" "!docs/settings/**" "!docs/specs"` を実行し、自動修正を反映すること。
+- その後、必ず `npx markdownlint-cli2 "docs/**/*.md" "!docs/settings/**" "!docs/specs"` を実行し、警告・エラーがないことを確認すること。
 
 ## Steering Configuration
 - Load entire `docs/steering/` as project memory

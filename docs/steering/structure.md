@@ -8,26 +8,31 @@
 ## ディレクトリ・パターン
 
 ### Bloom API
+
 **Location**: `/bloom/api/`  
 **Purpose**: シグナリングのリクエスト/イベント/エラー型の定義  
 **Example**: `bloom/api/src/requests.rs`
 
 ### Bloom Core
+
 **Location**: `/bloom/core/`  
 **Purpose**: ルーム/参加者管理や Join/Leave などのドメインロジック  
 **Example**: `bloom/core/src/room.rs`
 
 ### Bloom WS Server
+
 **Location**: `/bloom/ws/`  
 **Purpose**: `/ws` エンドポイントの WebSocket サーバ実装  
 **Example**: `bloom/ws/src/server.rs`
 
 ### Syncer
+
 **Location**: `/syncer/`  
 **Purpose**: P2P 同期ライブラリ（メッセージ、ルーティング、WebRTC Transport）  
 **Example**: `syncer/src/messages/`
 
 ### 仕様
+
 **Location**: `/docs/specs/`  
 **Purpose**: 機能ごとの仕様・設計・タスク管理  
 **Example**: `docs/specs/*`
