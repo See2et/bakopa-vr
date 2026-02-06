@@ -1,4 +1,4 @@
-use crate::core::ecs::{FrameClock, InputSnapshot, RenderFrame};
+use crate::ecs::{FrameClock, InputSnapshot, RenderFrame};
 
 pub trait InputPort {
     fn snapshot(&mut self, frame_clock: &mut FrameClock) -> InputSnapshot;

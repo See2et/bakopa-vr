@@ -164,3 +164,27 @@
   - Godot InputEvent を Domain InputSnapshot に変換する adapter を追加する
   - Domain output を Godot 変換へ適用する処理を adapter 側に集約する
   - _Requirements: 3.2, 5.2, 5.3_
+
+- [x] 13. レビュー指摘の境界不整合を是正する
+- [x] 13.1 Noop 固定入力を廃止し、Godot 入力を Domain 入力へ変換する
+  - `GodotInputPort::empty()` 依存をやめ、1フレーム内イベント収集経路を実装する
+  - `InputEvent::Noop` 以外の最小イベント型（例: Move / Look / Action）を導入する
+  - `from_events` の未使用状態を解消し、`InputEvent* -> Domain input` 変換テストを追加する
+  - _Requirements: 3.2, 5.2, 5.3_
+
+- [x] 13.2 crate を `client-domain` と `client-godot-adapter` に分割する
+  - `client-domain` は pure Rust + bevy_ecs のみ依存し、Godot 依存を完全排除する
+  - `client-godot-adapter` は GDExtension 入口 / XR / 描画投影 / 入出力変換を保持する
+  - 既存 `client-core` 参照を新 crate 構成へ移行し、ビルド・テスト導線を更新する
+  - _Requirements: 5.1, 5.2, 5.3, 6.2_
+
+- [x] 13.3 Domain API から Godot 固有語を排除する
+  - `GodotBridge*` 命名を `RuntimeBridge*` など中立名へ置換する
+  - Domain の public API から engine 固有概念を除去し、ports で接続する
+  - rename 後の参照更新と回帰テストを実施する
+  - _Requirements: 5.1, 5.2_
+
+- [x] 13.4 出力投影失敗を観測可能にする
+  - `RenderStateProjector::project` の失敗を握りつぶさず、BridgeErrorState に記録する
+  - `target invalid` 時の失敗パスに対する adapter テストを追加する
+  - _Requirements: 3.3, 6.2_

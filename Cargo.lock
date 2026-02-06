@@ -456,12 +456,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "client-core"
+name = "client-domain"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
- "godot",
  "thiserror",
+]
+
+[[package]]
+name = "client-godot-adapter"
+version = "0.1.0"
+dependencies = [
+ "client-domain",
+ "godot",
 ]
 
 [[package]]

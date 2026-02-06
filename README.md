@@ -22,7 +22,7 @@ nix develop .#windows
 ### 3) Windows DLL をビルド
 
 ```bash
-cargo build -p client-core --target x86_64-pc-windows-gnu
+cargo build -p client-godot-adapter --target x86_64-pc-windows-gnu
 ```
 
 スクリプト経由で Windows ビルドする場合:
@@ -35,6 +35,6 @@ scripts/build-client-core-windows.sh
 `client/godot/client_core.gdextension` は以下の DLL を参照します。
 
 ```
-client/core/target/x86_64-pc-windows-gnu/debug/client_core.dll
-client/core/target/x86_64-pc-windows-gnu/release/client_core.dll
+client/godot-adapter/target/x86_64-pc-windows-gnu/debug/client_core.dll
+client/godot-adapter/target/x86_64-pc-windows-gnu/release/client_core.dll
 ```

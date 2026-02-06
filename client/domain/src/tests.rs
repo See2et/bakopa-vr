@@ -1,5 +1,5 @@
 use super::bridge::{
-    BridgePipeline, ClientBootstrap, ClientLifecycle, GodotBridge, GodotBridgeAdapter,
+    BridgePipeline, ClientBootstrap, ClientLifecycle, RuntimeBridge, RuntimeBridgeAdapter,
 };
 use super::ecs::{
     CoreEcs, EcsCore, FrameClock, FrameId, InputEvent, InputSnapshot, Pose, RenderFrame, UnitQuat,
@@ -119,7 +119,7 @@ impl Default for FakeBridge {
     }
 }
 
-impl GodotBridge for FakeBridge {
+impl RuntimeBridge for FakeBridge {
     fn on_start(&mut self) -> Result<(), BridgeError> {
         self.start_calls += 1;
         self.start_result.clone()
@@ -425,9 +425,9 @@ impl EcsCore for FakeCore {
 }
 
 #[test]
-fn godot_bridge_initializes_on_start() {
+fn runtime_bridge_initializes_on_start() {
     let core = FakeCore::default();
-    let mut bridge = GodotBridgeAdapter::new(core);
+    let mut bridge = RuntimeBridgeAdapter::new(core);
 
     let result = bridge.on_start();
 
@@ -436,14 +436,14 @@ fn godot_bridge_initializes_on_start() {
 }
 
 #[test]
-fn godot_bridge_reports_initialization_failure() {
+fn runtime_bridge_reports_initialization_failure() {
     let core = FakeCore {
         init_result: Err(CoreError::InitFailed {
             reason: "init failed".to_string(),
         }),
         ..Default::default()
     };
-    let mut bridge = GodotBridgeAdapter::new(core);
+    let mut bridge = RuntimeBridgeAdapter::new(core);
 
     let result = bridge.on_start();
 
@@ -452,9 +452,9 @@ fn godot_bridge_reports_initialization_failure() {
 }
 
 #[test]
-fn godot_bridge_rejects_frame_before_start() {
+fn runtime_bridge_rejects_frame_before_start() {
     let core = FakeCore::default();
-    let mut bridge = GodotBridgeAdapter::new(core);
+    let mut bridge = RuntimeBridgeAdapter::new(core);
 
     let result = bridge.on_frame(InputSnapshot {
         frame: FrameId(0),
@@ -465,12 +465,12 @@ fn godot_bridge_rejects_frame_before_start() {
 }
 
 #[test]
-fn godot_bridge_forwards_frame_input_to_core() {
+fn runtime_bridge_forwards_frame_input_to_core() {
     let core = FakeCore::with_tick_result(Ok(RenderFrame::from_primary_pose(
         FrameId(1),
         Pose::identity(),
     )));
-    let mut bridge = GodotBridgeAdapter::new(core);
+    let mut bridge = RuntimeBridgeAdapter::new(core);
     bridge.on_start().expect("start succeeds");
 
     let input = InputSnapshot {
@@ -488,9 +488,9 @@ fn godot_bridge_forwards_frame_input_to_core() {
 }
 
 #[test]
-fn godot_bridge_rejects_direct_state_override() {
+fn runtime_bridge_rejects_direct_state_override() {
     let core = FakeCore::default();
-    let mut bridge = GodotBridgeAdapter::new(core);
+    let mut bridge = RuntimeBridgeAdapter::new(core);
 
     let result = bridge.request_state_override(super::bridge::StateOverrideRequest {
         reason: "direct change".to_string(),
@@ -509,7 +509,7 @@ fn client_bootstrap_ticks_render_frame_with_core_and_openxr() {
     };
     let xr = OpenXrRuntime::new(provider);
     let core = CoreEcs::new();
-    let bridge = GodotBridgeAdapter::new(core);
+    let bridge = RuntimeBridgeAdapter::new(core);
     let mut bootstrap = ClientBootstrap::new(xr, bridge);
 
     bootstrap.start().expect("start succeeds");
@@ -524,7 +524,7 @@ fn client_bootstrap_reports_openxr_missing_interface() {
     let provider = FakeXrProvider { interface: None };
     let xr = OpenXrRuntime::new(provider);
     let core = CoreEcs::new();
-    let bridge = GodotBridgeAdapter::new(core);
+    let bridge = RuntimeBridgeAdapter::new(core);
     let mut bootstrap = ClientBootstrap::new(xr, bridge);
 
     let result = bootstrap.start();
@@ -616,7 +616,7 @@ fn bridge_pipeline_projects_render_frame() {
 fn bridge_pipeline_on_port_input_uses_shared_frame_clock() {
     struct EchoFrameBridge;
 
-    impl GodotBridge for EchoFrameBridge {
+    impl RuntimeBridge for EchoFrameBridge {
         fn on_start(&mut self) -> Result<(), BridgeError> {
             Ok(())
         }
@@ -657,7 +657,7 @@ fn bridge_pipeline_on_port_input_uses_shared_frame_clock() {
 #[test]
 fn gdextension_entry_pipeline_runs_ecs_and_buffers_frame() {
     let core = CoreEcs::new();
-    let bridge = GodotBridgeAdapter::new(core);
+    let bridge = RuntimeBridgeAdapter::new(core);
     let mut pipeline = BridgePipeline::new(bridge, RenderFrameBuffer::default());
     let mut clock = FrameClock::default();
     let mut input_port = NoopInputPort;

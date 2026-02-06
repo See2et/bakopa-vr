@@ -17,14 +17,14 @@ env \
   CXX=x86_64-w64-mingw32-g++ \
   AR=x86_64-w64-mingw32-ar \
   RANLIB=x86_64-w64-mingw32-ranlib \
-  cargo build -p client-core --target x86_64-pc-windows-gnu "$@"
+  cargo build -p client-godot-adapter --target x86_64-pc-windows-gnu "$@"
 
-# DLL placement is handled in client/core/build.rs.
+# DLL placement is handled in client/godot-adapter/build.rs.
 dest="client/godot/bin/windows/client_core.dll"
 if [[ -f "$dest" ]]; then
   echo "ok: copied DLL -> $dest"
 else
   echo "error: expected DLL not found at $dest" >&2
-  echo "hint: check client/core/build.rs copy logic and build output" >&2
+  echo "hint: check client/godot-adapter/build.rs copy logic and build output" >&2
   exit 1
 fi

@@ -7,7 +7,7 @@
 
 ## ビルド
 ```bash
-cargo build -p client-core --target x86_64-pc-windows-gnu
+cargo build -p client-godot-adapter --target x86_64-pc-windows-gnu
 ```
 
 ## 起動

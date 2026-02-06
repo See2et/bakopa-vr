@@ -1,6 +1,6 @@
 use bevy_ecs::prelude::*;
 
-use crate::core::errors::CoreError;
+use crate::errors::CoreError;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FrameId(pub u64);

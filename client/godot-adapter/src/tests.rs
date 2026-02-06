@@ -1,9 +1,10 @@
 use godot::prelude::{Basis, Vector3};
 
-use super::ports::GodotInputPort;
+use super::ports::{map_event_slots_to_input_events, GodotInputPort};
 use super::render::tests_support;
-use crate::core::ecs::{FrameClock, FrameId, Pose, RenderFrame, UnitQuat, Vec3};
-use crate::core::ports::InputPort;
+use super::render::RenderStateProjector;
+use client_domain::ecs::{FrameClock, FrameId, InputEvent, Pose, RenderFrame, UnitQuat, Vec3};
+use client_domain::ports::InputPort;
 
 #[test]
 fn pose_to_transform3d_maps_translation_and_rotation() {
@@ -48,4 +49,22 @@ fn godot_input_port_empty_maps_to_noop_snapshot() {
 
     assert_eq!(snapshot.frame, FrameId(1));
     assert!(snapshot.inputs.is_empty());
+}
+
+#[test]
+fn event_slots_convert_to_domain_input_variants() {
+    let inputs = map_event_slots_to_input_events(3);
+
+    assert!(matches!(inputs[0], InputEvent::Move { .. }));
+    assert!(matches!(inputs[1], InputEvent::Look { .. }));
+    assert!(matches!(inputs[2], InputEvent::Action { .. }));
+}
+
+#[test]
+fn render_state_projector_returns_false_for_invalid_target_node() {
+    let mut projector = RenderStateProjector;
+    let frame = RenderFrame::from_primary_pose(FrameId(1), Pose::identity());
+    let mut target = godot::obj::OnEditor::<godot::obj::Gd<godot::classes::Node3D>>::default();
+
+    assert!(!projector.project(&frame, &mut target));
 }

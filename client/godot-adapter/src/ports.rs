@@ -1,13 +1,32 @@
 use godot::classes::{InputEvent as GodotInputEvent, Node3D};
 use godot::prelude::*;
 
-use crate::adapter::render::RenderStateProjector;
-use crate::core::ecs::{FrameClock, InputEvent, InputSnapshot, RenderFrame};
-use crate::core::ports::InputPort;
+use crate::render::RenderStateProjector;
+use client_domain::ecs::{FrameClock, InputEvent, InputSnapshot, RenderFrame};
+use client_domain::ports::InputPort;
 
 #[derive(Default)]
 pub struct GodotInputPort {
     events: Vec<Gd<GodotInputEvent>>,
+}
+
+pub(crate) fn map_event_slots_to_input_events(event_count: usize) -> Vec<InputEvent> {
+    (0..event_count)
+        .map(|index| match index % 3 {
+            0 => InputEvent::Move {
+                axis_x: 0.0,
+                axis_y: 0.0,
+            },
+            1 => InputEvent::Look {
+                yaw_delta: 0.0,
+                pitch_delta: 0.0,
+            },
+            _ => InputEvent::Action {
+                name: "godot_input".to_string(),
+                pressed: true,
+            },
+        })
+        .collect()
 }
 
 impl GodotInputPort {
@@ -22,25 +41,7 @@ impl GodotInputPort {
 
 impl InputPort for GodotInputPort {
     fn snapshot(&mut self, frame_clock: &mut FrameClock) -> InputSnapshot {
-        let inputs = self
-            .events
-            .iter()
-            .enumerate()
-            .map(|(index, _event)| match index % 3 {
-                0 => InputEvent::Move {
-                    axis_x: 0.0,
-                    axis_y: 0.0,
-                },
-                1 => InputEvent::Look {
-                    yaw_delta: 0.0,
-                    pitch_delta: 0.0,
-                },
-                _ => InputEvent::Action {
-                    name: "godot_input".to_string(),
-                    pressed: true,
-                },
-            })
-            .collect();
+        let inputs = map_event_slots_to_input_events(self.events.len());
 
         InputSnapshot {
             frame: frame_clock.next_frame(),
