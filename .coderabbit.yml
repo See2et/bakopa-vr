@@ -11,6 +11,6 @@ reviews:
     enabled: true
     drafts: false
   path_filters:
-    - "!.codex/prompts"
-    - "!docs/settings/"
+    - "!.codex/prompts/**"
+    - "!docs/settings/**"
     - "!docs/specs"
