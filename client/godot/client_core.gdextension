@@ -1,0 +1,14 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = "4.5.1"
+reloadable = true
+
+[libraries]
+linux.debug.x86_64 = "res://../core/target/debug/libclient_core.so"
+linux.release.x86_64 = "res://../core/target/release/libclient_core.so"
+windows.debug.x86_64 = "res://bin/windows/client_core.dll"
+windows.release.x86_64 = "res://bin/windows/client_core.dll"
+macos.debug = "res://../core/target/debug/libclient_core.dylib"
+macos.release = "res://../core/target/release/libclient_core.dylib"
+macos.debug.arm64 = "res://../core/target/debug/libclient_core.dylib"
+macos.release.arm64 = "res://../core/target/release/libclient_core.dylib"

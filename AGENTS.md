@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ## Project Overview
 
 このプロジェクトは、分散型Social-VR「SuteraVR」と呼称されるものです。従来のSocial-VRが特にインフラ／通信コストに苛まれていることに課題意識を持ち、それをFederationとP2Pによる二重分散により解決することを志向しています。
@@ -25,6 +26,60 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 1. Green: テストをパスさせる(skill: tdd-green)
 1. Refactor: コードの品質を向上させる(skill: tdd-refactor)
 1. Commit: 進捗を保存する
+=======
+# AI-DLC and Spec-Driven Development
+
+Kiro-style Spec Driven Development implementation on AI-DLC (AI Development Life Cycle)
+
+## Project Memory
+Project memory keeps persistent guidance (steering, specs notes, component docs) so Codex honors your standards each run. Treat it as the long-lived source of truth for patterns, conventions, and decisions.
+
+- Use `docs/steering/` for project-wide policies: architecture principles, naming schemes, security constraints, tech stack decisions, api standards, etc.
+- Use local `AGENTS.md` files for feature or library context (e.g. `src/lib/payments/AGENTS.md`): describe domain assumptions, API contracts, or testing conventions specific to that folder. Codex auto-loads these when working in the matching path.
+- Specs notes stay with each spec (under `docs/specs/`) to guide specification-level workflows.
+
+## Project Context
+
+### Paths
+- Steering: `docs/steering/`
+- Specs: `docs/specs/`
+
+### Steering vs Specification
+
+**Steering** (`docs/steering/`) - Guide AI with project-wide rules and context
+**Specs** (`docs/specs/`) - Formalize development process for individual features
+
+### Active Specifications
+- Check `docs/specs/` for active specifications
+- Use `/prompts:kiro-spec-status [feature-name]` to check progress
+
+## Development Guidelines
+- Think in English, generate responses in Japanese. All Markdown content written to project files (e.g., requirements.md, design.md, tasks.md, research.md, validation reports) MUST be written in the target language configured for this specification (see spec.json.language).
+
+## Minimal Workflow
+- Phase 0 (optional): `/prompts:kiro-steering`, `/prompts:kiro-steering-custom`
+- Phase 1 (Specification):
+  - `/prompts:kiro-spec-init "description"`
+  - `/prompts:kiro-spec-requirements {feature}`
+  - `/prompts:kiro-validate-gap {feature}` (optional: for existing codebase)
+  - `/prompts:kiro-spec-design {feature} [-y]`
+  - `/prompts:kiro-validate-design {feature}` (optional: design review)
+  - `/prompts:kiro-spec-tasks {feature} [-y]`
+- Phase 2 (Implementation): `/prompts:kiro-spec-impl {feature} [tasks]`
+  - `/prompts:kiro-validate-impl {feature}` (optional: after implementation)
+- Progress check: `/prompts:kiro-spec-status {feature}` (use anytime)
+
+## Development Rules
+- 3-phase approval workflow: Requirements → Design → Tasks → Implementation
+- Human review required each phase; use `-y` only for intentional fast-track
+- Keep steering current and verify alignment with `/prompts:kiro-spec-status`
+- Follow the user's instructions precisely, and within that scope act autonomously: gather the necessary context and complete the requested work end-to-end in this run, asking questions only when essential information is missing or the instructions are critically ambiguous.
+
+## Steering Configuration
+- Load entire `docs/steering/` as project memory
+- Default files: `product.md`, `tech.md`, `structure.md`
+- Custom files are supported (managed via `/prompts:kiro-steering-custom`)
+>>>>>>> origin/minimal-godot-client
 
 ## Rust Coding Rules
 

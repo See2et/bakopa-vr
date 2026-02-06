@@ -21,3 +21,24 @@ target
 #.idea/
 
 .serena
+<<<<<<< HEAD
+=======
+
+# Godot 4+ specific ignores
+.godot/
+.nomedia
+
+# Godot-specific ignores
+.import/
+export.cfg
+export_credentials.cfg
+*.tmp
+*.translation
+
+# Mono/.NET 
+.mono/
+data_*/
+mono_crash.*.json
+
+client/godot/bin/
+>>>>>>> origin/minimal-godot-client
