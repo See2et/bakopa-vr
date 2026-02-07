@@ -25,6 +25,15 @@ for ((i = 1; i <= $#; i++)); do
   fi
 done
 
+case "$profile" in
+  dev|debug)
+    profile="debug"
+    ;;
+  release)
+    profile="release"
+    ;;
+esac
+
 env \
   CC=x86_64-w64-mingw32-gcc \
   CXX=x86_64-w64-mingw32-g++ \
