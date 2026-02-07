@@ -66,11 +66,15 @@ impl BridgeErrorState {
         self.last_error = Some(error.clone());
     }
 
+    pub fn last_ref(&self) -> Option<&BridgeError> {
+        self.last_error.as_ref()
+    }
+
     pub fn last(&self) -> Option<BridgeError> {
         self.last_error.clone()
     }
 
     pub fn last_message(&self) -> Option<String> {
-        self.last_error.as_ref().map(ToString::to_string)
+        self.last_ref().map(ToString::to_string)
     }
 }

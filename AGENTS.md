@@ -99,6 +99,7 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 - **アプリ境界（main/CLI/HTTP入口など）**でのみ `anyhow::Result` を使用してよい。境界では必ず `.context()` / `.with_context()` で「何をしていて失敗したか」を付与すること。
 - `unwrap` / `expect` は原則禁止（テスト、明示された初期化コードなど例外を除く）。ランタイムで起こりうる失敗は `Result/Option` として扱い `?` で伝搬する。
 - エラーは「使う側が判断できる粒度」で設計する（例: InvalidInput / NotFound / Conflict / External / Internal）。曖昧な文字列エラーや握りつぶしは禁止。
+- `thiserror` を使う公開エラー列挙型で、内包するエラー型が `Clone` を実装済みかつ上位で保持・再利用が必要な場合は、`#[derive(Clone, Debug, thiserror::Error)]` を採用すること。
 
 ### Use Strong Types, Not Primitive Obsession
 
