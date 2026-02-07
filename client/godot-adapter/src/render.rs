@@ -29,9 +29,8 @@ impl TransformTarget for Gd<Node3D> {
     }
 }
 
-fn project_render_frame_to_target(frame: &RenderFrame, target: &mut impl TransformTarget) -> bool {
+fn project_render_frame_to_target(frame: &RenderFrame, target: &mut impl TransformTarget) {
     target.set_transform(render_frame_transform(frame));
-    true
 }
 
 #[derive(Debug, Default)]
@@ -43,7 +42,8 @@ impl RenderStateProjector {
             return false;
         }
         let node = &mut **target;
-        project_render_frame_to_target(frame, node)
+        project_render_frame_to_target(frame, node);
+        true
     }
 }
 
