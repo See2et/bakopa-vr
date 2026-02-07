@@ -34,12 +34,46 @@ case "$profile" in
     ;;
 esac
 
+filtered_args=()
+skip_next=0
+for arg in "$@"; do
+  if [[ "$skip_next" == "1" ]]; then
+    skip_next=0
+    continue
+  fi
+  if [[ "$arg" == "--release" ]]; then
+    continue
+  fi
+  if [[ "$arg" == "--profile" ]]; then
+    skip_next=1
+    continue
+  fi
+  if [[ "$arg" == --profile=* ]]; then
+    continue
+  fi
+  filtered_args+=("$arg")
+done
+
+profile_args=()
+case "$profile" in
+  release)
+    profile_args=(--release)
+    ;;
+  debug)
+    profile_args=()
+    ;;
+  *)
+    profile_args=(--profile "$profile")
+    ;;
+esac
+
 env \
   CC=x86_64-w64-mingw32-gcc \
   CXX=x86_64-w64-mingw32-g++ \
   AR=x86_64-w64-mingw32-ar \
   RANLIB=x86_64-w64-mingw32-ranlib \
-  cargo build -p client-godot-adapter --target x86_64-pc-windows-gnu "$@"
+  cargo build -p client-godot-adapter --target x86_64-pc-windows-gnu \
+  "${profile_args[@]}" "${filtered_args[@]}"
 
 src="target/x86_64-pc-windows-gnu/${profile}/client_core.dll"
 dest_dir="client/godot/bin/windows"
