@@ -51,9 +51,10 @@ impl GodotInputPort {
 
 impl InputPort for GodotInputPort {
     fn snapshot(&mut self, frame_clock: &mut FrameClock) -> InputSnapshot {
-        // TODO(godot-adapter): Use actual `self.events` data once
-        // map_event_slots_to_input_events supports concrete Godot event parsing.
-        let inputs = map_event_slots_to_input_events(self.events.len());
+        // TODO(godot-adapter): Use actual Godot event payload once
+        // map_event_slots_to_input_events supports concrete event parsing.
+        let events = std::mem::take(&mut self.events);
+        let inputs = map_event_slots_to_input_events(events.len());
 
         InputSnapshot {
             frame: frame_clock.next_frame(),
