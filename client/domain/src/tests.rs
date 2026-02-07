@@ -367,6 +367,10 @@ fn shutdown_returns_bridge_error_when_both_shutdowns_fail() {
     assert!(matches!(result, Err(ShutdownError::BridgeShutdown(_))));
     assert_eq!(bootstrap.bridge.shutdown_calls, 1);
     assert_eq!(bootstrap.xr.shutdown_calls, 1);
+    assert!(matches!(
+        bootstrap.tick_frame(),
+        Err(FrameError::NotRunning)
+    ));
 }
 
 #[test]
