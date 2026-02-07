@@ -82,8 +82,25 @@
 ### よく使うコマンド
 
 ```bash
+# サーバー共通
 # ビルド: cargo build
 # テスト: cargo test
+
+# クライアント（Godot GDExtension）: ローカル向け
+# Linux: scripts/build-client-core-linux.sh [--release]
+# macOS: scripts/build-client-core-macos.sh [--arch x86_64|arm64] [--release]
+# Windows(gnu): scripts/build-client-core-windows.sh [--release]
+#   前提: mingw ツールチェーンを PATH に追加
+#   任意: CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS で追加ライブラリパスを指定
+
+# クライアント（Godot GDExtension）: クロスビルド推奨
+# cargo-cross を使う場合（Docker 必須）:
+#   cargo install cross --git https://github.com/cross-rs/cross
+#   cross build -p client-godot-adapter --target x86_64-pc-windows-gnu --release
+# Docker 直接利用例（追加依存を固定したい場合）:
+#   docker run --rm -it -v "$PWD":/work -w /work \
+#     ghcr.io/cross-rs/x86_64-pc-windows-gnu:latest \
+#     cargo build -p client-godot-adapter --target x86_64-pc-windows-gnu --release
 ```
 
 ## 主要な技術的判断
