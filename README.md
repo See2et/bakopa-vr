@@ -1,5 +1,11 @@
 # bakopa-vr
 
+## ドキュメント
+
+- プロダクト概要（canonical）: `docs/steering/product.md`
+- アーキテクチャ方針（canonical）: `docs/steering/tech.md`
+- 構造・責務分割（canonical）: `docs/steering/structure.md`
+
 ## 開発環境 (Nix)
 
 WSL から Windows 向け DLL をクロスビルドするための dev shell を用意しています。

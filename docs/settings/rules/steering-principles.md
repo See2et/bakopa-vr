@@ -84,7 +84,7 @@ Never include:
 
 ## File-Specific Focus
 
-- **product.md**: Purpose, value, business context (not exhaustive features)
+- **docs/steering/product.md**: Purpose, value, business context (canonical source; not exhaustive features)
 - **tech.md**: Key frameworks, standards, conventions (not all dependencies)
 - **structure.md**: Organization patterns, naming rules (not directory trees)
 - **Custom files**: Specialized patterns (API, testing, security, etc.)

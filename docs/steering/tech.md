@@ -4,6 +4,7 @@
 
 - Federation による運営分散 + P2P による高頻度同期の二層構成
 - Bloom は WebRTC シグナリング専用、Syncer は P2P 同期専用
+- メディア/位置など高頻度データは Bloom で中継しない（P2P で配送）
 
 ## コア技術
 
@@ -19,6 +20,22 @@
 - webrtc / webrtc-media (syncer の feature)
 - serde / serde_json
 - tracing / tracing-subscriber
+
+## 通信プロトコル方針
+
+- Bloom の WebSocket メッセージは PascalCase `type` を前提に扱う
+- Syncer は `SyncMessage` Envelope v1 を採用し、`kind` で
+  `pose/chat/voice/control.*/signaling.*` を識別する
+- WebRTC DataChannel の既定 label は `sutera-data`
+- Pose 同期は unordered/unreliable チャネル特性を前提に設計する
+- 音声は Opus トラック連携を前提に扱う
+
+## 運用・実装制約
+
+- Bloom のレート制御は 1 秒あたり 20 メッセージ/セッションを基準とする
+- Syncer のレート制御も 1 秒あたり 20 件/セッションを基準とする
+- `tracing` の span には `room_id` / `participant_id` などの識別子を付与する
+- subscriber 初期化はバイナリクレート（エントリポイント）側のみで実施する
 
 ## 開発基準
 

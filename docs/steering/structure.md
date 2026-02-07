@@ -10,13 +10,15 @@
 ### Bloom API
 
 **Location**: `/bloom/api/`  
-**Purpose**: シグナリングのリクエスト/イベント/エラー型の定義  
+**Purpose**: シグナリングのリクエスト/イベント/エラー型の定義
+(ClientToServer / ServerToClient, RelaySdp/Ice, ErrorCode)  
 **Example**: `bloom/api/src/requests.rs`
 
 ### Bloom Core
 
 **Location**: `/bloom/core/`  
-**Purpose**: ルーム/参加者管理や Join/Leave などのドメインロジック  
+**Purpose**: ルーム/参加者管理や Join/Leave などのドメインロジック
+(最大 8 名、UUID ベースの RoomId/ParticipantId)  
 **Example**: `bloom/core/src/room.rs`
 
 ### Bloom WS Server
@@ -25,11 +27,17 @@
 **Purpose**: `/ws` エンドポイントの WebSocket サーバ実装  
 **Example**: `bloom/ws/src/server.rs`
 
+- バイナリ `main.rs` が subscriber を初期化する
+- レート制御は 1 秒あたり 20 メッセージ/セッションを基準とする
+
 ### Syncer
 
 **Location**: `/syncer/`  
 **Purpose**: P2P 同期ライブラリ（メッセージ、ルーティング、WebRTC Transport）  
 **Example**: `syncer/src/messages/`
+
+- `BasicSyncer` が Router/TransportInbox/RateLimiter を束ねる
+- WebRTC Transport は DataChannel label `sutera-data` を前提に扱う
 
 ### 仕様
 

@@ -53,6 +53,8 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 ## Steering Configuration
 - Load entire `docs/steering/` as project memory
 - Default files: `product.md`, `tech.md`, `structure.md`
+- Canonical product source: `docs/steering/product.md` (`docs/product.md` は移行用参照のみ)
+- Canonical architecture sources: `docs/steering/tech.md` + `docs/steering/structure.md` (`docs/architecture.md` は移行用参照のみ)
 - Custom files are supported (managed via `/prompts:kiro-steering-custom`)
 
 ## Rust Coding Rules
