@@ -2,6 +2,7 @@ use crate::ecs::{EcsCore, FrameClock, FrameId, InputEvent, InputSnapshot, Render
 use crate::errors::{BridgeError, FrameError, ShutdownError, StartError};
 use crate::ports::{InputPort, OutputPort, RenderFrameBuffer};
 use crate::xr::XrRuntime;
+use tracing::{info, instrument};
 
 pub trait RuntimeBridge {
     fn on_start(&mut self) -> Result<(), BridgeError>;
@@ -31,13 +32,16 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientBootstrap<X, B> {
         }
     }
 
+    #[instrument(skip(self), fields(running_before = self.running))]
     pub fn start(&mut self) -> Result<(), StartError> {
+        info!("client bootstrap start requested");
         self.xr.enable().map_err(StartError::XrInit)?;
         if !self.xr.is_ready() {
             return Err(StartError::XrNotReady);
         }
         self.bridge.on_start().map_err(StartError::BridgeInit)?;
         self.running = true;
+        info!(running = self.running, "client bootstrap started");
         Ok(())
     }
 
@@ -65,8 +69,11 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientLifecycle for ClientBootstrap<X, B> {
         ClientBootstrap::start(self)
     }
 
+    #[instrument(skip(self), fields(running_before = self.running))]
     fn shutdown(&mut self) -> Result<(), ShutdownError> {
+        info!("client shutdown requested");
         if !self.running {
+            info!("client shutdown completed (already stopped)");
             return Ok(());
         }
         self.bridge
@@ -74,6 +81,7 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientLifecycle for ClientBootstrap<X, B> {
             .map_err(ShutdownError::BridgeShutdown)?;
         self.xr.shutdown().map_err(ShutdownError::XrShutdown)?;
         self.running = false;
+        info!(running = self.running, "client shutdown completed");
         Ok(())
     }
 }
@@ -126,11 +134,18 @@ impl<C: EcsCore> RuntimeBridge for RuntimeBridgeAdapter<C> {
         Ok(())
     }
 
+    #[instrument(
+        skip(self, input),
+        fields(frame = ?input.frame, input_events = input.inputs.len(), started = self.started)
+    )]
     fn on_frame(&mut self, input: InputSnapshot) -> Result<RenderFrame, BridgeError> {
+        info!("runtime bridge frame processing started");
         if !self.started {
             return Err(BridgeError::NotStarted);
         }
-        self.core.tick(input).map_err(BridgeError::Core)
+        let frame = self.core.tick(input).map_err(BridgeError::Core)?;
+        info!("runtime bridge frame processing completed");
+        Ok(frame)
     }
 }
 

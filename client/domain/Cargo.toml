@@ -10,3 +10,4 @@ demo-motion = []
 [dependencies]
 bevy_ecs = "0.18.0"
 thiserror = "2.0.18"
+tracing = "0.1.41"
