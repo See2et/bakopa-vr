@@ -540,6 +540,7 @@ version = "0.1.0"
 dependencies = [
  "client-domain",
  "godot",
+ "tracing",
 ]
 
 [[package]]

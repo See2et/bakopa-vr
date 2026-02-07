@@ -1,5 +1,6 @@
 use client_domain::errors::XrError;
 use client_domain::xr::XrRuntime;
+use tracing::warn;
 
 #[derive(Default)]
 pub struct GodotXrRuntime {
@@ -15,9 +16,13 @@ impl GodotXrRuntime {
 impl XrRuntime for GodotXrRuntime {
     fn enable(&mut self) -> Result<(), XrError> {
         self.ready = false;
-        Err(XrError::InitializationFailed {
-            reason: "OpenXR classes are not available in lightweight API mode".to_string(),
-        })
+        let reason = "OpenXR classes are not available in lightweight API mode".to_string();
+        warn!(
+            ready = self.ready,
+            reason = %reason,
+            "failed to enable xr runtime: {reason}"
+        );
+        Err(XrError::InitializationFailed { reason })
     }
 
     fn is_ready(&self) -> bool {
