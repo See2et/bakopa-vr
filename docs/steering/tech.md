@@ -67,7 +67,10 @@
 ### テスト
 
 - `cargo test` を基本
-- `bloom/ws` と `syncer` に統合テストが多い
+- `bloom/ws` と `syncer` は統合テストを中心に検証する
+- `client/domain` は Godot から独立した純 Rust ユニットテストを基本とする
+- `client/godot-adapter` は Godot ランタイム依存を最小化し、
+  ユニットテストと統合テストを実行する
 
 ## 開発環境
 
