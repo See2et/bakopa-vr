@@ -100,6 +100,7 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 - `unwrap` / `expect` は原則禁止（テスト、明示された初期化コードなど例外を除く）。ランタイムで起こりうる失敗は `Result/Option` として扱い `?` で伝搬する。
 - エラーは「使う側が判断できる粒度」で設計する（例: InvalidInput / NotFound / Conflict / External / Internal）。曖昧な文字列エラーや握りつぶしは禁止。
 - `thiserror` を使う公開エラー列挙型で、内包するエラー型が `Clone` を実装済みかつ上位で保持・再利用が必要な場合は、`#[derive(Clone, Debug, thiserror::Error)]` を採用すること。
+- `Option<Error>` の状態保持型では、不要な clone を避けるために `Option<&Error>` を返す参照アクセサ（例: `last_ref()`）を用意し、文字列化や参照参照だけで足りる内部処理はそれを優先して使うこと。既存 API 互換性のために所有権版アクセサ（例: `last()`）は必要に応じて併存させる。
 
 ### Use Strong Types, Not Primitive Obsession
 
