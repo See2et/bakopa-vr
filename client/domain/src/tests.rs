@@ -231,6 +231,31 @@ fn tick_frame_continues_while_running() {
 }
 
 #[test]
+fn restart_resets_frame_clock_to_origin() {
+    let xr = FakeXr {
+        ready: true,
+        enable_result: Ok(()),
+        ..FakeXr::default()
+    };
+    let bridge = FakeBridge {
+        start_result: Ok(()),
+        frame_result: Ok(RenderFrame::from_primary_pose(FrameId(0), Pose::identity())),
+        ..FakeBridge::default()
+    };
+    let mut bootstrap = ClientBootstrap::new(xr, bridge);
+
+    bootstrap.start().expect("first start succeeds");
+    let before_restart = bootstrap.tick_frame().expect("frame before restart");
+    bootstrap.shutdown().expect("shutdown succeeds");
+
+    bootstrap.start().expect("second start succeeds");
+    let after_restart = bootstrap.tick_frame().expect("frame after restart");
+
+    assert_eq!(before_restart, FrameId(1));
+    assert_eq!(after_restart, FrameId(1));
+}
+
+#[test]
 fn tick_frame_fails_when_not_running() {
     let xr = FakeXr::default();
     let bridge = FakeBridge::default();

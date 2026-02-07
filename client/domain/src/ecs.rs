@@ -15,6 +15,10 @@ impl FrameClock {
         self.current.0 += 1;
         self.current
     }
+
+    pub fn reset(&mut self, frame: FrameId) {
+        self.current = frame;
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

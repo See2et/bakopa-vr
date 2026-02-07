@@ -40,6 +40,7 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientBootstrap<X, B> {
             return Err(StartError::XrNotReady);
         }
         self.bridge.on_start().map_err(StartError::BridgeInit)?;
+        self.frame_clock.reset(FrameId(0));
         self.running = true;
         info!(running = self.running, "client bootstrap started");
         Ok(())
