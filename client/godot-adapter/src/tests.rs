@@ -1,4 +1,4 @@
-use godot::prelude::{Basis, Vector3};
+use godot::prelude::{Basis, Quaternion, Vector3};
 
 use super::ports::{map_event_slots_to_input_events, GodotInputPort};
 use super::render::tests_support;
@@ -21,6 +21,35 @@ fn pose_to_transform3d_maps_translation_and_rotation() {
 
     assert_eq!(transform.origin, Vector3::new(1.0, 2.0, 3.0));
     assert_eq!(transform.basis, Basis::IDENTITY);
+}
+
+#[test]
+fn pose_to_transform3d_maps_non_identity_rotation() {
+    let half_turn_component = std::f32::consts::FRAC_1_SQRT_2;
+    let pose = Pose {
+        position: Vec3 {
+            x: -1.5,
+            y: 0.25,
+            z: 9.0,
+        },
+        orientation: UnitQuat {
+            x: 0.0,
+            y: half_turn_component,
+            z: 0.0,
+            w: half_turn_component,
+        },
+    };
+
+    let transform = tests_support::transform_from_pose(&pose);
+    let expected_quat = Quaternion::new(
+        pose.orientation.x,
+        pose.orientation.y,
+        pose.orientation.z,
+        pose.orientation.w,
+    );
+
+    assert_eq!(transform.origin, Vector3::new(-1.5, 0.25, 9.0));
+    assert_eq!(transform.basis, Basis::from_quaternion(expected_quat));
 }
 
 #[test]
