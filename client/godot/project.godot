@@ -20,4 +20,3 @@ config/icon="res://icon.svg"
 openxr/enabled=true
 openxr/default_action_map="uid://rv6hhedxad3h"
 shaders/enabled=true
-xr/shaders/enabled=true
