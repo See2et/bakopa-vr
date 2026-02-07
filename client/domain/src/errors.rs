@@ -30,7 +30,7 @@ pub enum BridgeError {
     Core(#[source] CoreError),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum StartError {
     #[error("xr runtime initialization failed")]
     XrInit(#[source] XrError),
@@ -40,7 +40,7 @@ pub enum StartError {
     BridgeInit(#[source] BridgeError),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum ShutdownError {
     #[error("xr shutdown failed")]
     XrShutdown(#[source] XrError),
@@ -48,7 +48,7 @@ pub enum ShutdownError {
     BridgeShutdown(#[source] BridgeError),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum FrameError {
     #[error("client is not running")]
     NotRunning,
