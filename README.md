@@ -65,9 +65,12 @@ scripts/build-client-core-macos.sh
 
 ### 4) Godot 側の設定
 
-`client/godot/client_core.gdextension` は以下の DLL を参照します。
+`client/godot/client_core.gdextension` は実行時に以下の DLL を参照します。
 
 ```text
-client/godot-adapter/target/x86_64-pc-windows-gnu/debug/client_core.dll
-client/godot-adapter/target/x86_64-pc-windows-gnu/release/client_core.dll
+res://bin/windows/client_core.dll
+# 実ファイル: client/godot/bin/windows/client_core.dll
 ```
+
+`scripts/build-client-core-windows.sh` はビルド成果物を
+`client/godot/bin/windows/client_core.dll` へコピーします。
