@@ -75,7 +75,19 @@ impl SuteraClientBridge {
             .pipeline
             .on_port_input(&mut self.frame_clock, &mut input_port)
         {
-            Ok(()) => self.project_latest_frame().is_ok(),
+            Ok(()) => match self.project_latest_frame() {
+                Ok(()) => true,
+                Err(err) => {
+                    self.error_state.record(&err);
+                    error!(
+                        target: "godot_adapter",
+                        "on_frame projection failed: {}",
+                        err
+                    );
+                    godot_error!("{err}");
+                    false
+                }
+            },
             Err(err) => {
                 self.error_state.record(&err);
                 error!(target: "godot_adapter", "on_frame failed: {}", err);
@@ -102,9 +114,6 @@ impl SuteraClientBridge {
             let err = BridgeError::ProjectionFailed {
                 reason: "target node is invalid".to_string(),
             };
-            self.error_state.record(&err);
-            error!(target: "godot_adapter", "project_latest_frame failed: {}", err);
-            godot_error!("{err}");
             Err(err)
         }
     }
