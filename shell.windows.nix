@@ -4,4 +4,4 @@
     ];
   }
 }:
-(import ./nix/dev-shells.nix { inherit pkgs; }).default
+(import ./nix/dev-shells.nix { inherit pkgs; }).windows

@@ -20,10 +20,22 @@ WSL から Windows 向け DLL をクロスビルドするための dev shell を
 nix develop
 ```
 
+`nix-shell` を使う場合の既定シェル（ネイティブ開発向け）:
+
+```bash
+nix-shell
+```
+
 Windows DLL のクロスビルド用シェルが必要な場合:
 
 ```bash
 nix develop .#windows
+```
+
+`nix-shell` で Windows クロスビルド用シェルに入る場合:
+
+```bash
+nix-shell shell.windows.nix
 ```
 
 ### 3) Windows DLL をビルド
