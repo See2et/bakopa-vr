@@ -32,6 +32,14 @@ static func ensure_extension_loaded(extension_path: String) -> bool:
 	var status = manager.load_extension(abs_path)
 	if debug_build:
 		print("load_extension status: ", status)
+	if status != GDExtensionManager.LOAD_STATUS_OK and status != GDExtensionManager.LOAD_STATUS_ALREADY_LOADED:
+		push_error(
+			"NG: load_extension failed or requires restart"
+			+ " status=" + _load_status_to_string(status)
+			+ " path=" + abs_path
+		)
+		return false
+
 	var loaded_after = manager.is_extension_loaded(abs_path)
 	if loaded_after:
 		if debug_build:
@@ -79,3 +87,18 @@ static func configure_viewport_for_xr(host: Node, xr_ready: bool) -> void:
 	viewport.use_xr = xr_ready
 	if debug_build:
 		print("Viewport use_xr set: ", viewport.use_xr)
+
+static func _load_status_to_string(status: int) -> String:
+	match status:
+		GDExtensionManager.LOAD_STATUS_OK:
+			return "LOAD_STATUS_OK"
+		GDExtensionManager.LOAD_STATUS_FAILED:
+			return "LOAD_STATUS_FAILED"
+		GDExtensionManager.LOAD_STATUS_ALREADY_LOADED:
+			return "LOAD_STATUS_ALREADY_LOADED"
+		GDExtensionManager.LOAD_STATUS_NOT_LOADED:
+			return "LOAD_STATUS_NOT_LOADED"
+		GDExtensionManager.LOAD_STATUS_NEEDS_RESTART:
+			return "LOAD_STATUS_NEEDS_RESTART"
+		_:
+			return "UNKNOWN_STATUS(%s)" % status
