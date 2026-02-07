@@ -8,5 +8,5 @@ default = []
 demo-motion = []
 
 [dependencies]
-bevy_ecs = "0.14.2"
-thiserror = "1.0.69"
+bevy_ecs = "0.18.0"
+thiserror = "2.0.18"
