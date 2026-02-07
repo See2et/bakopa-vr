@@ -25,11 +25,9 @@ P2P はユーザー間で直接通信する仕組みである。SuteraVR では�
 
 ## コア能力
 
-- Bloom による WebRTC シグナリング
-  (ルーム作成/参加/離脱、Offer/Answer/ICE 中継)
-- Syncer による P2P 同期
-  (Pose/Chat/Voice/Control など高頻度データ)
-- Federation ノード間の相互運用による運営分散
+- Bloom（WebRTC シグナリング層: ルーム作成/参加/離脱と Offer/Answer/ICE 中継、詳細: [技術スタック](./tech.md)）
+- Syncer（P2P 同期層: Pose/Chat/Voice/Control など高頻度データを配送、詳細: [技術スタック](./tech.md)）
+- Federation（分散 UGC 管理・モデレーションを担うノード間相互運用、詳細: [プロジェクト構造](./structure.md)）
 - VRChat との部分的互換性を視野に入れたプロトコル設計
 
 ## 主なユースケース
