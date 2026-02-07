@@ -144,11 +144,6 @@ impl SuteraClientBridge {
     }
 }
 
-#[allow(dead_code)]
-fn _hold_base_reference(bridge: &SuteraClientBridge) -> &Base<Node> {
-    &bridge.base
-}
-
 struct SuteraClientCore;
 
 #[gdextension]
