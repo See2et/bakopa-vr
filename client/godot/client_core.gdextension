@@ -4,11 +4,11 @@ compatibility_minimum = "4.5.1"
 reloadable = true
 
 [libraries]
-linux.debug.x86_64 = "res://../godot-adapter/target/debug/libclient_core.so"
-linux.release.x86_64 = "res://../godot-adapter/target/release/libclient_core.so"
+linux.debug.x86_64 = "res://bin/linux/libclient_core.so"
+linux.release.x86_64 = "res://bin/linux/libclient_core.so"
 windows.debug.x86_64 = "res://bin/windows/client_core.dll"
 windows.release.x86_64 = "res://bin/windows/client_core.dll"
-macos.debug = "res://../godot-adapter/target/debug/libclient_core.dylib"
-macos.release = "res://../godot-adapter/target/release/libclient_core.dylib"
-macos.debug.arm64 = "res://../godot-adapter/target/debug/libclient_core.dylib"
-macos.release.arm64 = "res://../godot-adapter/target/release/libclient_core.dylib"
+macos.debug.x86_64 = "res://bin/macos/x86_64/libclient_core.dylib"
+macos.release.x86_64 = "res://bin/macos/x86_64/libclient_core.dylib"
+macos.debug.arm64 = "res://bin/macos/arm64/libclient_core.dylib"
+macos.release.arm64 = "res://bin/macos/arm64/libclient_core.dylib"

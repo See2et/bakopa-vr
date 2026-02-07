@@ -50,6 +50,19 @@ cargo build -p client-godot-adapter --target x86_64-pc-windows-gnu
 scripts/build-client-core-windows.sh
 ```
 
+Linux 向けライブラリをビルドして Godot 配置する場合:
+
+```bash
+scripts/build-client-core-linux.sh
+```
+
+macOS 向けライブラリをビルドして Godot 配置する場合:
+
+```bash
+# ホスト arch を自動判定（または --arch x86_64|arm64）
+scripts/build-client-core-macos.sh
+```
+
 ### 4) Godot 側の設定
 
 `client/godot/client_core.gdextension` は以下の DLL を参照します。
