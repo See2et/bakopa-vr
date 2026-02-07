@@ -278,6 +278,30 @@ fn tick_fails_when_not_running() {
 }
 
 #[test]
+fn tick_uses_current_frame_after_tick_frame_advance() {
+    let xr = FakeXr {
+        ready: true,
+        enable_result: Ok(()),
+        ..FakeXr::default()
+    };
+    let bridge = FakeBridge {
+        frame_result: Ok(RenderFrame::from_primary_pose(FrameId(0), Pose::identity())),
+        ..FakeBridge::default()
+    };
+    let mut bootstrap = ClientBootstrap::new(xr, bridge);
+
+    bootstrap.start().expect("start succeeds");
+    let frame = bootstrap.tick_frame().expect("frame advanced");
+    bootstrap.tick(Vec::new()).expect("tick succeeds");
+
+    assert_eq!(frame, FrameId(1));
+    assert_eq!(
+        bootstrap.bridge.last_input.map(|input| input.frame),
+        Some(FrameId(1))
+    );
+}
+
+#[test]
 fn tick_reports_bridge_failure() {
     let xr = FakeXr {
         ready: true,

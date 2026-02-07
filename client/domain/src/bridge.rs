@@ -46,6 +46,7 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientBootstrap<X, B> {
         Ok(())
     }
 
+    /// Advances the frame clock and returns the new frame id.
     pub fn tick_frame(&mut self) -> Result<FrameId, FrameError> {
         if !self.running {
             return Err(FrameError::NotRunning);
@@ -53,12 +54,13 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientBootstrap<X, B> {
         Ok(self.frame_clock.next_frame())
     }
 
+    /// Uses the current frame id from `tick_frame` without advancing the clock.
     pub fn tick(&mut self, inputs: Vec<InputEvent>) -> Result<RenderFrame, FrameError> {
         if !self.running {
             return Err(FrameError::NotRunning);
         }
         let input = InputSnapshot {
-            frame: self.frame_clock.next_frame(),
+            frame: self.frame_clock.current_frame(),
             inputs,
         };
         self.bridge.on_frame(input).map_err(FrameError::Bridge)

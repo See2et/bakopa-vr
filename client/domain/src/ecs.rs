@@ -16,6 +16,10 @@ impl FrameClock {
         self.current
     }
 
+    pub fn current_frame(&self) -> FrameId {
+        self.current
+    }
+
     pub fn reset(&mut self, frame: FrameId) {
         self.current = frame;
     }
