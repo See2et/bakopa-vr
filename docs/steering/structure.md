@@ -42,11 +42,13 @@
 ### Client Domain
 
 **Location**: `/client/domain/`  
-**Purpose**: クライアント側ドメインロジック / データモデル / 状態管理  
+**Purpose**: クライアント側ドメインロジック / データモデル / 状態管理
+（bevy_ecs ベース）  
 **Example**: `client/domain/src/lib.rs`
 
 - Godot 型や GDExtension 型を直接参照しない
 - `thiserror` による型付きエラーを定義し、境界判断を明確化する
+- VR/desktop 入力を Domain 入力モデルへ正規化して扱う
 
 ### Client Godot Adapter
 
@@ -56,6 +58,7 @@
 
 - Godot API 呼び出し・ノードアクセスはこの層に閉じ込める
 - Domain output の適用と main-thread 制約の吸収を担当する
+- Ports & Adapters により、エンジン統合とドメインロジックを分離する
 
 ### Godot Project
 
