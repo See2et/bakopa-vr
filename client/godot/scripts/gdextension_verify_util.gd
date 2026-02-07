@@ -55,6 +55,9 @@ static func initialize_openxr() -> bool:
 		var init_result = xr_interface.initialize()
 		if debug_build:
 			print("OpenXR initialize result: ", init_result)
+		if not init_result:
+			push_error("OpenXR initialize() failed: returned false")
+			return false
 
 	var xr_ready = xr_interface.is_initialized()
 	if xr_ready:
