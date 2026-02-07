@@ -1,6 +1,6 @@
 use godot::classes::{INode, Node, Node3D};
 use godot::prelude::*;
-use tracing::error;
+use tracing::{error, instrument, warn};
 
 use crate::ports::{GodotInputPort, GodotOutputPort};
 use crate::render::RenderStateProjector;
@@ -8,6 +8,9 @@ use client_domain::bridge::{BridgePipeline, RuntimeBridgeAdapter, StateOverrideR
 use client_domain::ecs::{CoreEcs, FrameClock};
 use client_domain::errors::{BridgeError, BridgeErrorState};
 use client_domain::ports::RenderFrameBuffer;
+
+/// Upper bound for buffered input events waiting to be consumed by `on_frame`.
+const MAX_PENDING_INPUT_EVENTS: usize = 1024;
 
 #[derive(GodotClass)]
 #[class(base=Node)]
@@ -42,6 +45,7 @@ impl INode for SuteraClientBridge {
 #[godot_api]
 impl SuteraClientBridge {
     #[func]
+    #[instrument(skip(self), fields(pending_events = self.pending_input_events.len()))]
     pub fn on_start(&mut self) -> bool {
         match self.pipeline.on_start() {
             Ok(()) => true,
@@ -55,6 +59,7 @@ impl SuteraClientBridge {
     }
 
     #[func]
+    #[instrument(skip(self), fields(pending_events = self.pending_input_events.len()))]
     pub fn on_shutdown(&mut self) -> bool {
         match self.pipeline.on_shutdown() {
             Ok(()) => true,
@@ -68,6 +73,13 @@ impl SuteraClientBridge {
     }
 
     #[func]
+    #[instrument(
+        skip(self),
+        fields(
+            frame_before = self.frame_clock.current_frame().0,
+            pending_events = self.pending_input_events.len()
+        )
+    )]
     pub fn on_frame(&mut self) -> bool {
         let mut input_port =
             GodotInputPort::from_events(std::mem::take(&mut self.pending_input_events));
@@ -99,6 +111,14 @@ impl SuteraClientBridge {
 
     #[func]
     pub fn push_input_event(&mut self, event: Gd<godot::classes::InputEvent>) {
+        if self.pending_input_events.len() >= MAX_PENDING_INPUT_EVENTS {
+            self.pending_input_events.remove(0);
+            warn!(
+                target: "godot_adapter",
+                max_pending_input_events = MAX_PENDING_INPUT_EVENTS,
+                "pending input event buffer was full; dropped oldest event"
+            );
+        }
         self.pending_input_events.push(event);
     }
 
@@ -121,6 +141,7 @@ impl SuteraClientBridge {
     }
 
     #[func]
+    #[instrument(skip(self), fields(reason = %reason))]
     pub fn request_state_override(&mut self, reason: GString) -> bool {
         let request = StateOverrideRequest {
             reason: reason.to_string(),
