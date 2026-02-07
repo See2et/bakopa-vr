@@ -1,6 +1,7 @@
 use godot::classes::Node3D;
 use godot::prelude::*;
 use std::fmt;
+use tracing::debug;
 
 use client_domain::ecs::{Pose, RenderFrame};
 
@@ -57,6 +58,13 @@ impl RenderStateProjector {
         target: &mut OnEditor<Gd<Node3D>>,
     ) -> Result<(), ProjectionError> {
         if target.is_invalid() {
+            debug!(
+                target: "godot_adapter",
+                frame_id = ?frame.frame,
+                target_type = "Node3D",
+                target_invalid = true,
+                "projection skipped because target node is invalid"
+            );
             return Err(ProjectionError::InvalidTargetNode);
         }
         let node = &mut **target;
