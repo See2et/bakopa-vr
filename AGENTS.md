@@ -3,6 +3,7 @@
 Kiro-style Spec Driven Development implementation on AI-DLC (AI Development Life Cycle)
 
 ## Project Memory
+
 Project memory keeps persistent guidance (steering, specs notes, component docs) so Codex honors your standards each run. Treat it as the long-lived source of truth for patterns, conventions, and decisions.
 
 - Use `docs/steering/` for project-wide policies: architecture principles, naming schemes, security constraints, tech stack decisions, api standards, etc.
@@ -12,6 +13,7 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 ## Project Context
 
 ### Paths
+
 - Steering: `docs/steering/`
 - Specs: `docs/specs/`
 
@@ -21,13 +23,16 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 **Specs** (`docs/specs/`) - Formalize development process for individual features
 
 ### Active Specifications
+
 - Check `docs/specs/` for active specifications
 - Use `/prompts:kiro-spec-status [feature-name]` to check progress
 
 ## Development Guidelines
+
 - Think in English, generate responses in Japanese. All Markdown content written to project files (e.g., requirements.md, design.md, tasks.md, research.md, validation reports) MUST be written in the target language configured for this specification (see spec.json.language).
 
 ## Minimal Workflow
+
 - Phase 0 (optional): `/prompts:kiro-steering`, `/prompts:kiro-steering-custom`
 - Phase 1 (Specification):
   - `/prompts:kiro-spec-init "description"`
@@ -41,6 +46,7 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 - Progress check: `/prompts:kiro-spec-status {feature}` (use anytime)
 
 ## Development Rules
+
 - 3-phase approval workflow: Requirements → Design → Tasks → Implementation
 - Human review required each phase; use `-y` only for intentional fast-track
 - Keep steering current and verify alignment with `/prompts:kiro-spec-status`
@@ -51,6 +57,7 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 - その後、必ず `npx markdownlint-cli2 "docs/**/*.md" "!docs/settings/**" "!docs/specs"` を実行し、警告・エラーがないことを確認すること。
 
 ## Steering Configuration
+
 - Load entire `docs/steering/` as project memory
 - Default files: `product.md`, `tech.md`, `structure.md`
 - Canonical product source: `docs/steering/product.md` (`docs/product.md` は移行用参照のみ)
