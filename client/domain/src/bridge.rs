@@ -2,7 +2,7 @@ use crate::ecs::{EcsCore, FrameClock, FrameId, InputEvent, InputSnapshot, Render
 use crate::errors::{BridgeError, FrameError, ShutdownError, StartError};
 use crate::ports::{InputPort, OutputPort, RenderFrameBuffer};
 use crate::xr::XrRuntime;
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 pub trait RuntimeBridge {
     fn on_start(&mut self) -> Result<(), BridgeError>;
@@ -87,7 +87,21 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientLifecycle for ClientBootstrap<X, B> {
 
         let bridge_failed = bridge_err.is_some();
         let xr_failed = xr_err.is_some();
-        let shutdown_err = bridge_err.or(xr_err);
+        let shutdown_err = match (bridge_err, xr_err) {
+            (Some(bridge_err), Some(xr_err)) => {
+                warn!(
+                    bridge_error = %bridge_err,
+                    ?bridge_err,
+                    xr_error = %xr_err,
+                    ?xr_err,
+                    "both shutdown operations failed; returning bridge error and discarding xr error"
+                );
+                Some(bridge_err)
+            }
+            (Some(bridge_err), None) => Some(bridge_err),
+            (None, Some(xr_err)) => Some(xr_err),
+            (None, None) => None,
+        };
 
         self.running = false;
         info!(
