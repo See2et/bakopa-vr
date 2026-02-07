@@ -85,12 +85,23 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientLifecycle for ClientBootstrap<X, B> {
             .map(ShutdownError::BridgeShutdown);
         let xr_err = self.xr.shutdown().err().map(ShutdownError::XrShutdown);
 
-        if let Some(err) = bridge_err.or(xr_err) {
+        let bridge_failed = bridge_err.is_some();
+        let xr_failed = xr_err.is_some();
+        let shutdown_err = bridge_err.or(xr_err);
+
+        self.running = false;
+        info!(
+            running = self.running,
+            bridge_failed,
+            xr_failed,
+            has_error = shutdown_err.is_some(),
+            "client shutdown completed"
+        );
+
+        if let Some(err) = shutdown_err {
             return Err(err);
         }
 
-        self.running = false;
-        info!(running = self.running, "client shutdown completed");
         Ok(())
     }
 }
