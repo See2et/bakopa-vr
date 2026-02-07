@@ -10,6 +10,16 @@ pub struct GodotInputPort {
     events: Vec<Gd<GodotInputEvent>>,
 }
 
+/// Temporary placeholder mapping.
+///
+/// TODO(godot-adapter): Replace this with real conversion from each incoming
+/// `Gd<GodotInputEvent>` into domain `InputEvent` values:
+/// - map motion/axis values to `InputEvent::Move { axis_x, axis_y }`
+/// - map look deltas to `InputEvent::Look { yaw_delta, pitch_delta }`
+/// - map button/action fields to `InputEvent::Action { name, pressed }`
+///
+/// For now this function intentionally returns placeholder events based only on
+/// `event_count` so the input pipeline can be exercised end-to-end.
 pub(crate) fn map_event_slots_to_input_events(event_count: usize) -> Vec<InputEvent> {
     (0..event_count)
         .map(|index| match index % 3 {
@@ -41,6 +51,8 @@ impl GodotInputPort {
 
 impl InputPort for GodotInputPort {
     fn snapshot(&mut self, frame_clock: &mut FrameClock) -> InputSnapshot {
+        // TODO(godot-adapter): Use actual `self.events` data once
+        // map_event_slots_to_input_events supports concrete Godot event parsing.
         let inputs = map_event_slots_to_input_events(self.events.len());
 
         InputSnapshot {
