@@ -21,6 +21,7 @@ nix develop
 ```
 
 Windows DLL のクロスビルド用シェルが必要な場合:
+
 ```bash
 nix develop .#windows
 ```
@@ -32,6 +33,7 @@ cargo build -p client-godot-adapter --target x86_64-pc-windows-gnu
 ```
 
 スクリプト経由で Windows ビルドする場合:
+
 ```bash
 scripts/build-client-core-windows.sh
 ```
@@ -40,7 +42,7 @@ scripts/build-client-core-windows.sh
 
 `client/godot/client_core.gdextension` は以下の DLL を参照します。
 
-```
+```text
 client/godot-adapter/target/x86_64-pc-windows-gnu/debug/client_core.dll
 client/godot-adapter/target/x86_64-pc-windows-gnu/release/client_core.dll
 ```
