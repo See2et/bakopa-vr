@@ -11,6 +11,14 @@ static func ensure_extension_loaded(extension_path: String) -> bool:
 	var abs_path = ProjectSettings.globalize_path(extension_path)
 	var exists_res = FileAccess.file_exists(extension_path)
 	var exists_abs = FileAccess.file_exists(abs_path)
+	if not exists_res and not exists_abs:
+		push_error(
+			"GDExtension file not found"
+			+ " res_path=" + extension_path
+			+ " abs_path=" + abs_path
+		)
+		return false
+
 	var loaded_res = manager.is_extension_loaded(extension_path)
 	var loaded_abs = manager.is_extension_loaded(abs_path)
 	var loaded = loaded_res or loaded_abs
