@@ -1,5 +1,6 @@
 use godot::classes::{INode, Node, Node3D};
 use godot::prelude::*;
+use tracing::error;
 
 use crate::ports::{GodotInputPort, GodotOutputPort};
 use crate::render::RenderStateProjector;
@@ -46,6 +47,7 @@ impl SuteraClientBridge {
             Ok(()) => true,
             Err(err) => {
                 self.error_state.record(&err);
+                error!(target: "godot_adapter", "on_start failed: {}", err);
                 godot_error!("{err}");
                 false
             }
@@ -58,6 +60,7 @@ impl SuteraClientBridge {
             Ok(()) => true,
             Err(err) => {
                 self.error_state.record(&err);
+                error!(target: "godot_adapter", "on_shutdown failed: {}", err);
                 godot_error!("{err}");
                 false
             }
@@ -75,6 +78,7 @@ impl SuteraClientBridge {
             Ok(()) => self.project_latest_frame().is_ok(),
             Err(err) => {
                 self.error_state.record(&err);
+                error!(target: "godot_adapter", "on_frame failed: {}", err);
                 godot_error!("{err}");
                 false
             }
@@ -99,6 +103,7 @@ impl SuteraClientBridge {
                 reason: "target node is invalid".to_string(),
             };
             self.error_state.record(&err);
+            error!(target: "godot_adapter", "project_latest_frame failed: {}", err);
             godot_error!("{err}");
             Err(err)
         }
@@ -118,6 +123,11 @@ impl SuteraClientBridge {
             Ok(()) => true,
             Err(err) => {
                 self.error_state.record(&err);
+                error!(
+                    target: "godot_adapter",
+                    "request_state_override failed: {}",
+                    err
+                );
                 godot_error!("{err}");
                 false
             }
