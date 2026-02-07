@@ -1,6 +1,7 @@
 { pkgs }:
 let
-  rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+  rustVersion = "1.90.0";
+  rustToolchain = pkgs.rust-bin.stable.${rustVersion}.default.override {
     targets = [ "x86_64-pc-windows-gnu" ];
   };
   pthreads = pkgs.pkgsCross.mingwW64.windows.pthreads;

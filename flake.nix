@@ -8,17 +8,26 @@
 
   outputs = { self, nixpkgs, rust-overlay }:
     let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ rust-overlay.overlays.default ];
-      };
-      devShellDefs = import ./nix/dev-shells.nix { inherit pkgs; };
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
     in
     {
-      devShells.${system} = {
-        default = devShellDefs.default;
-        windows = devShellDefs.windows;
-      };
+      devShells = nixpkgs.lib.genAttrs supportedSystems (system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
+          devShellDefs = import ./nix/dev-shells.nix { inherit pkgs; };
+        in
+        {
+          default = devShellDefs.default;
+        } // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          windows = devShellDefs.windows;
+        });
     };
 }
