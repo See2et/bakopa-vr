@@ -314,7 +314,34 @@ fn shutdown_reports_bridge_failure() {
 
     assert!(matches!(result, Err(ShutdownError::BridgeShutdown(_))));
     assert_eq!(bootstrap.bridge.shutdown_calls, 1);
-    assert_eq!(bootstrap.xr.shutdown_calls, 0);
+    assert_eq!(bootstrap.xr.shutdown_calls, 1);
+}
+
+#[test]
+fn shutdown_returns_bridge_error_when_both_shutdowns_fail() {
+    let xr = FakeXr {
+        ready: true,
+        enable_result: Ok(()),
+        shutdown_result: Err(XrError::ShutdownFailed {
+            reason: "xr stuck".to_string(),
+        }),
+        ..FakeXr::default()
+    };
+    let bridge = FakeBridge {
+        start_result: Ok(()),
+        shutdown_result: Err(BridgeError::ShutdownFailed {
+            reason: "bridge busy".to_string(),
+        }),
+        ..FakeBridge::default()
+    };
+    let mut bootstrap = ClientBootstrap::new(xr, bridge);
+
+    bootstrap.start().expect("start succeeds");
+    let result = bootstrap.shutdown();
+
+    assert!(matches!(result, Err(ShutdownError::BridgeShutdown(_))));
+    assert_eq!(bootstrap.bridge.shutdown_calls, 1);
+    assert_eq!(bootstrap.xr.shutdown_calls, 1);
 }
 
 #[test]
