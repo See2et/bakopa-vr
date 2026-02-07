@@ -47,7 +47,7 @@ impl SuteraClientBridge {
             Ok(()) => true,
             Err(err) => {
                 self.error_state.record(&err);
-                error!(target: "godot_adapter", "on_start failed: {}", err);
+                error!(target: "godot_adapter", error = %err, "on_start failed");
                 godot_error!("{err}");
                 false
             }
@@ -60,7 +60,7 @@ impl SuteraClientBridge {
             Ok(()) => true,
             Err(err) => {
                 self.error_state.record(&err);
-                error!(target: "godot_adapter", "on_shutdown failed: {}", err);
+                error!(target: "godot_adapter", error = %err, "on_shutdown failed");
                 godot_error!("{err}");
                 false
             }
@@ -81,8 +81,8 @@ impl SuteraClientBridge {
                     self.error_state.record(&err);
                     error!(
                         target: "godot_adapter",
-                        "on_frame projection failed: {}",
-                        err
+                        error = %err,
+                        "on_frame projection failed"
                     );
                     godot_error!("{err}");
                     false
@@ -90,7 +90,7 @@ impl SuteraClientBridge {
             },
             Err(err) => {
                 self.error_state.record(&err);
-                error!(target: "godot_adapter", "on_frame failed: {}", err);
+                error!(target: "godot_adapter", error = %err, "on_frame failed");
                 godot_error!("{err}");
                 false
             }
@@ -134,8 +134,8 @@ impl SuteraClientBridge {
                 self.error_state.record(&err);
                 error!(
                     target: "godot_adapter",
-                    "request_state_override failed: {}",
-                    err
+                    error = %err,
+                    "request_state_override failed"
                 );
                 godot_error!("{err}");
                 false
