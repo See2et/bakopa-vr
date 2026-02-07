@@ -152,6 +152,9 @@ impl EcsCore for CoreEcs {
     }
 
     fn tick(&mut self, input: InputSnapshot) -> Result<RenderFrame, CoreError> {
+        // TODO(client-domain): In tick(), InputSnapshot is intentionally stored but
+        // not yet consumed because advance_frame and demo_motion currently do not
+        // read it. Add input-processing systems that consume InputSnapshot.
         self.world.insert_resource(input);
         self.schedule.run(&mut self.world);
 
