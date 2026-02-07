@@ -144,8 +144,13 @@ impl<C: EcsCore> RuntimeBridgeAdapter<C> {
 
     pub fn request_state_override(
         &mut self,
-        _request: StateOverrideRequest,
+        request: StateOverrideRequest,
     ) -> Result<(), BridgeError> {
+        warn!(
+            reason = %request.reason,
+            started = self.started,
+            "state override request denied"
+        );
         Err(BridgeError::DirectStateMutationDenied)
     }
 }
