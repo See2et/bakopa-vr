@@ -23,16 +23,24 @@
         default = pkgs.mkShell {
           packages = [
             rustToolchain
+            pkgs.libclang
           ];
+          shellHook = ''
+            export LIBCLANG_PATH=${pkgs.libclang.lib}/lib
+          '';
         };
         windows = pkgs.mkShell {
           packages = [
             rustToolchain
             pkgs.pkgsCross.mingwW64.stdenv.cc
             pthreads
+            pkgs.libclang
           ];
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS =
             "-L native=${pthreads}/lib";
+          shellHook = ''
+            export LIBCLANG_PATH=${pkgs.libclang.lib}/lib
+          '';
         };
       };
     };
