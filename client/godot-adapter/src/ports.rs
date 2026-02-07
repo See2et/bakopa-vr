@@ -1,7 +1,7 @@
 use godot::classes::{InputEvent as GodotInputEvent, Node3D};
 use godot::prelude::*;
 
-use crate::render::RenderStateProjector;
+use crate::render::{ProjectionError, RenderStateProjector};
 use client_domain::ecs::{FrameClock, InputEvent, InputSnapshot, RenderFrame};
 use client_domain::ports::InputPort;
 
@@ -75,7 +75,7 @@ impl<'a> GodotOutputPort<'a> {
         Self { projector, target }
     }
 
-    pub fn apply(&mut self, frame: &RenderFrame) -> bool {
+    pub fn apply(&mut self, frame: &RenderFrame) -> Result<(), ProjectionError> {
         self.projector.project(frame, self.target)
     }
 }

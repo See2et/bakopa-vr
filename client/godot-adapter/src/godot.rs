@@ -108,14 +108,11 @@ impl SuteraClientBridge {
             None => return Ok(()),
         };
         let mut output = GodotOutputPort::new(&mut self.projector, &mut self.target_node);
-        if output.apply(frame) {
-            Ok(())
-        } else {
-            let err = BridgeError::ProjectionFailed {
-                reason: "target node is invalid".to_string(),
-            };
-            Err(err)
-        }
+        output
+            .apply(frame)
+            .map_err(|error| BridgeError::ProjectionFailed {
+                reason: error.to_string(),
+            })
     }
 
     #[func]

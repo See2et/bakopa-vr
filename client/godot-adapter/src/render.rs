@@ -1,5 +1,6 @@
 use godot::classes::Node3D;
 use godot::prelude::*;
+use std::fmt;
 
 use client_domain::ecs::{Pose, RenderFrame};
 
@@ -36,14 +37,31 @@ fn project_render_frame_to_target(frame: &RenderFrame, target: &mut impl Transfo
 #[derive(Debug, Default)]
 pub struct RenderStateProjector;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectionError {
+    InvalidTargetNode,
+}
+
+impl fmt::Display for ProjectionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidTargetNode => write!(f, "target node is invalid"),
+        }
+    }
+}
+
 impl RenderStateProjector {
-    pub fn project(&mut self, frame: &RenderFrame, target: &mut OnEditor<Gd<Node3D>>) -> bool {
+    pub fn project(
+        &mut self,
+        frame: &RenderFrame,
+        target: &mut OnEditor<Gd<Node3D>>,
+    ) -> Result<(), ProjectionError> {
         if target.is_invalid() {
-            return false;
+            return Err(ProjectionError::InvalidTargetNode);
         }
         let node = &mut **target;
         project_render_frame_to_target(frame, node);
-        true
+        Ok(())
     }
 }
 

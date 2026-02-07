@@ -61,10 +61,10 @@ fn event_slots_convert_to_domain_input_variants() {
 }
 
 #[test]
-fn render_state_projector_returns_false_for_invalid_target_node() {
+fn render_state_projector_returns_error_for_invalid_target_node() {
     let mut projector = RenderStateProjector;
     let frame = RenderFrame::from_primary_pose(FrameId(1), Pose::identity());
     let mut target = godot::obj::OnEditor::<godot::obj::Gd<godot::classes::Node3D>>::default();
 
-    assert!(!projector.project(&frame, &mut target));
+    assert!(projector.project(&frame, &mut target).is_err());
 }
