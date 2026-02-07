@@ -1,9 +1,10 @@
 use godot::classes::{InputEvent as GodotInputEvent, Node3D};
 use godot::prelude::*;
+use tracing::error;
 
 use crate::render::{ProjectionError, RenderStateProjector};
 use client_domain::ecs::{FrameClock, InputEvent, InputSnapshot, RenderFrame};
-use client_domain::ports::InputPort;
+use client_domain::ports::{InputPort, OutputPort};
 
 #[derive(Default)]
 pub struct GodotInputPort {
@@ -78,5 +79,18 @@ impl<'a> GodotOutputPort<'a> {
 
     pub fn apply(&mut self, frame: &RenderFrame) -> Result<(), ProjectionError> {
         self.projector.project(frame, self.target)
+    }
+}
+
+impl<'a> OutputPort for GodotOutputPort<'a> {
+    fn project(&mut self, frame: RenderFrame) {
+        if let Err(err) = self.apply(&frame) {
+            error!(
+                target: "godot_adapter",
+                frame_id = ?frame.frame,
+                error = %err,
+                "failed to project render frame"
+            );
+        }
     }
 }
