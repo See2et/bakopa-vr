@@ -15,3 +15,5 @@
 - Node3D の `rotation` / `rotation_degrees` は Euler で、順序は YXZ。
 - Godot docs では Euler が完全な 3D 姿勢表現に不向きだと注意している。
 - yaw/pitch 分離や quaternion（Basis.get_rotation_quaternion）を優先する。
+- YXZ では `rotation` / `rotation_degrees` の pitch が ±90° 近傍で yaw と roll が干渉しやすく、実運用では「上/下を向いた状態での旋回」が gimbal lock の高リスクになるため、Node3D でも yaw/pitch を分離管理する。
+- 実装方針として、内部の回転演算・補間は常に `Basis.get_rotation_quaternion` ベースで行い、`rotation` / `rotation_degrees` への変換は UI 表示やデバッグ出力に限定する（Euler 表現は同一姿勢に複数表現があり曖昧になりうる）。
