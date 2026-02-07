@@ -24,7 +24,7 @@ impl Default for FakeXrInterface {
         Self {
             initialize_calls: 0,
             initialize_result: true,
-            initialized: true,
+            initialized: false,
             uninitialize_calls: 0,
         }
     }
