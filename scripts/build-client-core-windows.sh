@@ -17,6 +17,8 @@ for ((i = 1; i <= $#; i++)); do
   arg="${!i}"
   if [[ "$arg" == "--release" ]]; then
     profile="release"
+  elif [[ "$arg" == --profile=* ]]; then
+    profile="${arg#*=}"
   elif [[ "$arg" == "--profile" ]]; then
     next_index=$((i + 1))
     if [[ $next_index -le $# ]]; then
@@ -31,6 +33,8 @@ case "$profile" in
     ;;
   release)
     profile="release"
+    ;;
+  *)
     ;;
 esac
 
@@ -73,7 +77,8 @@ env \
   AR=x86_64-w64-mingw32-ar \
   RANLIB=x86_64-w64-mingw32-ranlib \
   cargo build -p client-godot-adapter --target x86_64-pc-windows-gnu \
-  "${profile_args[@]}" "${filtered_args[@]}"
+  ${profile_args[@]+"${profile_args[@]}"} \
+  ${filtered_args[@]+"${filtered_args[@]}"}
 
 src="target/x86_64-pc-windows-gnu/${profile}/client_core.dll"
 dest_dir="client/godot/bin/windows"
