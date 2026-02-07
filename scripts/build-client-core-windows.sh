@@ -45,4 +45,9 @@ fi
 mkdir -p "$dest_dir"
 cp -f "$src" "$dest"
 
-echo "ok: copied DLL -> $dest"
+if [[ -f "$dest" ]]; then
+  echo "ok: copied DLL -> $dest"
+else
+  echo "error: expected copied DLL not found at $dest" >&2
+  exit 1
+fi
