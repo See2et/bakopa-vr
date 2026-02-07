@@ -25,7 +25,7 @@ trait TransformTarget {
 
 impl TransformTarget for Gd<Node3D> {
     fn set_transform(&mut self, transform: Transform3D) {
-        self.call("set_transform", &[transform.to_variant()]);
+        Node3D::set_transform(self, transform);
     }
 }
 
