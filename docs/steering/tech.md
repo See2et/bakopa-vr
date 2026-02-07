@@ -21,6 +21,9 @@
 
 ## 主要ライブラリ
 
+- bevy_ecs
+- godot-rust (GDExtension)
+- thiserror / anyhow
 - tokio / tokio-tungstenite
 - webrtc / webrtc-media (syncer の feature)
 - serde / serde_json
