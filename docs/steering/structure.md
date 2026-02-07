@@ -42,9 +42,8 @@
 ### Client Domain
 
 **Location**: `/client/domain/`  
-**Purpose**: bevy_ecs ベースのクライアントドメインロジック
-（Components/Resources/Systems、ポート定義、純 Rust のエラー型）  
-**Example**: `client/domain/src/bridge.rs`
+**Purpose**: クライアント側ドメインロジック / データモデル / 状態管理  
+**Example**: `client/domain/src/lib.rs`
 
 - Godot 型や GDExtension 型を直接参照しない
 - `thiserror` による型付きエラーを定義し、境界判断を明確化する
@@ -52,9 +51,8 @@
 ### Client Godot Adapter
 
 **Location**: `/client/godot-adapter/`  
-**Purpose**: godot-rust (GDExtension) による Adapter 層
-（Godot 入出力と Domain ポートの変換）  
-**Example**: `client/godot-adapter/src/godot.rs`
+**Purpose**: クライアント向け Godot エンジン統合 / ランタイム Adapter 層  
+**Example**: `client/godot-adapter/src/lib.rs`
 
 - Godot API 呼び出し・ノードアクセスはこの層に閉じ込める
 - Domain output の適用と main-thread 制約の吸収を担当する
