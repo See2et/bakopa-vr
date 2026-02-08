@@ -2,6 +2,9 @@ use bevy_ecs::prelude::*;
 
 use crate::errors::CoreError;
 
+pub const DEFAULT_INPUT_DT_SECONDS: f32 = 1.0 / 60.0;
+const MOVE_SPEED_MPS: f32 = 1.5;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FrameId(pub u64);
 
@@ -86,6 +89,7 @@ pub enum InputEvent {
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct InputSnapshot {
     pub frame: FrameId,
+    pub dt_seconds: f32,
     pub inputs: Vec<InputEvent>,
 }
 
@@ -93,6 +97,13 @@ pub struct InputSnapshot {
 pub struct RenderFrame {
     pub frame: FrameId,
     primary_pose: Pose,
+    remote_poses: Vec<RemoteRenderPose>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemoteRenderPose {
+    pub participant_id: String,
+    pub pose: Pose,
 }
 
 impl RenderFrame {
@@ -100,11 +111,21 @@ impl RenderFrame {
         Self {
             frame,
             primary_pose: pose,
+            remote_poses: Vec::new(),
         }
     }
 
     pub fn primary_pose(&self) -> &Pose {
         &self.primary_pose
+    }
+
+    pub fn with_remote_poses(mut self, remote_poses: Vec<RemoteRenderPose>) -> Self {
+        self.remote_poses = remote_poses;
+        self
+    }
+
+    pub fn remote_poses(&self) -> &[RemoteRenderPose] {
+        &self.remote_poses
     }
 }
 
@@ -121,9 +142,10 @@ pub struct CoreEcs {
 impl CoreEcs {
     pub fn new() -> Self {
         let mut schedule = Schedule::default();
-        schedule.add_systems(advance_frame);
+        #[cfg(not(feature = "demo-motion"))]
+        schedule.add_systems((apply_input_snapshot, advance_frame).chain());
         #[cfg(feature = "demo-motion")]
-        schedule.add_systems(demo_motion);
+        schedule.add_systems((apply_input_snapshot, advance_frame, demo_motion).chain());
 
         let mut world = World::new();
         reset_world(&mut world);
@@ -176,13 +198,35 @@ impl EcsCore for CoreEcs {
 struct GameState {
     frame: FrameId,
     primary_pose: Pose,
+    yaw_radians: f32,
+    pitch_radians: f32,
 }
 
 fn reset_world(world: &mut World) {
     world.insert_resource(GameState {
         frame: FrameId(0),
         primary_pose: Pose::identity(),
+        yaw_radians: 0.0,
+        pitch_radians: 0.0,
     });
+}
+
+fn apply_input_snapshot(input: Res<InputSnapshot>, mut state: ResMut<GameState>) {
+    let dt_seconds = sanitize_dt(input.dt_seconds);
+    let (axis_x, axis_y, yaw_rate, pitch_rate) = aggregate_input_intents(&input.inputs);
+    let (axis_x, axis_y) = normalize_move_axis(axis_x, axis_y);
+
+    state.yaw_radians += yaw_rate * dt_seconds;
+    state.pitch_radians += pitch_rate * dt_seconds;
+
+    let (sin_yaw, cos_yaw) = state.yaw_radians.sin_cos();
+    let movement_scale = MOVE_SPEED_MPS * dt_seconds;
+    let delta_x = (cos_yaw * axis_x + sin_yaw * axis_y) * movement_scale;
+    let delta_z = (sin_yaw * axis_x - cos_yaw * axis_y) * movement_scale;
+    state.primary_pose.position.x += delta_x;
+    state.primary_pose.position.z += delta_z;
+    state.primary_pose.orientation =
+        quaternion_from_yaw_pitch(state.yaw_radians, state.pitch_radians);
 }
 
 fn advance_frame(mut state: ResMut<GameState>) {
@@ -193,4 +237,56 @@ fn advance_frame(mut state: ResMut<GameState>) {
 fn demo_motion(mut state: ResMut<GameState>) {
     let step = (state.frame.0 % 180) as f32 / 180.0;
     state.primary_pose.position.x = step * 0.5;
+}
+
+fn sanitize_dt(dt_seconds: f32) -> f32 {
+    if dt_seconds.is_finite() && dt_seconds > 0.0 {
+        dt_seconds
+    } else {
+        DEFAULT_INPUT_DT_SECONDS
+    }
+}
+
+fn aggregate_input_intents(inputs: &[InputEvent]) -> (f32, f32, f32, f32) {
+    inputs.iter().fold(
+        (0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32),
+        |(axis_x, axis_y, yaw_rate, pitch_rate), input| match input {
+            InputEvent::Move {
+                axis_x: input_x,
+                axis_y: input_y,
+            } => (axis_x + input_x, axis_y + input_y, yaw_rate, pitch_rate),
+            InputEvent::Look {
+                yaw_delta,
+                pitch_delta,
+            } => (
+                axis_x,
+                axis_y,
+                yaw_rate + yaw_delta,
+                pitch_rate + pitch_delta,
+            ),
+            InputEvent::Action { .. } => (axis_x, axis_y, yaw_rate, pitch_rate),
+        },
+    )
+}
+
+fn normalize_move_axis(axis_x: f32, axis_y: f32) -> (f32, f32) {
+    let mut axis_x = axis_x.clamp(-1.0, 1.0);
+    let mut axis_y = axis_y.clamp(-1.0, 1.0);
+    let magnitude = (axis_x * axis_x + axis_y * axis_y).sqrt();
+    if magnitude > 1.0 {
+        axis_x /= magnitude;
+        axis_y /= magnitude;
+    }
+    (axis_x, axis_y)
+}
+
+fn quaternion_from_yaw_pitch(yaw_radians: f32, pitch_radians: f32) -> UnitQuat {
+    let (sin_yaw, cos_yaw) = (yaw_radians * 0.5).sin_cos();
+    let (sin_pitch, cos_pitch) = (pitch_radians * 0.5).sin_cos();
+    UnitQuat {
+        x: cos_yaw * sin_pitch,
+        y: sin_yaw * cos_pitch,
+        z: -sin_yaw * sin_pitch,
+        w: cos_yaw * cos_pitch,
+    }
 }

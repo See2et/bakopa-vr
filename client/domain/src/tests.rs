@@ -1,14 +1,20 @@
 use super::bridge::{
     BridgePipeline, ClientBootstrap, ClientLifecycle, RuntimeBridge, RuntimeBridgeAdapter,
+    RuntimeMode, RuntimeModePreference,
 };
 use super::ecs::{
     CoreEcs, EcsCore, FrameClock, FrameId, InputEvent, InputSnapshot, Pose, RenderFrame, UnitQuat,
-    Vec3,
+    Vec3, DEFAULT_INPUT_DT_SECONDS,
 };
 use super::errors::{
     BridgeError, BridgeErrorState, CoreError, FrameError, ShutdownError, StartError, XrError,
 };
 use super::ports::{InputPort, NoopInputPort, OutputPort, RenderFrameBuffer};
+use super::sync::{
+    runtime_mode_label, ParticipantId, PoseSyncCoordinator, PoseVersion, RemoteLiveness,
+    RemotePoseRepository, RemotePoseUpdate, ScopeBoundaryError, ScopeBoundaryPolicy,
+    SignalingRoute, SyncDelta, SyncSessionError, SyncSessionPort,
+};
 use super::xr::{OpenXrRuntime, XrInterfaceAccess, XrInterfaceProvider, XrRuntime};
 
 #[derive(Clone)]
@@ -164,12 +170,14 @@ fn start_reports_xr_initialization_failure() {
         ..FakeXr::default()
     };
     let bridge = FakeBridge::default();
-    let mut bootstrap = ClientBootstrap::new(xr, bridge);
+    let mut bootstrap = ClientBootstrap::new_with_mode(xr, bridge, RuntimeModePreference::Vr);
 
     let result = bootstrap.start();
 
-    assert!(matches!(result, Err(StartError::XrInit(_))));
-    assert_eq!(bootstrap.bridge.start_calls, 0);
+    assert!(result.is_ok());
+    assert_eq!(bootstrap.bridge.start_calls, 1);
+    assert_eq!(bootstrap.runtime_mode(), RuntimeMode::Desktop);
+    assert!(bootstrap.start_diagnostics().xr_failure_reason().is_some());
 }
 
 #[test]
@@ -180,12 +188,31 @@ fn start_reports_xr_not_ready() {
         ..FakeXr::default()
     };
     let bridge = FakeBridge::default();
-    let mut bootstrap = ClientBootstrap::new(xr, bridge);
+    let mut bootstrap = ClientBootstrap::new_with_mode(xr, bridge, RuntimeModePreference::Vr);
 
     let result = bootstrap.start();
 
-    assert!(matches!(result, Err(StartError::XrNotReady)));
-    assert_eq!(bootstrap.bridge.start_calls, 0);
+    assert!(result.is_ok());
+    assert_eq!(bootstrap.bridge.start_calls, 1);
+    assert_eq!(bootstrap.runtime_mode(), RuntimeMode::Desktop);
+    assert_eq!(
+        bootstrap.start_diagnostics().xr_failure_reason(),
+        Some("xr runtime not ready")
+    );
+}
+
+#[test]
+fn start_uses_desktop_mode_without_xr_initialization() {
+    let xr = FakeXr::default();
+    let bridge = FakeBridge::default();
+    let mut bootstrap = ClientBootstrap::new_with_mode(xr, bridge, RuntimeModePreference::Desktop);
+
+    let result = bootstrap.start();
+
+    assert!(result.is_ok());
+    assert_eq!(bootstrap.xr.enable_calls, 0);
+    assert_eq!(bootstrap.runtime_mode(), RuntimeMode::Desktop);
+    assert!(bootstrap.start_diagnostics().xr_failure_reason().is_none());
 }
 
 #[test]
@@ -201,7 +228,7 @@ fn start_reports_bridge_initialization_failure() {
         }),
         ..FakeBridge::default()
     };
-    let mut bootstrap = ClientBootstrap::new(xr, bridge);
+    let mut bootstrap = ClientBootstrap::new_with_mode(xr, bridge, RuntimeModePreference::Vr);
 
     let result = bootstrap.start();
 
@@ -413,12 +440,14 @@ fn core_ecs_tick_runs_systems_and_advances_frame() {
     let first = ecs
         .tick(InputSnapshot {
             frame: FrameId(0),
+            dt_seconds: DEFAULT_INPUT_DT_SECONDS,
             inputs: Vec::new(),
         })
         .expect("first tick");
     let second = ecs
         .tick(InputSnapshot {
             frame: FrameId(1),
+            dt_seconds: DEFAULT_INPUT_DT_SECONDS,
             inputs: Vec::new(),
         })
         .expect("second tick");
@@ -471,6 +500,7 @@ fn core_ecs_is_tickable_without_explicit_init_world_call() {
     let frame = ecs
         .tick(InputSnapshot {
             frame: FrameId(0),
+            dt_seconds: DEFAULT_INPUT_DT_SECONDS,
             inputs: Vec::new(),
         })
         .expect("core is initialized by constructor");
@@ -554,6 +584,7 @@ fn runtime_bridge_rejects_frame_before_start() {
 
     let result = bridge.on_frame(InputSnapshot {
         frame: FrameId(0),
+        dt_seconds: DEFAULT_INPUT_DT_SECONDS,
         inputs: Vec::new(),
     });
 
@@ -571,6 +602,7 @@ fn runtime_bridge_forwards_frame_input_to_core() {
 
     let input = InputSnapshot {
         frame: FrameId(0),
+        dt_seconds: DEFAULT_INPUT_DT_SECONDS,
         inputs: vec![InputEvent::Action {
             name: "jump".to_string(),
             pressed: true,
@@ -625,7 +657,9 @@ fn client_bootstrap_reports_openxr_missing_interface() {
 
     let result = bootstrap.start();
 
-    assert!(matches!(result, Err(StartError::XrInit(_))));
+    assert!(result.is_ok());
+    assert_eq!(bootstrap.runtime_mode(), RuntimeMode::Desktop);
+    assert!(bootstrap.start_diagnostics().xr_failure_reason().is_some());
 }
 
 #[test]
@@ -695,6 +729,7 @@ fn bridge_pipeline_projects_render_frame() {
     pipeline.on_start().expect("start succeeds");
     let input = InputSnapshot {
         frame: FrameId(0),
+        dt_seconds: DEFAULT_INPUT_DT_SECONDS,
         inputs: vec![InputEvent::Action {
             name: "jump".to_string(),
             pressed: true,
@@ -837,4 +872,564 @@ fn input_event_supports_minimal_domain_variants() {
     assert!(matches!(move_event, InputEvent::Move { .. }));
     assert!(matches!(look_event, InputEvent::Look { .. }));
     assert!(matches!(action_event, InputEvent::Action { .. }));
+}
+
+#[test]
+fn movement_system_updates_position_frame_rate_independently() {
+    let mut single_step = CoreEcs::new();
+    let single = single_step
+        .tick(InputSnapshot {
+            frame: FrameId(0),
+            dt_seconds: 1.0,
+            inputs: vec![InputEvent::Move {
+                axis_x: 1.0,
+                axis_y: 0.0,
+            }],
+        })
+        .expect("single step tick");
+
+    let mut split_step = CoreEcs::new();
+    split_step
+        .tick(InputSnapshot {
+            frame: FrameId(0),
+            dt_seconds: 0.5,
+            inputs: vec![InputEvent::Move {
+                axis_x: 1.0,
+                axis_y: 0.0,
+            }],
+        })
+        .expect("split step 1");
+    let split = split_step
+        .tick(InputSnapshot {
+            frame: FrameId(1),
+            dt_seconds: 0.5,
+            inputs: vec![InputEvent::Move {
+                axis_x: 1.0,
+                axis_y: 0.0,
+            }],
+        })
+        .expect("split step 2");
+
+    assert!((single.primary_pose().position.x - split.primary_pose().position.x).abs() < 1.0e-6);
+    assert!((single.primary_pose().position.z - split.primary_pose().position.z).abs() < 1.0e-6);
+}
+
+#[test]
+fn movement_system_keeps_pose_unchanged_without_input() {
+    let mut ecs = CoreEcs::new();
+    let frame = ecs
+        .tick(InputSnapshot {
+            frame: FrameId(0),
+            dt_seconds: 0.25,
+            inputs: Vec::new(),
+        })
+        .expect("tick without input");
+
+    assert_eq!(frame.primary_pose(), &Pose::identity());
+}
+
+#[derive(Default)]
+struct FakeSyncSessionPort {
+    sent: Vec<(FrameId, RuntimeMode, Pose)>,
+}
+
+impl SyncSessionPort for FakeSyncSessionPort {
+    fn send_local_pose(
+        &mut self,
+        frame: FrameId,
+        mode: RuntimeMode,
+        pose: Pose,
+    ) -> Result<(), SyncSessionError> {
+        self.sent.push((frame, mode, pose));
+        Ok(())
+    }
+}
+
+#[test]
+fn pose_sync_coordinator_sends_updated_local_pose_after_frame_update() {
+    let mut coordinator = PoseSyncCoordinator::new(CoreEcs::new(), FakeSyncSessionPort::default());
+    let frame = coordinator
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(0),
+                dt_seconds: 1.0,
+                inputs: vec![InputEvent::Move {
+                    axis_x: 1.0,
+                    axis_y: 0.0,
+                }],
+            },
+        )
+        .expect("coordinator apply frame");
+
+    assert_eq!(frame.frame, FrameId(1));
+    assert!(frame.primary_pose().position.x > 0.0);
+    assert_eq!(coordinator.sync_port().sent.len(), 1);
+    let (_, mode, sent_pose) = coordinator.sync_port().sent[0];
+    assert_eq!(mode, RuntimeMode::Desktop);
+    assert_eq!(sent_pose, *frame.primary_pose());
+}
+
+#[derive(Default)]
+struct FailingSyncSessionPort;
+
+impl SyncSessionPort for FailingSyncSessionPort {
+    fn send_local_pose(
+        &mut self,
+        _frame: FrameId,
+        _mode: RuntimeMode,
+        _pose: Pose,
+    ) -> Result<(), SyncSessionError> {
+        Err(SyncSessionError::TransportUnavailable {
+            reason: "test transport down".to_string(),
+        })
+    }
+}
+
+struct NotReadySyncSessionPort;
+
+impl SyncSessionPort for NotReadySyncSessionPort {
+    fn send_local_pose(
+        &mut self,
+        _frame: FrameId,
+        _mode: RuntimeMode,
+        _pose: Pose,
+    ) -> Result<(), SyncSessionError> {
+        Err(SyncSessionError::NotReady {
+            reason: "room not joined".to_string(),
+        })
+    }
+}
+
+#[test]
+fn pose_sync_coordinator_continues_frame_when_send_fails() {
+    let mut coordinator = PoseSyncCoordinator::new(CoreEcs::new(), FailingSyncSessionPort);
+
+    let frame = coordinator
+        .apply_frame(
+            RuntimeMode::Vr,
+            InputSnapshot {
+                frame: FrameId(0),
+                dt_seconds: 0.5,
+                inputs: vec![InputEvent::Move {
+                    axis_x: 1.0,
+                    axis_y: 0.0,
+                }],
+            },
+        )
+        .expect("frame must continue even if sync send fails");
+
+    assert_eq!(frame.frame, FrameId(1));
+    assert!(matches!(
+        coordinator.last_sync_error_ref(),
+        Some(SyncSessionError::TransportUnavailable { .. })
+    ));
+}
+
+#[test]
+fn pose_sync_coordinator_skips_send_when_sync_session_not_ready() {
+    let mut coordinator = PoseSyncCoordinator::new(CoreEcs::new(), NotReadySyncSessionPort);
+    let frame = coordinator
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(0),
+                dt_seconds: 0.25,
+                inputs: vec![InputEvent::Move {
+                    axis_x: 1.0,
+                    axis_y: 0.0,
+                }],
+            },
+        )
+        .expect("frame must continue when sync session is not ready");
+
+    assert_eq!(frame.frame, FrameId(1));
+    assert!(coordinator.last_sync_error_ref().is_none());
+}
+
+#[derive(Default)]
+struct PollingSyncSessionPort {
+    pending_deltas: Vec<SyncDelta>,
+}
+
+impl SyncSessionPort for PollingSyncSessionPort {
+    fn send_local_pose(
+        &mut self,
+        _frame: FrameId,
+        _mode: RuntimeMode,
+        _pose: Pose,
+    ) -> Result<(), SyncSessionError> {
+        Ok(())
+    }
+
+    fn poll_events(&mut self) -> Vec<SyncDelta> {
+        std::mem::take(&mut self.pending_deltas)
+    }
+}
+
+#[test]
+fn pose_sync_coordinator_applies_polled_sync_events_before_composing_frame() {
+    let participant_id = ParticipantId::new("peer-polled");
+    let remote_pose = Pose {
+        position: Vec3 {
+            x: 3.0,
+            y: 0.5,
+            z: -1.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+    let mut coordinator = PoseSyncCoordinator::new(
+        CoreEcs::new(),
+        PollingSyncSessionPort {
+            pending_deltas: vec![
+                SyncDelta::PeerJoined {
+                    participant_id: participant_id.clone(),
+                    session_epoch: 7,
+                },
+                SyncDelta::PoseReceived {
+                    participant_id,
+                    pose: remote_pose,
+                    version: PoseVersion {
+                        session_epoch: 7,
+                        pose_seq: 1,
+                    },
+                },
+            ],
+        },
+    );
+
+    let frame = coordinator
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(0),
+                dt_seconds: 0.1,
+                inputs: Vec::new(),
+            },
+        )
+        .expect("frame should include polled remote pose");
+
+    assert_eq!(frame.remote_poses().len(), 1);
+    assert_eq!(frame.remote_poses()[0].participant_id, "peer-polled");
+    assert_eq!(frame.remote_poses()[0].pose, remote_pose);
+}
+
+#[test]
+fn pose_sync_coordinator_prioritizes_lifecycle_events_before_pose_events() {
+    let participant_id = ParticipantId::new("peer-lifecycle-priority");
+    let remote_pose = Pose {
+        position: Vec3 {
+            x: 4.0,
+            y: 0.0,
+            z: -3.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+    let mut coordinator = PoseSyncCoordinator::new(
+        CoreEcs::new(),
+        PollingSyncSessionPort {
+            pending_deltas: vec![
+                SyncDelta::PoseReceived {
+                    participant_id: participant_id.clone(),
+                    pose: remote_pose,
+                    version: PoseVersion {
+                        session_epoch: 9,
+                        pose_seq: 1,
+                    },
+                },
+                SyncDelta::PeerJoined {
+                    participant_id,
+                    session_epoch: 9,
+                },
+            ],
+        },
+    );
+
+    let frame = coordinator
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(0),
+                dt_seconds: 0.1,
+                inputs: Vec::new(),
+            },
+        )
+        .expect("frame should apply lifecycle before pose");
+
+    assert_eq!(frame.remote_poses().len(), 1);
+    assert_eq!(frame.remote_poses()[0].pose, remote_pose);
+}
+
+#[derive(Default)]
+struct ShutdownAwareSyncSessionPort {
+    begin_shutdown_called: bool,
+    drain_deltas: Vec<SyncDelta>,
+}
+
+impl SyncSessionPort for ShutdownAwareSyncSessionPort {
+    fn send_local_pose(
+        &mut self,
+        _frame: FrameId,
+        _mode: RuntimeMode,
+        _pose: Pose,
+    ) -> Result<(), SyncSessionError> {
+        Ok(())
+    }
+
+    fn begin_shutdown(&mut self) {
+        self.begin_shutdown_called = true;
+    }
+
+    fn drain_pending_events(&mut self) -> Vec<SyncDelta> {
+        std::mem::take(&mut self.drain_deltas)
+    }
+}
+
+#[test]
+fn pose_sync_coordinator_shutdown_drains_control_events_and_drops_pose_events() {
+    let participant_id = ParticipantId::new("peer-shutdown");
+    let remote_pose = Pose {
+        position: Vec3 {
+            x: 11.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+    let mut coordinator = PoseSyncCoordinator::new(
+        CoreEcs::new(),
+        ShutdownAwareSyncSessionPort {
+            begin_shutdown_called: false,
+            drain_deltas: vec![
+                SyncDelta::PeerJoined {
+                    participant_id: participant_id.clone(),
+                    session_epoch: 3,
+                },
+                SyncDelta::PoseReceived {
+                    participant_id: participant_id.clone(),
+                    pose: remote_pose,
+                    version: PoseVersion {
+                        session_epoch: 3,
+                        pose_seq: 1,
+                    },
+                },
+            ],
+        },
+    );
+
+    let report = coordinator.shutdown_sync_session();
+
+    assert!(coordinator.sync_port().begin_shutdown_called);
+    assert_eq!(report.applied_control_events, 1);
+    assert_eq!(report.dropped_pose_events, 1);
+    assert_eq!(coordinator.remotes().render_snapshot().len(), 0);
+}
+
+#[test]
+fn movement_system_input_application_is_deterministic() {
+    let input = InputSnapshot {
+        frame: FrameId(0),
+        dt_seconds: 0.25,
+        inputs: vec![
+            InputEvent::Move {
+                axis_x: 0.4,
+                axis_y: -0.8,
+            },
+            InputEvent::Look {
+                yaw_delta: 0.5,
+                pitch_delta: -0.1,
+            },
+        ],
+    };
+    let mut first = CoreEcs::new();
+    let mut second = CoreEcs::new();
+
+    let first_frame = first.tick(input.clone()).expect("first deterministic tick");
+    let second_frame = second.tick(input).expect("second deterministic tick");
+
+    assert_eq!(first_frame.primary_pose(), second_frame.primary_pose());
+}
+
+#[test]
+fn remote_pose_repository_applies_newer_and_drops_stale_versions() {
+    let mut repository = RemotePoseRepository::new();
+    let participant_id = ParticipantId::new("peer-1");
+    let older_pose = Pose {
+        position: Vec3 {
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+    let newer_pose = Pose {
+        position: Vec3 {
+            x: 2.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+
+    let first = repository.apply_if_newer(
+        participant_id.clone(),
+        older_pose,
+        PoseVersion {
+            session_epoch: 1,
+            pose_seq: 1,
+        },
+    );
+    let stale = repository.apply_if_newer(
+        participant_id.clone(),
+        Pose {
+            position: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            orientation: UnitQuat::identity(),
+        },
+        PoseVersion {
+            session_epoch: 1,
+            pose_seq: 1,
+        },
+    );
+    let newer = repository.apply_if_newer(
+        participant_id.clone(),
+        newer_pose,
+        PoseVersion {
+            session_epoch: 1,
+            pose_seq: 2,
+        },
+    );
+
+    assert_eq!(first, RemotePoseUpdate::Applied);
+    assert_eq!(stale, RemotePoseUpdate::StaleDropped);
+    assert_eq!(newer, RemotePoseUpdate::Applied);
+    assert_eq!(
+        repository
+            .get(&participant_id)
+            .and_then(|state| state.pose_state)
+            .map(|state| state.pose),
+        Some(newer_pose)
+    );
+}
+
+#[test]
+fn remote_pose_repository_handles_join_left_rejoin_and_inactive() {
+    let mut repository = RemotePoseRepository::new();
+    let participant_id = ParticipantId::new("peer-2");
+
+    repository.on_peer_joined(participant_id.clone(), 1);
+    assert_eq!(
+        repository
+            .get(&participant_id)
+            .map(|state| state.session_epoch),
+        Some(1)
+    );
+
+    assert!(repository.mark_inactive(&participant_id));
+    assert_eq!(
+        repository.get(&participant_id).map(|state| state.liveness),
+        Some(RemoteLiveness::SuspectedDisconnected)
+    );
+
+    repository.on_peer_joined(participant_id.clone(), 2);
+    assert_eq!(
+        repository
+            .get(&participant_id)
+            .map(|state| state.session_epoch),
+        Some(2)
+    );
+    assert_eq!(
+        repository
+            .get(&participant_id)
+            .map(|state| state.pose_state),
+        Some(None)
+    );
+
+    assert!(repository.on_peer_left(&participant_id));
+    assert!(!repository.on_peer_left(&participant_id));
+    assert!(repository.get(&participant_id).is_none());
+}
+
+#[test]
+fn pose_sync_coordinator_reflects_remote_updates_on_next_frame_and_removes_left_peer() {
+    let mut coordinator = PoseSyncCoordinator::new(CoreEcs::new(), FakeSyncSessionPort::default());
+    let participant_id = ParticipantId::new("peer-render");
+    coordinator.on_peer_joined(participant_id.clone(), 1);
+    let remote_pose = Pose {
+        position: Vec3 {
+            x: 9.0,
+            y: 1.0,
+            z: -2.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+    let update = coordinator.apply_remote_pose(
+        participant_id.clone(),
+        remote_pose,
+        PoseVersion {
+            session_epoch: 1,
+            pose_seq: 1,
+        },
+    );
+    assert_eq!(update, RemotePoseUpdate::Applied);
+
+    let frame = coordinator
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(0),
+                dt_seconds: 0.1,
+                inputs: Vec::new(),
+            },
+        )
+        .expect("frame with remote pose");
+    assert_eq!(frame.remote_poses().len(), 1);
+    assert_eq!(
+        frame.remote_poses()[0].participant_id,
+        "peer-render".to_string()
+    );
+    assert_eq!(frame.remote_poses()[0].pose, remote_pose);
+
+    assert!(coordinator.on_peer_left(&participant_id));
+    let after_left = coordinator
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(1),
+                dt_seconds: 0.1,
+                inputs: Vec::new(),
+            },
+        )
+        .expect("frame after peer left");
+    assert!(after_left.remote_poses().is_empty());
+}
+
+#[test]
+fn runtime_mode_label_is_stable_for_sync_trace_fields() {
+    assert_eq!(runtime_mode_label(RuntimeMode::Desktop), "desktop");
+    assert_eq!(runtime_mode_label(RuntimeMode::Vr), "vr");
+}
+
+#[test]
+fn scope_boundary_policy_rejects_voice_stream_kind() {
+    let result = ScopeBoundaryPolicy::default().ensure_stream_kind("voice");
+
+    assert!(matches!(
+        result,
+        Err(ScopeBoundaryError::UnsupportedStreamKind { .. })
+    ));
+}
+
+#[test]
+fn scope_boundary_policy_rejects_bloom_production_signaling() {
+    let result = ScopeBoundaryPolicy::with_signaling_route(SignalingRoute::BloomProduction)
+        .ensure_signaling_route();
+
+    assert_eq!(
+        result,
+        Err(ScopeBoundaryError::ProductionBloomSignalingOutOfScope)
+    );
 }

@@ -1,8 +1,35 @@
-use crate::ecs::{EcsCore, FrameClock, FrameId, InputEvent, InputSnapshot, RenderFrame};
+use crate::ecs::{
+    EcsCore, FrameClock, FrameId, InputEvent, InputSnapshot, RenderFrame, DEFAULT_INPUT_DT_SECONDS,
+};
 use crate::errors::{BridgeError, FrameError, ShutdownError, StartError};
 use crate::ports::{InputPort, OutputPort, RenderFrameBuffer};
 use crate::xr::XrRuntime;
 use tracing::{info, instrument, warn};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RuntimeMode {
+    Vr,
+    #[default]
+    Desktop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RuntimeModePreference {
+    #[default]
+    Vr,
+    Desktop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StartDiagnostics {
+    xr_failure_reason: Option<String>,
+}
+
+impl StartDiagnostics {
+    pub fn xr_failure_reason(&self) -> Option<&str> {
+        self.xr_failure_reason.as_deref()
+    }
+}
 
 pub trait RuntimeBridge {
     fn on_start(&mut self) -> Result<(), BridgeError>;
@@ -18,15 +45,25 @@ pub trait ClientLifecycle {
 pub struct ClientBootstrap<X: XrRuntime, B: RuntimeBridge> {
     pub(crate) xr: X,
     pub(crate) bridge: B,
+    mode_preference: RuntimeModePreference,
+    active_mode: RuntimeMode,
+    start_diagnostics: StartDiagnostics,
     running: bool,
     frame_clock: FrameClock,
 }
 
 impl<X: XrRuntime, B: RuntimeBridge> ClientBootstrap<X, B> {
     pub fn new(xr: X, bridge: B) -> Self {
+        Self::new_with_mode(xr, bridge, RuntimeModePreference::Vr)
+    }
+
+    pub fn new_with_mode(xr: X, bridge: B, mode_preference: RuntimeModePreference) -> Self {
         Self {
             xr,
             bridge,
+            mode_preference,
+            active_mode: RuntimeMode::Desktop,
+            start_diagnostics: StartDiagnostics::default(),
             running: false,
             frame_clock: FrameClock::default(),
         }
@@ -35,15 +72,46 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientBootstrap<X, B> {
     #[instrument(skip(self), fields(running_before = self.running))]
     pub fn start(&mut self) -> Result<(), StartError> {
         info!("client bootstrap start requested");
-        self.xr.enable().map_err(StartError::XrInit)?;
-        if !self.xr.is_ready() {
-            return Err(StartError::XrNotReady);
-        }
+        self.start_diagnostics = StartDiagnostics::default();
+        self.active_mode = self.resolve_runtime_mode();
         self.bridge.on_start().map_err(StartError::BridgeInit)?;
         self.frame_clock.reset(FrameId(0));
         self.running = true;
-        info!(running = self.running, "client bootstrap started");
+        info!(
+            running = self.running,
+            mode = ?self.active_mode,
+            "client bootstrap started"
+        );
         Ok(())
+    }
+
+    pub fn runtime_mode(&self) -> RuntimeMode {
+        self.active_mode
+    }
+
+    pub fn start_diagnostics(&self) -> &StartDiagnostics {
+        &self.start_diagnostics
+    }
+
+    fn resolve_runtime_mode(&mut self) -> RuntimeMode {
+        match self.mode_preference {
+            RuntimeModePreference::Desktop => RuntimeMode::Desktop,
+            RuntimeModePreference::Vr => match self.xr.enable() {
+                Ok(()) if self.xr.is_ready() => RuntimeMode::Vr,
+                Ok(()) => {
+                    let reason = "xr runtime not ready".to_string();
+                    self.start_diagnostics.xr_failure_reason = Some(reason.clone());
+                    warn!(reason = %reason, "falling back to desktop mode");
+                    RuntimeMode::Desktop
+                }
+                Err(error) => {
+                    let reason = error.to_string();
+                    self.start_diagnostics.xr_failure_reason = Some(reason.clone());
+                    warn!(reason = %reason, "falling back to desktop mode");
+                    RuntimeMode::Desktop
+                }
+            },
+        }
     }
 
     /// Advances the frame clock and returns the new frame id.
@@ -61,6 +129,7 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientBootstrap<X, B> {
         }
         let input = InputSnapshot {
             frame: self.frame_clock.current_frame(),
+            dt_seconds: DEFAULT_INPUT_DT_SECONDS,
             inputs,
         };
         self.bridge.on_frame(input).map_err(FrameError::Bridge)
@@ -106,6 +175,7 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientLifecycle for ClientBootstrap<X, B> {
         };
 
         self.running = false;
+        self.active_mode = RuntimeMode::Desktop;
         info!(
             running = self.running,
             bridge_failed,

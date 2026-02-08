@@ -1,9 +1,14 @@
 use godot::prelude::{Basis, Quaternion, Vector3};
 
-use super::ports::{map_event_slots_to_input_events, GodotInputPort};
+use super::ports::{
+    desktop_snapshot_to_input_events, map_event_slots_to_input_events, normalize_desktop_input,
+    normalize_vr_input, DesktopInputState, GodotInputPort, VrInputState,
+};
 use super::render::tests_support;
 use super::render::RenderStateProjector;
-use client_domain::ecs::{FrameClock, FrameId, InputEvent, Pose, RenderFrame, UnitQuat, Vec3};
+use client_domain::ecs::{
+    FrameClock, FrameId, InputEvent, Pose, RemoteRenderPose, RenderFrame, UnitQuat, Vec3,
+};
 use client_domain::ports::InputPort;
 
 #[test]
@@ -70,6 +75,51 @@ fn render_frame_transform_uses_primary_pose() {
 }
 
 #[test]
+fn remote_pose_projection_follows_frame_updates_and_removals() {
+    let first_remote_pose = Pose {
+        position: Vec3 {
+            x: 7.0,
+            y: 1.0,
+            z: -2.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+    let second_remote_pose = Pose {
+        position: Vec3 {
+            x: -4.0,
+            y: 0.5,
+            z: 3.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+    let frame_with_remote = RenderFrame::from_primary_pose(FrameId(1), Pose::identity())
+        .with_remote_poses(vec![RemoteRenderPose {
+            participant_id: "peer-projection".to_string(),
+            pose: first_remote_pose,
+        }]);
+    let frame_after_update = RenderFrame::from_primary_pose(FrameId(2), Pose::identity())
+        .with_remote_poses(vec![RemoteRenderPose {
+            participant_id: "peer-projection".to_string(),
+            pose: second_remote_pose,
+        }]);
+    let frame_after_left = RenderFrame::from_primary_pose(FrameId(3), Pose::identity());
+
+    let first = tests_support::remote_cache_after_project(&frame_with_remote);
+    let updated = tests_support::remote_cache_after_project(&frame_after_update);
+    let removed = tests_support::remote_cache_after_project(&frame_after_left);
+
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].0, "peer-projection".to_string());
+    assert_eq!(first[0].1.origin, Vector3::new(7.0, 1.0, -2.0));
+
+    assert_eq!(updated.len(), 1);
+    assert_eq!(updated[0].0, "peer-projection".to_string());
+    assert_eq!(updated[0].1.origin, Vector3::new(-4.0, 0.5, 3.0));
+
+    assert!(removed.is_empty());
+}
+
+#[test]
 fn godot_input_port_empty_maps_to_noop_snapshot() {
     let mut port = GodotInputPort::empty();
     let mut clock = FrameClock::default();
@@ -78,6 +128,7 @@ fn godot_input_port_empty_maps_to_noop_snapshot() {
 
     assert_eq!(snapshot.frame, FrameId(1));
     assert!(snapshot.inputs.is_empty());
+    assert!(snapshot.dt_seconds > 0.0);
 }
 
 #[test]
@@ -90,8 +141,145 @@ fn event_slots_convert_to_domain_input_variants() {
 }
 
 #[test]
+fn desktop_input_normalization_maps_wasd_and_mouse_to_common_semantics() {
+    let state = DesktopInputState {
+        move_left: false,
+        move_right: true,
+        move_forward: true,
+        move_back: false,
+        mouse_delta_x: 0.6,
+        mouse_delta_y: -0.3,
+        dt_seconds: 0.2,
+    };
+
+    let normalized = normalize_desktop_input(state);
+    let inputs = desktop_snapshot_to_input_events(normalized);
+
+    assert!((normalized.move_axis_x - std::f32::consts::FRAC_1_SQRT_2).abs() < 1.0e-6);
+    assert!((normalized.move_axis_y - std::f32::consts::FRAC_1_SQRT_2).abs() < 1.0e-6);
+    assert_eq!(normalized.turn_yaw, 3.0);
+    assert_eq!(normalized.look_pitch, -1.5);
+    assert!(matches!(
+        inputs[0],
+        InputEvent::Move {
+            axis_x: _,
+            axis_y: _
+        }
+    ));
+    assert!(matches!(
+        inputs[1],
+        InputEvent::Look {
+            yaw_delta: _,
+            pitch_delta: _
+        }
+    ));
+}
+
+#[test]
+fn desktop_input_without_events_keeps_move_and_look_zero() {
+    let mut port = GodotInputPort::from_desktop_state(DesktopInputState::default());
+    let mut clock = FrameClock::default();
+
+    let snapshot = port.snapshot(&mut clock);
+
+    assert_eq!(snapshot.frame, FrameId(1));
+    assert_eq!(snapshot.inputs.len(), 2);
+    assert!(snapshot.dt_seconds > 0.0);
+    assert_eq!(
+        snapshot.inputs[0],
+        InputEvent::Move {
+            axis_x: 0.0,
+            axis_y: 0.0
+        }
+    );
+    assert_eq!(
+        snapshot.inputs[1],
+        InputEvent::Look {
+            yaw_delta: 0.0,
+            pitch_delta: 0.0
+        }
+    );
+}
+
+#[test]
+fn desktop_input_invalid_dt_is_sanitized_without_panicking() {
+    let state = DesktopInputState {
+        mouse_delta_x: 2.0,
+        dt_seconds: 0.0,
+        ..DesktopInputState::default()
+    };
+
+    let normalized = normalize_desktop_input(state);
+
+    assert!(normalized.dt_seconds > 0.0);
+    assert!(normalized.turn_yaw.is_finite());
+}
+
+#[test]
+fn vr_input_normalization_maps_controller_input_to_common_semantics() {
+    let state = VrInputState {
+        move_axis_x: 0.8,
+        move_axis_y: 0.8,
+        yaw_delta: 0.4,
+        pitch_delta: -0.2,
+        dt_seconds: 0.1,
+    };
+
+    let normalized = normalize_vr_input(state);
+    let mut port = GodotInputPort::from_vr_state(state);
+    let mut clock = FrameClock::default();
+    let snapshot = port.snapshot(&mut clock);
+
+    assert!((normalized.move_axis_x - std::f32::consts::FRAC_1_SQRT_2).abs() < 1.0e-6);
+    assert!((normalized.move_axis_y - std::f32::consts::FRAC_1_SQRT_2).abs() < 1.0e-6);
+    assert_eq!(normalized.turn_yaw, 4.0);
+    assert_eq!(normalized.look_pitch, -2.0);
+    assert_eq!(snapshot.dt_seconds, 0.1);
+    assert_eq!(snapshot.inputs.len(), 2);
+}
+
+#[test]
+fn vr_input_failure_keeps_running_with_empty_inputs_and_logsafe_dt() {
+    let mut port = GodotInputPort::from_vr_input_failure("xr input unavailable");
+    let mut clock = FrameClock::default();
+
+    let snapshot = port.snapshot(&mut clock);
+
+    assert_eq!(snapshot.frame, FrameId(1));
+    assert!(snapshot.inputs.is_empty());
+    assert!(snapshot.dt_seconds > 0.0);
+}
+
+#[test]
+fn common_validation_applies_to_desktop_and_vr_inputs() {
+    let desktop = normalize_desktop_input(DesktopInputState {
+        move_left: true,
+        move_right: false,
+        move_forward: false,
+        move_back: true,
+        mouse_delta_x: 1.0,
+        mouse_delta_y: 1.0,
+        dt_seconds: -1.0,
+    });
+    let vr = normalize_vr_input(VrInputState {
+        move_axis_x: -2.0,
+        move_axis_y: 3.0,
+        yaw_delta: 1.0,
+        pitch_delta: 1.0,
+        dt_seconds: 0.0,
+    });
+
+    assert!(desktop.dt_seconds > 0.0);
+    assert!(vr.dt_seconds > 0.0);
+    assert!(desktop.turn_yaw.is_finite());
+    assert!(vr.turn_yaw.is_finite());
+    assert!(vr.move_axis_x.abs() <= 1.0);
+    assert!(vr.move_axis_y.abs() <= 1.0);
+}
+
+#[test]
 fn render_state_projector_returns_error_for_invalid_target_node() {
-    let mut projector = RenderStateProjector;
+    let mut projector = RenderStateProjector::default();
     let frame = RenderFrame::from_primary_pose(FrameId(1), Pose::identity());
     let mut target = godot::obj::OnEditor::<godot::obj::Gd<godot::classes::Node3D>>::default();
 

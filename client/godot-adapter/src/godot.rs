@@ -35,7 +35,7 @@ impl INode for SuteraClientBridge {
             pipeline: BridgePipeline::new(bridge, RenderFrameBuffer::default()),
             frame_clock: FrameClock::default(),
             error_state: BridgeErrorState::default(),
-            projector: RenderStateProjector,
+            projector: RenderStateProjector::default(),
             pending_input_events: Vec::new(),
             target_node: OnEditor::default(),
         }

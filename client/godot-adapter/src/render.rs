@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use godot::classes::Node3D;
 use godot::prelude::*;
 use tracing::debug;
@@ -35,7 +37,9 @@ fn project_render_frame_to_target(frame: &RenderFrame, target: &mut impl Transfo
 }
 
 #[derive(Debug, Default)]
-pub struct RenderStateProjector;
+pub struct RenderStateProjector {
+    remote_projection_cache: HashMap<String, Transform3D>,
+}
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum ProjectionError {
@@ -44,11 +48,25 @@ pub enum ProjectionError {
 }
 
 impl RenderStateProjector {
+    fn refresh_remote_projection_cache(&mut self, frame: &RenderFrame) {
+        self.remote_projection_cache = frame
+            .remote_poses()
+            .iter()
+            .map(|remote| {
+                (
+                    remote.participant_id.clone(),
+                    pose_to_transform3d(&remote.pose),
+                )
+            })
+            .collect();
+    }
+
     pub fn project(
         &mut self,
         frame: &RenderFrame,
         target: &mut OnEditor<Gd<Node3D>>,
     ) -> Result<(), ProjectionError> {
+        self.refresh_remote_projection_cache(frame);
         if target.is_invalid() {
             debug!(
                 target: "godot_adapter",
@@ -75,5 +93,16 @@ pub(crate) mod tests_support {
 
     pub(crate) fn transform_from_frame(frame: &RenderFrame) -> Transform3D {
         render_frame_transform(frame)
+    }
+
+    pub(crate) fn remote_cache_after_project(frame: &RenderFrame) -> Vec<(String, Transform3D)> {
+        let mut projector = RenderStateProjector::default();
+        let mut target = OnEditor::<Gd<Node3D>>::default();
+        let _ = projector.project(frame, &mut target);
+        projector
+            .remote_projection_cache
+            .iter()
+            .map(|(participant_id, transform)| (participant_id.clone(), *transform))
+            .collect()
     }
 }

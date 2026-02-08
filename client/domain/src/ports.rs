@@ -1,4 +1,4 @@
-use crate::ecs::{FrameClock, InputSnapshot, RenderFrame};
+use crate::ecs::{FrameClock, InputSnapshot, RenderFrame, DEFAULT_INPUT_DT_SECONDS};
 
 pub trait InputPort {
     fn snapshot(&mut self, frame_clock: &mut FrameClock) -> InputSnapshot;
@@ -32,6 +32,7 @@ impl InputPort for NoopInputPort {
     fn snapshot(&mut self, frame_clock: &mut FrameClock) -> InputSnapshot {
         InputSnapshot {
             frame: frame_clock.next_frame(),
+            dt_seconds: DEFAULT_INPUT_DT_SECONDS,
             inputs: Vec::new(),
         }
     }
