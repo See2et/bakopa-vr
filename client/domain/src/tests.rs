@@ -16,6 +16,7 @@ use super::sync::{
     SignalingRoute, SyncDelta, SyncSessionError, SyncSessionPort,
 };
 use super::xr::{OpenXrRuntime, XrInterfaceAccess, XrInterfaceProvider, XrRuntime};
+use std::collections::VecDeque;
 
 #[derive(Clone)]
 struct FakeXrInterface {
@@ -1431,5 +1432,192 @@ fn scope_boundary_policy_rejects_bloom_production_signaling() {
     assert_eq!(
         result,
         Err(ScopeBoundaryError::ProductionBloomSignalingOutOfScope)
+    );
+}
+
+#[derive(Default)]
+struct ToggleReadySyncSessionPort {
+    ready: bool,
+    sent: Vec<(FrameId, Pose)>,
+}
+
+impl SyncSessionPort for ToggleReadySyncSessionPort {
+    fn send_local_pose(
+        &mut self,
+        frame: FrameId,
+        _mode: RuntimeMode,
+        pose: Pose,
+    ) -> Result<(), SyncSessionError> {
+        self.sent.push((frame, pose));
+        Ok(())
+    }
+
+    fn can_send_pose(&self) -> bool {
+        self.ready
+    }
+}
+
+#[test]
+fn pose_sync_coordinator_recovers_send_after_room_ready_transition() {
+    let mut coordinator =
+        PoseSyncCoordinator::new(CoreEcs::new(), ToggleReadySyncSessionPort::default());
+
+    let first = coordinator
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(0),
+                dt_seconds: 0.1,
+                inputs: vec![InputEvent::Move {
+                    axis_x: 1.0,
+                    axis_y: 0.0,
+                }],
+            },
+        )
+        .expect("frame before room ready");
+
+    assert_eq!(first.frame, FrameId(1));
+    assert!(coordinator.sync_port().sent.is_empty());
+
+    coordinator.sync_port_mut().ready = true;
+
+    let second = coordinator
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(1),
+                dt_seconds: 0.1,
+                inputs: vec![InputEvent::Move {
+                    axis_x: 1.0,
+                    axis_y: 0.0,
+                }],
+            },
+        )
+        .expect("frame after room ready");
+
+    assert_eq!(second.frame, FrameId(2));
+    assert_eq!(coordinator.sync_port().sent.len(), 1);
+    assert_eq!(coordinator.sync_port().sent[0].0, FrameId(2));
+}
+
+#[derive(Default)]
+struct ScriptedSyncSessionPort {
+    ready: bool,
+    scripted_events: VecDeque<Vec<SyncDelta>>,
+    sent: Vec<(FrameId, Pose)>,
+}
+
+impl SyncSessionPort for ScriptedSyncSessionPort {
+    fn send_local_pose(
+        &mut self,
+        frame: FrameId,
+        _mode: RuntimeMode,
+        pose: Pose,
+    ) -> Result<(), SyncSessionError> {
+        self.sent.push((frame, pose));
+        Ok(())
+    }
+
+    fn poll_events(&mut self) -> Vec<SyncDelta> {
+        self.scripted_events.pop_front().unwrap_or_default()
+    }
+
+    fn can_send_pose(&self) -> bool {
+        self.ready
+    }
+}
+
+#[test]
+fn two_participant_sync_flow_handles_join_rejoin_and_stale_pose() {
+    let local_id = ParticipantId::new("local-user");
+    let remote_id = ParticipantId::new("remote-user");
+    let mut sender = PoseSyncCoordinator::new(
+        CoreEcs::new(),
+        ScriptedSyncSessionPort {
+            ready: false,
+            scripted_events: VecDeque::new(),
+            sent: Vec::new(),
+        },
+    );
+    let mut receiver = PoseSyncCoordinator::new(
+        CoreEcs::new(),
+        ScriptedSyncSessionPort {
+            ready: true,
+            scripted_events: VecDeque::new(),
+            sent: Vec::new(),
+        },
+    );
+
+    let skipped = sender
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(0),
+                dt_seconds: 0.1,
+                inputs: vec![InputEvent::Move {
+                    axis_x: 1.0,
+                    axis_y: 0.0,
+                }],
+            },
+        )
+        .expect("first frame while not joined");
+    assert_eq!(skipped.frame, FrameId(1));
+    assert!(sender.sync_port().sent.is_empty());
+
+    sender.sync_port_mut().ready = true;
+    receiver.on_peer_joined(local_id.clone(), 1);
+    sender.on_peer_joined(remote_id.clone(), 1);
+
+    let ready_frame = sender
+        .apply_frame(
+            RuntimeMode::Desktop,
+            InputSnapshot {
+                frame: FrameId(1),
+                dt_seconds: 0.1,
+                inputs: vec![InputEvent::Move {
+                    axis_x: 1.0,
+                    axis_y: 0.0,
+                }],
+            },
+        )
+        .expect("frame after join");
+    assert_eq!(ready_frame.frame, FrameId(2));
+    assert_eq!(sender.sync_port().sent.len(), 1);
+
+    let sent_pose = sender.sync_port().sent[0].1;
+    assert_eq!(
+        receiver.apply_remote_pose(
+            local_id.clone(),
+            sent_pose,
+            PoseVersion {
+                session_epoch: 1,
+                pose_seq: 1,
+            },
+        ),
+        RemotePoseUpdate::Applied
+    );
+    assert_eq!(
+        receiver.apply_remote_pose(
+            local_id.clone(),
+            sent_pose,
+            PoseVersion {
+                session_epoch: 1,
+                pose_seq: 1,
+            },
+        ),
+        RemotePoseUpdate::StaleDropped
+    );
+
+    receiver.on_peer_joined(local_id.clone(), 2);
+    assert_eq!(
+        receiver.apply_remote_pose(
+            local_id,
+            sent_pose,
+            PoseVersion {
+                session_epoch: 1,
+                pose_seq: 2,
+            },
+        ),
+        RemotePoseUpdate::StaleDropped
     );
 }
