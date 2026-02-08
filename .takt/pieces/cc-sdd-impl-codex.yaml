@@ -53,19 +53,20 @@ movements:
       - WebFetch
     permission_mode: edit
     instruction_template: |
-      直前の plan 結果を入力として、1バッチ分の実装を行ってください。
+      直前ステップ出力（plan または validate_impl）を入力として、1バッチ分の実装を行ってください。
 
       必須実行手順:
       1. `docs/specs/<feature>/spec.json`, `requirements.md`, `design.md`, `tasks.md` と `docs/steering/` 全体を読む
-      2. `tasks=auto` の場合は未完了タスク (`- [ ]`) から file order 先頭を batch_size 件選ぶ
-      3. `tasks` が明示されている場合は指定 ID の未完了タスクのみ対象にする
-      4. 各タスクを TDD (RED -> GREEN -> REFACTOR) で実装する
-      5. 完了したタスクのみ `tasks.md` を `- [x]` に更新する
-      6. バッチ完了後に次を実行する:
+      2. 直前が validate_impl で「追加した修正 task IDs」が提示されている場合は、その IDs をこのバッチの実行対象として最優先する
+      3. 2 に該当しない場合、`tasks=auto` は未完了タスク (`- [ ]`) から file order 先頭を batch_size 件選ぶ
+      4. 2 に該当しない場合、`tasks` が明示されているときは指定 ID の未完了タスクのみ対象にする
+      5. 各タスクを TDD (RED -> GREEN -> REFACTOR) で実装する
+      6. 完了したタスクのみ `tasks.md` を `- [x]` に更新する
+      7. バッチ完了後に次を実行する:
          - `cargo fmt --all`
          - `cargo clippy --all-targets --all-features -- -D warnings`
          - `cargo test --workspace --all-targets`
-      7. 実装した task IDs と残件数を要約する
+      8. 実装した task IDs と残件数を要約する
 
       制約:
       - 仕様書生成（requirements/design/tasks の再生成）は行わない
@@ -144,7 +145,7 @@ movements:
 
       判定:
       - 未完了タスクあり -> plan へ戻す
-      - 未完了タスクなし -> finalize へ進める
+      - 未完了タスクなし -> validate_impl へ進める
 
       前ステップ出力:
       {previous_response}
@@ -152,7 +153,48 @@ movements:
       - condition: 未完了タスクがある
         next: plan
       - condition: 未完了タスクがない
+        next: validate_impl
+
+  - name: validate_impl
+    edit: true
+    provider: codex
+    persona: |
+      あなたは cc-sdd の最終実装検証担当です。
+      すべてのタスク完了後に実装全体の妥当性を確認し、最終報告へ進めるか判定してください。
+    pass_previous_response: true
+    allowed_tools:
+      - Read
+      - Glob
+      - Grep
+      - Edit
+      - Write
+      - Bash
+    permission_mode: edit
+    instruction_template: |
+      未完了タスクがなくなった後の最終検証を実施してください。
+
+      必須実行手順:
+      1. feature を特定し、`tasks.md` の全タスクが完了済み（`- [x]`）であることを確認する
+      2. `/prompts:kiro-validate-impl {feature} all-tasks` で実装全体を検証する
+      3. 直近バッチまでの品質ゲート結果（fmt/clippy/test）が成功していることを確認する
+      4. 修正可能な不整合を検出した場合は、対応用タスクを `docs/specs/<feature>/tasks.md` に `- [ ]` で追加する
+      5. 4 で追加した場合は、追加した task IDs を明示して次に implement_batch で実行すべき対象として出力する
+      6. 検証結果を要約し、次遷移を判定する
+
+      判定:
+      - 検証成功 -> finalize へ進める
+      - 修正可能な不整合あり -> tasks.md に追記した task IDs とともに implement_batch へ戻す
+      - 致命的問題あり -> ABORT
+
+      前ステップ出力:
+      {previous_response}
+    rules:
+      - condition: 最終実装検証が成功した
         next: finalize
+      - condition: 修正可能な不整合を検出した
+        next: implement_batch
+      - condition: 致命的問題を検出した
+        next: ABORT
 
   - name: finalize
     edit: false
@@ -168,6 +210,13 @@ movements:
       - Bash
     instruction_template: |
       最終結果を以下の形式で報告してください。
+
+      必須実行手順:
+      1. 現在ブランチ名を取得し、`takt/pipeline-*` であることを確認する
+      2. `git rev-parse --abbrev-ref @{-1}` で直前ブランチ名を取得する
+      3. 直前ブランチへ checkout する
+      4. `takt/pipeline-*` ブランチを `git merge --no-ff` で直前ブランチへ取り込む
+      5. マージ成功後に以下フォーマットで最終報告する（失敗時は失敗理由を明示して ABORT 判定）
 
       - feature
       - 完了した task IDs
