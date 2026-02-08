@@ -1,6 +1,6 @@
 use godot::classes::{InputEvent as GodotInputEvent, Node3D};
 use godot::prelude::*;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::render::{ProjectionError, RenderStateProjector};
 use client_domain::ecs::{
@@ -9,6 +9,16 @@ use client_domain::ecs::{
 use client_domain::ports::{InputPort, OutputPort};
 
 const MIN_FRAME_DT_SECONDS: f32 = 1.0 / 240.0;
+
+pub(crate) fn input_log_contract_fields() -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+) {
+    ("input", "unknown", "local", "pose", "unknown")
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DesktopInputState {
@@ -209,9 +219,15 @@ impl GodotInputPort {
 
 impl InputPort for GodotInputPort {
     fn snapshot(&mut self, frame_clock: &mut FrameClock) -> InputSnapshot {
+        let (stage, room_id, participant_id, stream_kind, mode) = input_log_contract_fields();
         let (inputs, dt_seconds) = if let Some(reason) = self.vr_input_failure_reason.take() {
             warn!(
                 target: "godot_adapter",
+                stage,
+                room_id,
+                participant_id,
+                stream_kind,
+                mode,
                 reason = %reason,
                 "failed to capture vr input; continuing with empty input snapshot"
             );
@@ -235,6 +251,18 @@ impl InputPort for GodotInputPort {
                 DEFAULT_INPUT_DT_SECONDS,
             )
         };
+
+        info!(
+            target: "godot_adapter",
+            stage,
+            room_id,
+            participant_id,
+            stream_kind,
+            mode,
+            dt_seconds,
+            input_events = inputs.len(),
+            "normalized input snapshot"
+        );
 
         InputSnapshot {
             frame: frame_clock.next_frame(),

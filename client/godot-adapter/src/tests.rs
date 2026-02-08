@@ -1,11 +1,11 @@
 use godot::prelude::{Basis, Quaternion, Vector3};
 
 use super::ports::{
-    desktop_snapshot_to_input_events, map_event_slots_to_input_events, normalize_desktop_input,
-    normalize_vr_input, DesktopInputState, GodotInputPort, VrInputState,
+    desktop_snapshot_to_input_events, input_log_contract_fields, map_event_slots_to_input_events,
+    normalize_desktop_input, normalize_vr_input, DesktopInputState, GodotInputPort, VrInputState,
 };
-use super::render::tests_support;
 use super::render::RenderStateProjector;
+use super::render::{projection_log_contract_fields, tests_support};
 use client_domain::ecs::{
     FrameClock, FrameId, InputEvent, Pose, RemoteRenderPose, RenderFrame, UnitQuat, Vec3,
 };
@@ -275,6 +275,21 @@ fn common_validation_applies_to_desktop_and_vr_inputs() {
     assert!(vr.turn_yaw.is_finite());
     assert!(vr.move_axis_x.abs() <= 1.0);
     assert!(vr.move_axis_y.abs() <= 1.0);
+}
+
+#[test]
+fn input_and_projection_log_contract_fields_are_stable() {
+    let input_fields = input_log_contract_fields();
+    let projection_fields = projection_log_contract_fields();
+
+    assert_eq!(
+        input_fields,
+        ("input", "unknown", "local", "pose", "unknown")
+    );
+    assert_eq!(
+        projection_fields,
+        ("projection", "unknown", "local", "pose", "unknown")
+    );
 }
 
 #[test]

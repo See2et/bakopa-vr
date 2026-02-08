@@ -4,10 +4,11 @@ use tracing::{error, instrument, warn};
 
 use crate::ports::{GodotInputPort, GodotOutputPort};
 use crate::render::RenderStateProjector;
-use client_domain::bridge::{BridgePipeline, RuntimeBridgeAdapter, StateOverrideRequest};
+use client_domain::bridge::{BridgePipeline, RuntimeBridgeWithSync, StateOverrideRequest};
 use client_domain::ecs::{CoreEcs, FrameClock};
 use client_domain::errors::{BridgeError, BridgeErrorState};
 use client_domain::ports::RenderFrameBuffer;
+use client_domain::sync::SyncSessionAdapter;
 
 /// Upper bound for buffered input events waiting to be consumed by `on_frame`.
 const MAX_PENDING_INPUT_EVENTS: usize = 1024;
@@ -16,7 +17,7 @@ const MAX_PENDING_INPUT_EVENTS: usize = 1024;
 #[class(base=Node)]
 pub struct SuteraClientBridge {
     base: Base<Node>,
-    pipeline: BridgePipeline<RuntimeBridgeAdapter<CoreEcs>, RenderFrameBuffer>,
+    pipeline: BridgePipeline<RuntimeBridgeWithSync<CoreEcs, SyncSessionAdapter>, RenderFrameBuffer>,
     frame_clock: FrameClock,
     error_state: BridgeErrorState,
     projector: RenderStateProjector,
@@ -29,7 +30,7 @@ pub struct SuteraClientBridge {
 impl INode for SuteraClientBridge {
     fn init(base: Base<Node>) -> Self {
         let core = CoreEcs::new();
-        let bridge = RuntimeBridgeAdapter::new(core);
+        let bridge = RuntimeBridgeWithSync::new(core, SyncSessionAdapter::new());
         Self {
             base,
             pipeline: BridgePipeline::new(bridge, RenderFrameBuffer::default()),

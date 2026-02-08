@@ -36,6 +36,16 @@ fn project_render_frame_to_target(frame: &RenderFrame, target: &mut impl Transfo
     target.set_transform(render_frame_transform(frame));
 }
 
+pub(crate) fn projection_log_contract_fields() -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+) {
+    ("projection", "unknown", "local", "pose", "unknown")
+}
+
 #[derive(Debug, Default)]
 pub struct RenderStateProjector {
     remote_projection_cache: HashMap<String, Transform3D>,
@@ -66,10 +76,16 @@ impl RenderStateProjector {
         frame: &RenderFrame,
         target: &mut OnEditor<Gd<Node3D>>,
     ) -> Result<(), ProjectionError> {
+        let (stage, room_id, participant_id, stream_kind, mode) = projection_log_contract_fields();
         self.refresh_remote_projection_cache(frame);
         if target.is_invalid() {
             debug!(
                 target: "godot_adapter",
+                stage,
+                room_id,
+                participant_id,
+                stream_kind,
+                mode,
                 frame_id = ?frame.frame,
                 target_type = "Node3D",
                 target_invalid = true,
@@ -79,6 +95,17 @@ impl RenderStateProjector {
         }
         let node = &mut **target;
         project_render_frame_to_target(frame, node);
+        debug!(
+            target: "godot_adapter",
+            stage,
+            room_id,
+            participant_id,
+            stream_kind,
+            mode,
+            frame_id = ?frame.frame,
+            remote_pose_count = frame.remote_poses().len(),
+            "projection applied to target node"
+        );
         Ok(())
     }
 }

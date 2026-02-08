@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::mpsc;
+use std::thread::{self, JoinHandle};
 
 use crate::bridge::RuntimeMode;
 use crate::ecs::{EcsCore, FrameId, InputSnapshot, Pose, RemoteRenderPose, RenderFrame};
@@ -115,6 +117,151 @@ pub trait SyncSessionPort {
 
     fn can_send_pose(&self) -> bool {
         true
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SyncSessionAdapterHandle {
+    delta_tx: mpsc::Sender<SyncDelta>,
+}
+
+impl SyncSessionAdapterHandle {
+    pub fn push_delta(&self, delta: SyncDelta) -> Result<(), SyncSessionError> {
+        self.delta_tx
+            .send(delta)
+            .map_err(|error| SyncSessionError::TransportUnavailable {
+                reason: format!("failed to enqueue sync delta: {error}"),
+            })
+    }
+}
+
+#[derive(Debug)]
+enum WorkerRequest {
+    SendLocalPose {
+        frame: FrameId,
+        mode: RuntimeMode,
+        pose: Pose,
+    },
+    Shutdown,
+}
+
+#[derive(Debug)]
+pub struct SyncSessionAdapter {
+    request_tx: mpsc::Sender<WorkerRequest>,
+    delta_rx: mpsc::Receiver<SyncDelta>,
+    worker_handle: Option<JoinHandle<()>>,
+    active_peers: HashSet<ParticipantId>,
+    accept_new_requests: bool,
+}
+
+impl Default for SyncSessionAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SyncSessionAdapter {
+    pub fn new() -> Self {
+        let (adapter, _handle) = Self::new_with_handle();
+        adapter
+    }
+
+    pub fn new_with_handle() -> (Self, SyncSessionAdapterHandle) {
+        let (request_tx, request_rx) = mpsc::channel::<WorkerRequest>();
+        let (delta_tx, delta_rx) = mpsc::channel::<SyncDelta>();
+        let worker_handle = thread::Builder::new()
+            .name("sync-session-adapter-worker".to_string())
+            .spawn(move || {
+                while let Ok(request) = request_rx.recv() {
+                    match request {
+                        WorkerRequest::SendLocalPose { frame, mode, pose } => {
+                            let _ = (frame, mode, pose);
+                        }
+                        WorkerRequest::Shutdown => break,
+                    }
+                }
+            })
+            .ok();
+
+        (
+            Self {
+                request_tx,
+                delta_rx,
+                worker_handle,
+                active_peers: HashSet::new(),
+                accept_new_requests: true,
+            },
+            SyncSessionAdapterHandle { delta_tx },
+        )
+    }
+
+    fn drain_events(&mut self) -> Vec<SyncDelta> {
+        let mut deltas = Vec::new();
+        while let Ok(delta) = self.delta_rx.try_recv() {
+            match &delta {
+                SyncDelta::PeerJoined { participant_id, .. } => {
+                    self.active_peers.insert(participant_id.clone());
+                }
+                SyncDelta::PeerLeft { participant_id }
+                | SyncDelta::PeerInactive { participant_id } => {
+                    self.active_peers.remove(participant_id);
+                }
+                SyncDelta::PoseReceived { .. } => {}
+            }
+            deltas.push(delta);
+        }
+        deltas
+    }
+}
+
+impl Drop for SyncSessionAdapter {
+    fn drop(&mut self) {
+        let _ = self.request_tx.send(WorkerRequest::Shutdown);
+        if let Some(handle) = self.worker_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl SyncSessionPort for SyncSessionAdapter {
+    fn send_local_pose(
+        &mut self,
+        frame: FrameId,
+        mode: RuntimeMode,
+        pose: Pose,
+    ) -> Result<(), SyncSessionError> {
+        if !self.accept_new_requests {
+            return Err(SyncSessionError::NotReady {
+                reason: "sync session shutting down".to_string(),
+            });
+        }
+        if self.active_peers.is_empty() {
+            return Err(SyncSessionError::NotReady {
+                reason: "room not joined".to_string(),
+            });
+        }
+        self.request_tx
+            .send(WorkerRequest::SendLocalPose { frame, mode, pose })
+            .map_err(|error| SyncSessionError::TransportUnavailable {
+                reason: format!("failed to enqueue local pose send: {error}"),
+            })
+    }
+
+    fn poll_events(&mut self) -> Vec<SyncDelta> {
+        self.drain_events()
+    }
+
+    fn begin_shutdown(&mut self) {
+        self.accept_new_requests = false;
+        let _ = self.request_tx.send(WorkerRequest::Shutdown);
+    }
+
+    fn drain_pending_events(&mut self) -> Vec<SyncDelta> {
+        self.drain_events()
+    }
+
+    fn can_send_pose(&self) -> bool {
+        self.accept_new_requests && !self.active_peers.is_empty()
     }
 }
 
@@ -269,6 +416,10 @@ impl<C: EcsCore, S: SyncSessionPort> PoseSyncCoordinator<C, S> {
             last_sync_error: None,
             scope_policy,
         }
+    }
+
+    pub fn init_world(&mut self) -> Result<(), CoreError> {
+        self.core.init_world()
     }
 
     pub fn apply_frame(
