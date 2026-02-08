@@ -112,6 +112,10 @@ pub trait SyncSessionPort {
     fn drain_pending_events(&mut self) -> Vec<SyncDelta> {
         Vec::new()
     }
+
+    fn can_send_pose(&self) -> bool {
+        true
+    }
 }
 
 pub fn runtime_mode_label(mode: RuntimeMode) -> &'static str {
@@ -279,6 +283,17 @@ impl<C: EcsCore, S: SyncSessionPort> PoseSyncCoordinator<C, S> {
             .tick(input)?
             .with_remote_poses(self.remotes.render_snapshot());
         self.last_sync_error = None;
+        if !self.sync_port.can_send_pose() {
+            warn!(
+                stage = "send_skip_not_joined",
+                room_id = UNKNOWN_ROOM_ID,
+                participant_id = LOCAL_PARTICIPANT_ID,
+                stream_kind = STREAM_POSE,
+                mode = runtime_mode_label(mode),
+                "skipping local pose send while room session is not ready"
+            );
+            return Ok(frame);
+        }
         if let Err(error) = self.scope_policy.ensure_signaling_route() {
             warn!(
                 stage = "scope_guard",
@@ -445,6 +460,10 @@ impl<C: EcsCore, S: SyncSessionPort> PoseSyncCoordinator<C, S> {
 
     pub fn sync_port(&self) -> &S {
         &self.sync_port
+    }
+
+    pub fn sync_port_mut(&mut self) -> &mut S {
+        &mut self.sync_port
     }
 
     pub fn remotes(&self) -> &RemotePoseRepository {
