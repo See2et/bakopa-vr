@@ -1,0 +1,148 @@
+name: cc-sdd-impl-codex
+description: cc-sdd implementation automation for Codex (plan -> implement batch -> validate -> loop until complete)
+max_iterations: 80
+initial_movement: plan
+movements:
+  - name: plan
+    edit: false
+    provider: codex
+    persona: |
+      あなたは cc-sdd の実装フェーズを管理するテクニカルプランナーです。
+      目的は docs/specs の既存仕様に従い、実装対象を安全に特定して次ステップへ渡すことです。
+    allowed_tools:
+      - Read
+      - Glob
+      - Grep
+      - Bash
+    instruction_template: |
+      与えられた task 文字列を解析して、実装対象を特定してください。
+
+      想定フォーマット:
+      feature=<spec-directory-name>
+      tasks=auto|1.1,1.2
+      batch_size=1..3
+
+      必須要件:
+      1. feature を抽出し、`docs/specs/<feature>/spec.json` が存在することを確認する
+      2. tasks 未指定時は auto として扱う
+      3. batch_size 未指定時は 2 として扱う（範囲外は 2 に補正）
+      4. 実行開始前に spec.json の approvals.tasks.approved と ready_for_implementation を確認する
+      5. 以降の movement が使えるように、feature / tasks / batch_size / approval 状態を簡潔に出力する
+
+      解析対象:
+      {task}
+    rules:
+      - condition: 実行対象を特定できて、実装開始可能と判断した
+        next: implement_batch
+      - condition: 実行対象を特定できない、または実装開始不可と判断した
+        next: ABORT
+  - name: implement_batch
+    edit: true
+    provider: codex
+    persona: |
+      あなたは cc-sdd 実装担当です。
+      docs/specs と docs/steering を単一の正として扱い、TDD で小さく安全に進めてください。
+    pass_previous_response: true
+    allowed_tools:
+      - Read
+      - Glob
+      - Grep
+      - Edit
+      - Write
+      - Bash
+      - WebSearch
+      - WebFetch
+    permission_mode: edit
+    instruction_template: |
+      直前の plan 結果を入力として、1バッチ分の実装を行ってください。
+
+      必須実行手順:
+      1. `docs/specs/<feature>/spec.json`, `requirements.md`, `design.md`, `tasks.md` と `docs/steering/` 全体を読む
+      2. `tasks=auto` の場合は未完了タスク (`- [ ]`) から file order 先頭を batch_size 件選ぶ
+      3. `tasks` が明示されている場合は指定 ID の未完了タスクのみ対象にする
+      4. 各タスクを TDD (RED -> GREEN -> REFACTOR) で実装する
+      5. 完了したタスクのみ `tasks.md` を `- [x]` に更新する
+      6. バッチ完了後に次を実行する:
+         - `cargo fmt --all`
+         - `cargo clippy --all-targets --all-features -- -D warnings`
+         - `cargo test --workspace --all-targets`
+      7. 実装した task IDs と残件数を要約する
+
+      制約:
+      - 仕様書生成（requirements/design/tasks の再生成）は行わない
+      - approvals.tasks.approved=false または ready_for_implementation=false の spec は中断する
+      - 失敗した品質ゲートがある場合は中断し、失敗コマンドを明示する
+
+      前ステップ出力:
+      {previous_response}
+    rules:
+      - condition: バッチ実装と品質ゲートが成功した
+        next: validate_batch
+      - condition: 承認状態または品質ゲートの失敗により続行できない
+        next: ABORT
+  - name: validate_batch
+    edit: false
+    provider: codex
+    persona: |
+      あなたは cc-sdd 実装検証担当です。
+      仕様整合性と進捗を判定し、次に進めるかどうかを明確に判断してください。
+    pass_previous_response: true
+    allowed_tools:
+      - Read
+      - Glob
+      - Grep
+      - Bash
+    instruction_template: |
+      直前バッチの結果を検証し、次の遷移を判定してください。
+
+      必須検証:
+      1. `tasks.md` の [x] 更新が実装結果と一致している
+      2. 実装内容が requirements/design と矛盾していない
+      3. 直前 movement の品質ゲート成功結果がある
+      4. 未完了タスクの有無を確認する
+
+      判定:
+      - 未完了タスクがあり、検証が通る -> implement_batch へ戻す
+      - 未完了タスクがなく、検証が通る -> finalize へ進める
+      - 検証不一致がある -> implement_batch へ戻し修正を要求
+      - 致命的矛盾または前提不足 -> ABORT
+
+      前ステップ出力:
+      {previous_response}
+    rules:
+      - condition: 検証成功かつ未完了タスクあり
+        next: implement_batch
+      - condition: 全タスク完了かつ検証成功
+        next: finalize
+      - condition: 修正可能な不整合を検出した
+        next: implement_batch
+      - condition: 致命的矛盾または前提不足を検出した
+        next: ABORT
+  - name: finalize
+    edit: false
+    provider: codex
+    persona: |
+      あなたは完了報告担当です。
+      実装完了結果と残課題を短く正確に要約してください。
+    pass_previous_response: true
+    allowed_tools:
+      - Read
+      - Glob
+      - Grep
+      - Bash
+    instruction_template: |
+      最終結果を以下の形式で報告してください。
+
+      - feature
+      - 完了した task IDs
+      - 実行した品質ゲート結果（fmt/clippy/test）
+      - 既知の残課題（なければ「なし」）
+      - 次の推奨アクション（例: PR レビュー）
+
+      前ステップ出力:
+      {previous_response}
+    rules:
+      - condition: 完了報告を作成した
+        next: COMPLETE
+      - condition: 完了報告を作成できない
+        next: ABORT

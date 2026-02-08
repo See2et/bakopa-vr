@@ -1,0 +1,12 @@
+language: ja
+default_piece: cc-sdd-impl-codex
+log_level: info
+provider: codex
+model: codex
+branch_name_strategy: romaji
+pipeline:
+  default_branch_prefix: "takt/"
+  commit_message_template: "feat: {title}"
+  pr_body_template: |
+    ## Summary
+    {report}
