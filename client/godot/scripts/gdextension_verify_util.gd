@@ -2,7 +2,7 @@ extends RefCounted
 class_name GDExtensionVerifyUtil
 
 static func ensure_extension_loaded(extension_path: String) -> bool:
-	var debug_build = Engine.is_debug_build()
+	var debug_build = OS.has_feature("debug")
 	var manager = Engine.get_singleton("GDExtensionManager")
 	if manager == null:
 		push_error("GDExtensionManager singleton not found")
@@ -58,7 +58,7 @@ static func ensure_extension_loaded(extension_path: String) -> bool:
 	return false
 
 static func initialize_openxr() -> bool:
-	var debug_build = Engine.is_debug_build()
+	var debug_build = OS.has_feature("debug")
 	var xr_interface = XRServer.find_interface("OpenXR")
 	if xr_interface == null:
 		push_error("OpenXR interface not found: enable OpenXR in project settings")
@@ -85,8 +85,18 @@ static func initialize_openxr() -> bool:
 		print("OpenXR initialized: ", xr_ready)
 	return xr_ready
 
+static func should_initialize_openxr() -> bool:
+	var args = OS.get_cmdline_args()
+	if args.has("--desktop"):
+		return false
+	if args.has("--vr"):
+		return true
+
+	# In debug runs, default to desktop unless VR is explicitly requested.
+	return not OS.has_feature("debug")
+
 static func configure_viewport_for_xr(host: Node, xr_ready: bool) -> void:
-	var debug_build = Engine.is_debug_build()
+	var debug_build = OS.has_feature("debug")
 	var viewport = host.get_viewport()
 	if viewport == null:
 		push_error("Viewport not found")

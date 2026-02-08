@@ -2,10 +2,12 @@ use godot::prelude::{Basis, Quaternion, Vector3};
 
 use super::ports::{
     desktop_snapshot_to_input_events, input_log_contract_fields, map_event_slots_to_input_events,
-    normalize_desktop_input, normalize_vr_input, DesktopInputState, GodotInputPort, VrInputState,
+    normalize_desktop_input, normalize_vr_input, vr_state_from_action_samples, DesktopInputState,
+    GodotInputPort, VrActionSample, VrInputState,
 };
 use super::render::RenderStateProjector;
 use super::render::{projection_log_contract_fields, tests_support};
+use client_domain::bridge::RuntimeMode;
 use client_domain::ecs::{
     FrameClock, FrameId, InputEvent, Pose, RemoteRenderPose, RenderFrame, UnitQuat, Vec3,
 };
@@ -127,17 +129,31 @@ fn godot_input_port_empty_maps_to_noop_snapshot() {
     let snapshot = port.snapshot(&mut clock);
 
     assert_eq!(snapshot.frame, FrameId(1));
-    assert!(snapshot.inputs.is_empty());
+    assert_eq!(snapshot.inputs.len(), 2);
     assert!(snapshot.dt_seconds > 0.0);
+    assert_eq!(
+        snapshot.inputs[0],
+        InputEvent::Move {
+            axis_x: 0.0,
+            axis_y: 0.0
+        }
+    );
+    assert_eq!(
+        snapshot.inputs[1],
+        InputEvent::Look {
+            yaw_delta: 0.0,
+            pitch_delta: 0.0
+        }
+    );
 }
 
 #[test]
 fn event_slots_convert_to_domain_input_variants() {
-    let inputs = map_event_slots_to_input_events(3);
+    let inputs = map_event_slots_to_input_events(&[], 0.1);
 
     assert!(matches!(inputs[0], InputEvent::Move { .. }));
     assert!(matches!(inputs[1], InputEvent::Look { .. }));
-    assert!(matches!(inputs[2], InputEvent::Action { .. }));
+    assert_eq!(inputs.len(), 2);
 }
 
 #[test]
@@ -239,6 +255,36 @@ fn vr_input_normalization_maps_controller_input_to_common_semantics() {
 }
 
 #[test]
+fn vr_action_samples_are_mapped_to_vr_axes() {
+    let samples = vec![
+        VrActionSample {
+            action: "vr_move_right".to_string(),
+            strength: 0.75,
+        },
+        VrActionSample {
+            action: "vr_move_forward".to_string(),
+            strength: 0.5,
+        },
+        VrActionSample {
+            action: "vr_turn_left".to_string(),
+            strength: 0.4,
+        },
+        VrActionSample {
+            action: "vr_look_up".to_string(),
+            strength: 0.2,
+        },
+    ];
+
+    let state = vr_state_from_action_samples(&samples, 0.05);
+
+    assert_eq!(state.move_axis_x, 0.75);
+    assert_eq!(state.move_axis_y, 0.5);
+    assert_eq!(state.yaw_delta, -0.4);
+    assert_eq!(state.pitch_delta, -0.2);
+    assert_eq!(state.dt_seconds, 0.05);
+}
+
+#[test]
 fn vr_input_failure_keeps_running_with_empty_inputs_and_logsafe_dt() {
     let mut port = GodotInputPort::from_vr_input_failure("xr input unavailable");
     let mut clock = FrameClock::default();
@@ -279,16 +325,23 @@ fn common_validation_applies_to_desktop_and_vr_inputs() {
 
 #[test]
 fn input_and_projection_log_contract_fields_are_stable() {
-    let input_fields = input_log_contract_fields();
-    let projection_fields = projection_log_contract_fields();
+    let input_desktop = input_log_contract_fields(RuntimeMode::Desktop);
+    let input_vr = input_log_contract_fields(RuntimeMode::Vr);
+    let projection_desktop = projection_log_contract_fields(RuntimeMode::Desktop);
+    let projection_vr = projection_log_contract_fields(RuntimeMode::Vr);
 
     assert_eq!(
-        input_fields,
-        ("input", "unknown", "local", "pose", "unknown")
+        input_desktop,
+        ("input", "unknown", "local", "pose", "desktop")
+    );
+    assert_eq!(input_vr, ("input", "unknown", "local", "pose", "vr"));
+    assert_eq!(
+        projection_desktop,
+        ("projection", "unknown", "local", "pose", "desktop")
     );
     assert_eq!(
-        projection_fields,
-        ("projection", "unknown", "local", "pose", "unknown")
+        projection_vr,
+        ("projection", "unknown", "local", "pose", "vr")
     );
 }
 

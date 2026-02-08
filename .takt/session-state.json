@@ -1,7 +1,7 @@
 {
   "status": "success",
-  "taskResult": "- feature: `#11-2-participant-pose-sync`\n- 完了した task IDs: `7.3`, `7`\n- 未完了 task IDs（次サイクル対象）: `なし`（`0`件）\n- 実行した品質ゲート結果（fmt/clippy/test）:\n  - `cargo fmt --all -- --check`: ✅\n  - `cargo clippy --all-targets --all-features -- -D warnings`: ✅\n  - `cargo test --workspace --all-targets`: ✅\n- conventional commit message（必須）: `test(sync-runtime): add single-thread and log contract coverage`\n- 既知の残課題（なければ「なし」）: `なし`\n- 次の推奨アクション（例: PR レビュー）: PR レビューとマージ判定へ進む",
-  "timestamp": "2026-02-08T16:12:10.814Z",
+  "taskResult": "- feature: `#11-2-participant-pose-sync`\n- 完了した task IDs: `8.1`, `8.2`, `8.3`（親 `8` 完了）\n- 未完了 task IDs（次サイクル対象）: `なし`（`0`件）\n- 実行した品質ゲート結果（fmt/clippy/test）:\n  - `cargo fmt --all -- --check`: ✅\n  - `cargo clippy --all-targets --all-features -- -D warnings`: ✅\n  - `cargo test --workspace --all-targets`: ✅\n- conventional commit message（必須）: `feat(godot-adapter): wire vr stick input and align mode logging`\n- 既知の残課題（なければ「なし」）: `なし`\n- 次の推奨アクション（例: PR レビュー）: PR レビューを実施し、問題なければマージ判定へ進む",
+  "timestamp": "2026-02-08T18:25:32.507Z",
   "pieceName": "cc-sdd-impl-codex",
   "taskContent": "feature=#11-2-participant-pose-sync\ntasks=auto\nbatch_size=2",
   "lastMovement": "finalize"

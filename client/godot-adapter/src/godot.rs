@@ -2,10 +2,14 @@ use godot::classes::{INode, Node, Node3D};
 use godot::prelude::*;
 use tracing::{error, instrument, warn};
 
-use crate::ports::{GodotInputPort, GodotOutputPort};
+use crate::ports::{
+    desktop_state_from_events, vr_state_from_events, GodotInputPort, GodotOutputPort,
+};
 use crate::render::RenderStateProjector;
-use client_domain::bridge::{BridgePipeline, RuntimeBridgeWithSync, StateOverrideRequest};
-use client_domain::ecs::{CoreEcs, FrameClock};
+use client_domain::bridge::{
+    BridgePipeline, RuntimeBridgeWithSync, RuntimeMode, StateOverrideRequest,
+};
+use client_domain::ecs::{CoreEcs, FrameClock, DEFAULT_INPUT_DT_SECONDS};
 use client_domain::errors::{BridgeError, BridgeErrorState};
 use client_domain::ports::RenderFrameBuffer;
 use client_domain::sync::SyncSessionAdapter;
@@ -22,6 +26,7 @@ pub struct SuteraClientBridge {
     error_state: BridgeErrorState,
     projector: RenderStateProjector,
     pending_input_events: Vec<Gd<godot::classes::InputEvent>>,
+    runtime_mode: RuntimeMode,
     #[export]
     target_node: OnEditor<Gd<Node3D>>,
 }
@@ -38,6 +43,7 @@ impl INode for SuteraClientBridge {
             error_state: BridgeErrorState::default(),
             projector: RenderStateProjector::default(),
             pending_input_events: Vec::new(),
+            runtime_mode: RuntimeMode::Desktop,
             target_node: OnEditor::default(),
         }
     }
@@ -82,8 +88,17 @@ impl SuteraClientBridge {
         )
     )]
     pub fn on_frame(&mut self) -> bool {
-        let mut input_port =
-            GodotInputPort::from_events(std::mem::take(&mut self.pending_input_events));
+        let events = std::mem::take(&mut self.pending_input_events);
+        let mut input_port = match self.runtime_mode {
+            RuntimeMode::Desktop => {
+                let state = desktop_state_from_events(&events, DEFAULT_INPUT_DT_SECONDS);
+                GodotInputPort::from_desktop_state_with_mode(state, self.runtime_mode)
+            }
+            RuntimeMode::Vr => {
+                let state = vr_state_from_events(&events, DEFAULT_INPUT_DT_SECONDS);
+                GodotInputPort::from_vr_state_with_mode(state, self.runtime_mode)
+            }
+        };
         match self
             .pipeline
             .on_port_input(&mut self.frame_clock, &mut input_port)
@@ -128,6 +143,7 @@ impl SuteraClientBridge {
             Some(frame) => frame,
             None => return Ok(()),
         };
+        self.projector.set_runtime_mode(self.runtime_mode);
         let mut output = GodotOutputPort::new(&mut self.projector, &mut self.target_node);
         output
             .apply(frame)

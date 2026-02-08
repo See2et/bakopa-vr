@@ -4,7 +4,9 @@ use godot::classes::Node3D;
 use godot::prelude::*;
 use tracing::debug;
 
+use client_domain::bridge::RuntimeMode;
 use client_domain::ecs::{Pose, RenderFrame};
+use client_domain::sync::runtime_mode_label;
 
 fn pose_to_transform3d(pose: &Pose) -> Transform3D {
     let origin = Vector3::new(pose.position.x, pose.position.y, pose.position.z);
@@ -36,19 +38,37 @@ fn project_render_frame_to_target(frame: &RenderFrame, target: &mut impl Transfo
     target.set_transform(render_frame_transform(frame));
 }
 
-pub(crate) fn projection_log_contract_fields() -> (
+pub(crate) fn projection_log_contract_fields(
+    mode: RuntimeMode,
+) -> (
     &'static str,
     &'static str,
     &'static str,
     &'static str,
     &'static str,
 ) {
-    ("projection", "unknown", "local", "pose", "unknown")
+    (
+        "projection",
+        "unknown",
+        "local",
+        "pose",
+        runtime_mode_label(mode),
+    )
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct RenderStateProjector {
     remote_projection_cache: HashMap<String, Transform3D>,
+    runtime_mode: RuntimeMode,
+}
+
+impl Default for RenderStateProjector {
+    fn default() -> Self {
+        Self {
+            remote_projection_cache: HashMap::new(),
+            runtime_mode: RuntimeMode::Desktop,
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
@@ -58,6 +78,10 @@ pub enum ProjectionError {
 }
 
 impl RenderStateProjector {
+    pub fn set_runtime_mode(&mut self, mode: RuntimeMode) {
+        self.runtime_mode = mode;
+    }
+
     fn refresh_remote_projection_cache(&mut self, frame: &RenderFrame) {
         self.remote_projection_cache = frame
             .remote_poses()
@@ -76,7 +100,8 @@ impl RenderStateProjector {
         frame: &RenderFrame,
         target: &mut OnEditor<Gd<Node3D>>,
     ) -> Result<(), ProjectionError> {
-        let (stage, room_id, participant_id, stream_kind, mode) = projection_log_contract_fields();
+        let (stage, room_id, participant_id, stream_kind, mode) =
+            projection_log_contract_fields(self.runtime_mode);
         self.refresh_remote_projection_cache(frame);
         if target.is_invalid() {
             debug!(
