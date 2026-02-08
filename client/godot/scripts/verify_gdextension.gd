@@ -20,7 +20,7 @@ func _ready() -> void:
 		push_error("SuteraClientBridge node not found: %s" % bridge_node_path)
 		return
 	if _bridge.has_method("on_start"):
-		var started := _bridge.call("on_start")
+		var started: bool = bool(_bridge.call("on_start"))
 		if not started:
 			push_error("SuteraClientBridge.on_start returned false")
 
