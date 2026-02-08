@@ -21,13 +21,17 @@ movements:
       feature=<spec-directory-name>
       tasks=auto|1.1,1.2
       batch_size=1..3
+      commit_type=feat|fix|refactor|docs|test|chore|perf|ci|build|revert
+      commit_scope=<scope-name>
 
       必須要件:
       1. feature を抽出し、`docs/specs/<feature>/spec.json` が存在することを確認する
       2. tasks 未指定時は auto として扱う
       3. batch_size 未指定時は 2 として扱う（範囲外は 2 に補正）
       4. 実行開始前に spec.json の approvals.tasks.approved と ready_for_implementation を確認する
-      5. 以降の movement が使えるように、feature / tasks / batch_size / approval 状態を簡潔に出力する
+      5. commit_type 未指定時は feat、commit_scope 未指定時は feature 名を使う
+      6. この piece は「1サイクル=1バッチ実装+検証+終了」を必ず守る
+      7. 以降の movement が使えるように、feature / tasks / batch_size / approval 状態と commit_type/scope を簡潔に出力する
 
       解析対象:
       {task}
@@ -72,6 +76,7 @@ movements:
       - 仕様書生成（requirements/design/tasks の再生成）は行わない
       - approvals.tasks.approved=false または ready_for_implementation=false の spec は中断する
       - 失敗した品質ゲートがある場合は中断し、失敗コマンドを明示する
+      - この movement では git commit を行わない（commit は finalize の規約に従い TAKT 側で実施）
 
       前ステップ出力:
       {previous_response}
@@ -102,17 +107,14 @@ movements:
       4. 未完了タスクの有無を確認する
 
       判定:
-      - 未完了タスクがあり、検証が通る -> implement_batch へ戻す
-      - 未完了タスクがなく、検証が通る -> finalize へ進める
+      - 検証が通る -> 未完了タスク有無に関わらず finalize へ進める（1サイクルで終了）
       - 検証不一致がある -> implement_batch へ戻し修正を要求
       - 致命的矛盾または前提不足 -> ABORT
 
       前ステップ出力:
       {previous_response}
     rules:
-      - condition: 検証成功かつ未完了タスクあり
-        next: implement_batch
-      - condition: 全タスク完了かつ検証成功
+      - condition: 検証成功
         next: finalize
       - condition: 修正可能な不整合を検出した
         next: implement_batch
@@ -135,9 +137,18 @@ movements:
 
       - feature
       - 完了した task IDs
+      - 未完了 task IDs（次サイクル対象）
       - 実行した品質ゲート結果（fmt/clippy/test）
+      - conventional commit message（必須）
       - 既知の残課題（なければ「なし」）
       - 次の推奨アクション（例: PR レビュー）
+
+      conventional commit message のルール:
+      - 形式: `<type>(<scope>): <summary>`
+      - type は `feat|fix|refactor|docs|test|chore|perf|ci|build|revert` のいずれか
+      - summary は命令形・72文字以内・末尾ピリオドなし
+      - `<scope>` は task の対象領域を示す短い識別子
+      - 今回の 1サイクル分の変更だけを説明する
 
       前ステップ出力:
       {previous_response}
