@@ -133,7 +133,7 @@ movements:
       必須実行手順:
       1. `tasks.md` を確認し、未完了タスクの有無を判断する
       2. 直前バッチの変更だけを `git add -A` でステージする
-      3. 変更内容から type/scope/summary を自動決定し、`git commit -m "<type>(<scope>): <summary>"` を実行する
+      3. 変更内容から type/scope/summary を自動決定し、`git -c commit.gpgsign=false commit -m "<type>(<scope>): <summary>"` を実行する
 
       conventional commit message のルール:
       - 形式: `<type>(<scope>): <summary>`
