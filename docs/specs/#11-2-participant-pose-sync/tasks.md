@@ -148,7 +148,7 @@
   - 追加テストで契約逸脱を検知できる状態にする。
   - _Requirements: 5.1, 5.2, 5.4_
 
-- [x] 8. Desktop 実入力と Adapter ログ契約の残課題を解消する
+- [x] 8. Desktop / VR 実入力と Adapter ログ契約の残課題を解消する
 - [x] 8.1 Godot 入力イベントを WASD + マウスの実データで正規化する
   - `map_event_slots_to_input_events` のプレースホルダ変換を廃止し、
     `InputEvent` 実ペイロードから `Move` / `Look` / `Action` を抽出する。
@@ -164,3 +164,12 @@
   - `room_id` / `participant_id` / `stream_kind` / `mode` の統一付与が
     Adapter〜Domain 経路で保持されることをテストで検証する。
   - _Requirements: 5.2, 5.4_
+
+- [x] 8.3 VR モードでスティック軸入力を `VrInputState` へ接続する
+  - VR 分岐で `from_events_with_mode` の Desktop 解釈に依存せず、
+    スティック軸入力を `move_axis_x` / `move_axis_y` として取得する。
+  - 必要に応じて回転入力（`yaw_delta` / `pitch_delta`）も VR 入力ソースから
+    取得し、`normalize_vr_input` の経路へ接続する。
+  - VR モードで連続スティック操作したときに local/remote pose が
+    同期経路へ反映されることをテストで検証する。
+  - _Requirements: 3.1, 3.4, 4.4_

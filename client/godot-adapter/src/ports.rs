@@ -73,6 +73,12 @@ pub struct VrInputState {
     pub dt_seconds: f32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct VrActionSample {
+    pub action: String,
+    pub strength: f32,
+}
+
 #[derive(Default)]
 pub struct GodotInputPort {
     events: Vec<Gd<GodotInputEvent>>,
@@ -136,6 +142,63 @@ fn extract_action_event(event: &Gd<GodotInputEvent>) -> Option<InputEvent> {
         name: action.get_action().to_string(),
         pressed: action.is_pressed(),
     })
+}
+
+fn extract_vr_action_sample(event: &Gd<GodotInputEvent>) -> Option<VrActionSample> {
+    let action = event.clone().try_cast::<InputEventAction>().ok()?;
+    let strength = if action.is_pressed() {
+        action.get_strength()
+    } else {
+        0.0
+    };
+    Some(VrActionSample {
+        action: action.get_action().to_string(),
+        strength,
+    })
+}
+
+pub(crate) fn vr_state_from_action_samples(
+    samples: &[VrActionSample],
+    dt_seconds: f32,
+) -> VrInputState {
+    let mut move_right = 0.0;
+    let mut move_left = 0.0;
+    let mut move_forward = 0.0;
+    let mut move_back = 0.0;
+    let mut turn_right = 0.0;
+    let mut turn_left = 0.0;
+    let mut look_up = 0.0;
+    let mut look_down = 0.0;
+
+    for sample in samples {
+        match sample.action.as_str() {
+            "vr_move_right" => move_right = sample.strength,
+            "vr_move_left" => move_left = sample.strength,
+            "vr_move_forward" => move_forward = sample.strength,
+            "vr_move_back" => move_back = sample.strength,
+            "vr_turn_right" => turn_right = sample.strength,
+            "vr_turn_left" => turn_left = sample.strength,
+            "vr_look_up" => look_up = sample.strength,
+            "vr_look_down" => look_down = sample.strength,
+            _ => {}
+        }
+    }
+
+    VrInputState {
+        move_axis_x: (move_right - move_left).clamp(-1.0, 1.0),
+        move_axis_y: (move_forward - move_back).clamp(-1.0, 1.0),
+        yaw_delta: (turn_right - turn_left).clamp(-1.0, 1.0),
+        pitch_delta: (look_down - look_up).clamp(-1.0, 1.0),
+        dt_seconds,
+    }
+}
+
+pub(crate) fn vr_state_from_events(
+    events: &[Gd<GodotInputEvent>],
+    dt_seconds: f32,
+) -> VrInputState {
+    let samples: Vec<VrActionSample> = events.iter().filter_map(extract_vr_action_sample).collect();
+    vr_state_from_action_samples(&samples, dt_seconds)
 }
 
 pub(crate) fn desktop_state_from_events(

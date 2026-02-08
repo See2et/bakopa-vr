@@ -2,7 +2,9 @@ use godot::classes::{INode, Node, Node3D};
 use godot::prelude::*;
 use tracing::{error, instrument, warn};
 
-use crate::ports::{desktop_state_from_events, GodotInputPort, GodotOutputPort};
+use crate::ports::{
+    desktop_state_from_events, vr_state_from_events, GodotInputPort, GodotOutputPort,
+};
 use crate::render::RenderStateProjector;
 use client_domain::bridge::{
     BridgePipeline, RuntimeBridgeWithSync, RuntimeMode, StateOverrideRequest,
@@ -92,7 +94,10 @@ impl SuteraClientBridge {
                 let state = desktop_state_from_events(&events, DEFAULT_INPUT_DT_SECONDS);
                 GodotInputPort::from_desktop_state_with_mode(state, self.runtime_mode)
             }
-            RuntimeMode::Vr => GodotInputPort::from_events_with_mode(events, self.runtime_mode),
+            RuntimeMode::Vr => {
+                let state = vr_state_from_events(&events, DEFAULT_INPUT_DT_SECONDS);
+                GodotInputPort::from_vr_state_with_mode(state, self.runtime_mode)
+            }
         };
         match self
             .pipeline

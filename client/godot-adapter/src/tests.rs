@@ -2,7 +2,8 @@ use godot::prelude::{Basis, Quaternion, Vector3};
 
 use super::ports::{
     desktop_snapshot_to_input_events, input_log_contract_fields, map_event_slots_to_input_events,
-    normalize_desktop_input, normalize_vr_input, DesktopInputState, GodotInputPort, VrInputState,
+    normalize_desktop_input, normalize_vr_input, vr_state_from_action_samples, DesktopInputState,
+    GodotInputPort, VrActionSample, VrInputState,
 };
 use super::render::RenderStateProjector;
 use super::render::{projection_log_contract_fields, tests_support};
@@ -251,6 +252,36 @@ fn vr_input_normalization_maps_controller_input_to_common_semantics() {
     assert_eq!(normalized.look_pitch, -2.0);
     assert_eq!(snapshot.dt_seconds, 0.1);
     assert_eq!(snapshot.inputs.len(), 2);
+}
+
+#[test]
+fn vr_action_samples_are_mapped_to_vr_axes() {
+    let samples = vec![
+        VrActionSample {
+            action: "vr_move_right".to_string(),
+            strength: 0.75,
+        },
+        VrActionSample {
+            action: "vr_move_forward".to_string(),
+            strength: 0.5,
+        },
+        VrActionSample {
+            action: "vr_turn_left".to_string(),
+            strength: 0.4,
+        },
+        VrActionSample {
+            action: "vr_look_up".to_string(),
+            strength: 0.2,
+        },
+    ];
+
+    let state = vr_state_from_action_samples(&samples, 0.05);
+
+    assert_eq!(state.move_axis_x, 0.75);
+    assert_eq!(state.move_axis_y, 0.5);
+    assert_eq!(state.yaw_delta, -0.4);
+    assert_eq!(state.pitch_delta, -0.2);
+    assert_eq!(state.dt_seconds, 0.05);
 }
 
 #[test]
