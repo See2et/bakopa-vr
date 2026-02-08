@@ -1,4 +1,6 @@
 use bevy_ecs::prelude::*;
+#[cfg(test)]
+use bevy_ecs::schedule::ExecutorKind;
 
 use crate::errors::CoreError;
 
@@ -142,6 +144,7 @@ pub struct CoreEcs {
 impl CoreEcs {
     pub fn new() -> Self {
         let mut schedule = Schedule::default();
+        schedule.set_executor_kind(bevy_ecs::schedule::ExecutorKind::SingleThreaded);
         #[cfg(not(feature = "demo-motion"))]
         schedule.add_systems((apply_input_snapshot, advance_frame).chain());
         #[cfg(feature = "demo-motion")]
@@ -162,6 +165,11 @@ impl CoreEcs {
     #[cfg(test)]
     pub(crate) fn set_primary_pose_for_test(&mut self, pose: Pose) {
         self.world.resource_mut::<GameState>().primary_pose = pose;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn executor_kind(&self) -> ExecutorKind {
+        self.schedule.get_executor_kind()
     }
 }
 

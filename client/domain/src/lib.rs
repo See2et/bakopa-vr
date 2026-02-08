@@ -7,7 +7,8 @@ pub mod xr;
 
 pub use bridge::{
     BridgePipeline, ClientBootstrap, ClientLifecycle, RuntimeBridge, RuntimeBridgeAdapter,
-    RuntimeMode, RuntimeModePreference, StartDiagnostics, StateOverride, StateOverrideRequest,
+    RuntimeBridgeWithSync, RuntimeMode, RuntimeModePreference, StartDiagnostics, StateOverride,
+    StateOverrideRequest,
 };
 pub use ecs::{
     CoreEcs, EcsCore, FrameClock, FrameId, InputEvent, InputSnapshot, Pose, RemoteRenderPose,
@@ -20,8 +21,8 @@ pub use ports::{InputPort, NoopInputPort, OutputPort, RenderFrameBuffer};
 pub use sync::{
     ParticipantId, PoseSyncCoordinator, PoseVersion, RemoteLiveness, RemoteParticipantState,
     RemotePoseRepository, RemotePoseState, RemotePoseUpdate, ScopeBoundaryError,
-    ScopeBoundaryPolicy, ShutdownDrainReport, SignalingRoute, SyncDelta, SyncSessionError,
-    SyncSessionPort,
+    ScopeBoundaryPolicy, ShutdownDrainReport, SignalingRoute, SyncDelta, SyncSessionAdapter,
+    SyncSessionAdapterHandle, SyncSessionError, SyncSessionPort,
 };
 pub use xr::XrRuntime;
 

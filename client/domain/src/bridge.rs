@@ -3,8 +3,14 @@ use crate::ecs::{
 };
 use crate::errors::{BridgeError, FrameError, ShutdownError, StartError};
 use crate::ports::{InputPort, OutputPort, RenderFrameBuffer};
+use crate::sync::{runtime_mode_label, PoseSyncCoordinator, SyncSessionPort};
 use crate::xr::XrRuntime;
 use tracing::{info, instrument, warn};
+
+const TRACE_STAGE_INPUT: &str = "input";
+const TRACE_ROOM_ID_UNKNOWN: &str = "unknown";
+const TRACE_PARTICIPANT_LOCAL: &str = "local";
+const TRACE_STREAM_POSE: &str = "pose";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RuntimeMode {
@@ -32,6 +38,7 @@ impl StartDiagnostics {
 }
 
 pub trait RuntimeBridge {
+    fn on_mode_resolved(&mut self, _mode: RuntimeMode) {}
     fn on_start(&mut self) -> Result<(), BridgeError>;
     fn on_shutdown(&mut self) -> Result<(), BridgeError>;
     fn on_frame(&mut self, input: InputSnapshot) -> Result<RenderFrame, BridgeError>;
@@ -74,6 +81,7 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientBootstrap<X, B> {
         info!("client bootstrap start requested");
         self.start_diagnostics = StartDiagnostics::default();
         self.active_mode = self.resolve_runtime_mode();
+        self.bridge.on_mode_resolved(self.active_mode);
         self.bridge.on_start().map_err(StartError::BridgeInit)?;
         self.frame_clock.reset(FrameId(0));
         self.running = true;
@@ -127,6 +135,16 @@ impl<X: XrRuntime, B: RuntimeBridge> ClientBootstrap<X, B> {
         if !self.running {
             return Err(FrameError::NotRunning);
         }
+        info!(
+            stage = TRACE_STAGE_INPUT,
+            room_id = TRACE_ROOM_ID_UNKNOWN,
+            participant_id = TRACE_PARTICIPANT_LOCAL,
+            stream_kind = TRACE_STREAM_POSE,
+            mode = runtime_mode_label(self.active_mode),
+            frame = self.frame_clock.current_frame().0,
+            input_events = inputs.len(),
+            "processing input snapshot before bridge frame update"
+        );
         let input = InputSnapshot {
             frame: self.frame_clock.current_frame(),
             dt_seconds: DEFAULT_INPUT_DT_SECONDS,
@@ -256,6 +274,77 @@ impl<C: EcsCore> RuntimeBridge for RuntimeBridgeAdapter<C> {
         }
         let frame = self.core.tick(input).map_err(BridgeError::Core)?;
         info!("runtime bridge frame processing completed");
+        Ok(frame)
+    }
+}
+
+pub struct RuntimeBridgeWithSync<C: EcsCore, S: SyncSessionPort> {
+    coordinator: PoseSyncCoordinator<C, S>,
+    started: bool,
+    mode: RuntimeMode,
+}
+
+impl<C: EcsCore, S: SyncSessionPort> RuntimeBridgeWithSync<C, S> {
+    pub fn new(core: C, sync_port: S) -> Self {
+        Self {
+            coordinator: PoseSyncCoordinator::new(core, sync_port),
+            started: false,
+            mode: RuntimeMode::Desktop,
+        }
+    }
+
+    pub fn request_state_override(
+        &mut self,
+        request: StateOverrideRequest,
+    ) -> Result<(), BridgeError> {
+        warn!(
+            reason = %request.reason,
+            started = self.started,
+            "state override request denied"
+        );
+        Err(BridgeError::DirectStateMutationDenied)
+    }
+}
+
+impl<C: EcsCore, S: SyncSessionPort> StateOverride for RuntimeBridgeWithSync<C, S> {
+    fn request_state_override(&mut self, request: StateOverrideRequest) -> Result<(), BridgeError> {
+        RuntimeBridgeWithSync::request_state_override(self, request)
+    }
+}
+
+impl<C: EcsCore, S: SyncSessionPort> RuntimeBridge for RuntimeBridgeWithSync<C, S> {
+    fn on_mode_resolved(&mut self, mode: RuntimeMode) {
+        self.mode = mode;
+    }
+
+    fn on_start(&mut self) -> Result<(), BridgeError> {
+        self.coordinator
+            .init_world()
+            .map_err(BridgeError::CoreInit)?;
+        self.started = true;
+        Ok(())
+    }
+
+    fn on_shutdown(&mut self) -> Result<(), BridgeError> {
+        self.coordinator.shutdown_sync_session();
+        self.started = false;
+        Ok(())
+    }
+
+    #[instrument(
+        skip(self, input),
+        fields(frame = ?input.frame, input_events = input.inputs.len(), started = self.started, mode = ?self.mode)
+    )]
+    fn on_frame(&mut self, input: InputSnapshot) -> Result<RenderFrame, BridgeError> {
+        info!("runtime bridge with sync frame processing started");
+        if !self.started {
+            return Err(BridgeError::NotStarted);
+        }
+        let frame = self
+            .coordinator
+            .apply_frame(self.mode, input)
+            .map_err(BridgeError::Core)?;
+        info!("runtime bridge with sync frame processing completed");
         Ok(frame)
     }
 }

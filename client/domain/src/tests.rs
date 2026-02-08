@@ -1,6 +1,6 @@
 use super::bridge::{
     BridgePipeline, ClientBootstrap, ClientLifecycle, RuntimeBridge, RuntimeBridgeAdapter,
-    RuntimeMode, RuntimeModePreference,
+    RuntimeBridgeWithSync, RuntimeMode, RuntimeModePreference,
 };
 use super::ecs::{
     CoreEcs, EcsCore, FrameClock, FrameId, InputEvent, InputSnapshot, Pose, RenderFrame, UnitQuat,
@@ -13,9 +13,10 @@ use super::ports::{InputPort, NoopInputPort, OutputPort, RenderFrameBuffer};
 use super::sync::{
     runtime_mode_label, ParticipantId, PoseSyncCoordinator, PoseVersion, RemoteLiveness,
     RemotePoseRepository, RemotePoseUpdate, ScopeBoundaryError, ScopeBoundaryPolicy,
-    SignalingRoute, SyncDelta, SyncSessionError, SyncSessionPort,
+    SignalingRoute, SyncDelta, SyncSessionAdapter, SyncSessionError, SyncSessionPort,
 };
 use super::xr::{OpenXrRuntime, XrInterfaceAccess, XrInterfaceProvider, XrRuntime};
+use bevy_ecs::schedule::ExecutorKind;
 use std::collections::VecDeque;
 
 #[derive(Clone)]
@@ -432,6 +433,12 @@ fn core_ecs_initial_state_is_available() {
 
     assert_eq!(frame, FrameId(0));
     assert_eq!(pose, Pose::identity());
+}
+
+#[test]
+fn core_ecs_schedule_uses_single_threaded_executor_contract() {
+    let ecs = CoreEcs::new();
+    assert_eq!(ecs.executor_kind(), ExecutorKind::SingleThreaded);
 }
 
 #[test]
@@ -1620,4 +1627,86 @@ fn two_participant_sync_flow_handles_join_rejoin_and_stale_pose() {
         ),
         RemotePoseUpdate::StaleDropped
     );
+}
+
+#[test]
+fn sync_session_adapter_exposes_joined_peer_events_to_main_thread_poll() {
+    let (mut adapter, handle) = SyncSessionAdapter::new_with_handle();
+    let participant_id = ParticipantId::new("peer-adapter");
+    let pose = Pose {
+        position: Vec3 {
+            x: 1.0,
+            y: 0.0,
+            z: -1.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+
+    handle
+        .push_delta(SyncDelta::PeerJoined {
+            participant_id: participant_id.clone(),
+            session_epoch: 1,
+        })
+        .expect("peer joined delta");
+    handle
+        .push_delta(SyncDelta::PoseReceived {
+            participant_id,
+            pose,
+            version: PoseVersion {
+                session_epoch: 1,
+                pose_seq: 1,
+            },
+        })
+        .expect("pose delta");
+
+    let deltas = adapter.poll_events();
+
+    assert_eq!(deltas.len(), 2);
+    assert!(adapter.can_send_pose());
+}
+
+#[test]
+fn runtime_bridge_with_sync_applies_adapter_deltas_in_frame_flow() {
+    let (adapter, handle) = SyncSessionAdapter::new_with_handle();
+    let participant_id = ParticipantId::new("peer-runtime-sync");
+    let remote_pose = Pose {
+        position: Vec3 {
+            x: 8.0,
+            y: 0.0,
+            z: 2.0,
+        },
+        orientation: UnitQuat::identity(),
+    };
+    let mut bridge = RuntimeBridgeWithSync::new(CoreEcs::new(), adapter);
+    bridge.on_mode_resolved(RuntimeMode::Desktop);
+    bridge.on_start().expect("start succeeds");
+
+    handle
+        .push_delta(SyncDelta::PeerJoined {
+            participant_id: participant_id.clone(),
+            session_epoch: 2,
+        })
+        .expect("peer joined delta");
+    handle
+        .push_delta(SyncDelta::PoseReceived {
+            participant_id,
+            pose: remote_pose,
+            version: PoseVersion {
+                session_epoch: 2,
+                pose_seq: 1,
+            },
+        })
+        .expect("pose delta");
+
+    let frame = bridge
+        .on_frame(InputSnapshot {
+            frame: FrameId(0),
+            dt_seconds: 0.1,
+            inputs: Vec::new(),
+        })
+        .expect("frame with sync deltas");
+
+    assert_eq!(frame.remote_poses().len(), 1);
+    assert_eq!(frame.remote_poses()[0].participant_id, "peer-runtime-sync");
+    assert_eq!(frame.remote_poses()[0].pose, remote_pose);
 }
