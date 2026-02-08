@@ -1,6 +1,6 @@
 ---
 name: rust-error-handling
-description: Rustでのエラー設計を、境界ごとに thiserror / anyhow を使い分けて実装する。ドメイン/ライブラリは型付きエラー(thiserror)、アプリ境界のみ anyow。context付与、unwrap禁止、HTTP/CLI変換の指針を含む。
+description: Rustでのエラー設計を、境界ごとに thiserror / anyhow を使い分けて実装する。ドメイン/ライブラリは型付きエラー(thiserror)、アプリ境界のみ anyhow。context付与、unwrap禁止、HTTP/CLI変換、Clone運用の指針を含む。
 ---
 
 # Rust Error Handling: anyhow / thiserror の境界設計
@@ -124,6 +124,19 @@ description: Rustでのエラー設計を、境界ごとに thiserror / anyhow �
    - 1 つの巨大な `Error` enum に何でも詰め込まず、
      「RepositoryError」「DomainError」「ApiError」のように責務ごとに分割する。
 
+5. **`thiserror` エラーの `Clone` は条件付きで採用する**
+
+   - 上位レイヤで「最後のエラー保持」「再利用」「再送」などが必要で、
+     かつ内包するエラー型が `Clone` を実装済みなら `#[derive(Clone, Debug, Error)]` を採用する。
+   - `Clone` が不要なエラー型にはむやみに付けない。
+
+6. **`Option<Error>` の状態保持では参照アクセサを併設する**
+
+   - `Option<Error>` をキャッシュする状態型では、
+     不要な clone を避けるため `Option<&Error>` を返す参照アクセサ（例: `last_ref()`）を用意する。
+   - 文字列化やログ出力など「参照で足りる」処理は参照アクセサを使う。
+   - 既存 API 互換が必要な場合のみ、所有権を返すアクセサ（例: `last()`）を併存させる。
+
 ## チェックリスト
 
 - [ ] ドメイン層の public API は `Result<T, DomainError>`（または責務別Error）になっている
@@ -131,3 +144,5 @@ description: Rustでのエラー設計を、境界ごとに thiserror / anyhow �
 - [ ] アプリ境界で `.context()` / `.with_context()` が付与されている
 - [ ] `unwrap/expect` が残っていない（例外: テスト、明示された初期化のみ）
 - [ ] HTTP/CLI変換が match で明示され、判断基準が読み取れる
+- [ ] `Clone` が必要な `thiserror` エラーだけに `Clone` derive を付与している
+- [ ] `Option<Error>` の状態保持型で、参照アクセサ（例: `last_ref()`）を優先して不要 clone を避けている

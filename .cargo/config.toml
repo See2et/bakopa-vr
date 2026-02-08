@@ -1,0 +1,6 @@
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+ar = "x86_64-w64-mingw32-ar"
+
+[env]
+GODOT4_GDEXTENSION_JSON = { value = "client/godot/api/extension_api.4.5.1.full.json", relative = true }

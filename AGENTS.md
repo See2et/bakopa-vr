@@ -1,30 +1,68 @@
-## Project Overview
+# AI-DLC and Spec-Driven Development
 
-このプロジェクトは、分散型Social-VR「SuteraVR」と呼称されるものです。従来のSocial-VRが特にインフラ／通信コストに苛まれていることに課題意識を持ち、それをFederationとP2Pによる二重分散により解決することを志向しています。
+Kiro-style Spec Driven Development implementation on AI-DLC (AI Development Life Cycle)
 
-詳細は`docs/product.md`と`docs/architecture.md`を参照して下さい。
+## Project Memory
 
-## Do Test-Driven Development & Spec-Driven Development
+Project memory keeps persistent guidance (steering, specs notes, component docs) so Codex honors your standards each run. Treat it as the long-lived source of truth for patterns, conventions, and decisions.
 
-和田卓人（t-wada）氏が提唱するテスト駆動開発（TDD）と、仕様駆動開発（SDD）に則って開発を進めて下さい。
+- Use `docs/steering/` for project-wide policies: architecture principles, naming schemes, security constraints, tech stack decisions, api standards, etc.
+- Use local `AGENTS.md` files for feature or library context (e.g. `src/lib/payments/AGENTS.md`): describe domain assumptions, API contracts, or testing conventions specific to that folder. Codex auto-loads these when working in the matching path.
+- Specs notes stay with each spec (under `docs/specs/`) to guide specification-level workflows.
 
-- **テストが開発を駆動する:** すべてのプロダクションコードは、失敗するテストをパスさせるためだけに書かれます。テストは後付けの作業ではありません。それ自身が仕様書であり、設計の駆動役です。
-- **リファクタリングへの自信:** 包括的なテストスイートは我々のセーフティネットです。これにより、私たちは恐れることなく継続的にコードベースのリファクタリングと改善を行えます。
-- **テスト容易性は良い設計に等しい:** コードがテストしにくい場合、それは悪い設計の兆候です。エージェントは、テスト容易性の高いコード作成を最優先しなければなりません。それは自然と、疎結合で凝集度の高いアーキテクチャにつながります。
+## Project Context
 
-Coding Agentは、いかに小さな変更であっても、必ずこの反復的なサイクルに従わなければなりません。コードを生成する際は、現在どのフェーズにいるのかを明示してください。
+### Paths
 
-また、**仕様が不明瞭なときは勝手に「良さそうな実装」をしない**で下さい。適宜ユーザーに仕様書の更新提案や質疑応答を行って下さい。
-加えて、**YAGNI原則を強く意識し**、仕様書に記載されている内容以上のことに勝手に取り組もうとしないて下さい。
+- Steering: `docs/steering/`
+- Specs: `docs/specs/`
 
-1. Spec: 仕様を明文化する
-    - ユーザーのやりたいことが1Spec=1PRとして過剰・過大であるかを判断。そうである場合、適切な要件と規模に落とし込む(skill: sdd-slice-wish)
-    - ユーザーからヒアリングした内容を元に、Specのドラフトを作成する(skill: sdd-init)
-    - ドラフトの内容に合意できたら、TDDのための充分なテストケースをSpecに網羅する(skill: sdd-test-cases)
-1. Red: 失敗するテストを書く(skill: tdd-red)
-1. Green: テストをパスさせる(skill: tdd-green)
-1. Refactor: コードの品質を向上させる(skill: tdd-refactor)
-1. Commit: 進捗を保存する
+### Steering vs Specification
+
+**Steering** (`docs/steering/`) - Guide AI with project-wide rules and context
+**Specs** (`docs/specs/`) - Formalize development process for individual features
+
+### Active Specifications
+
+- Check `docs/specs/` for active specifications
+- Use `/prompts:kiro-spec-status [feature-name]` to check progress
+
+## Development Guidelines
+
+- Think in English, generate responses in Japanese. All Markdown content written to project files (e.g., requirements.md, design.md, tasks.md, research.md, validation reports) MUST be written in the target language configured for this specification (see spec.json.language).
+
+## Minimal Workflow
+
+- Phase 0 (optional): `/prompts:kiro-steering`, `/prompts:kiro-steering-custom`
+- Phase 1 (Specification):
+  - `/prompts:kiro-spec-init "description"`
+  - `/prompts:kiro-spec-requirements {feature}`
+  - `/prompts:kiro-validate-gap {feature}` (optional: for existing codebase)
+  - `/prompts:kiro-spec-design {feature} [-y]`
+  - `/prompts:kiro-validate-design {feature}` (optional: design review)
+  - `/prompts:kiro-spec-tasks {feature} [-y]`
+- Phase 2 (Implementation): `/prompts:kiro-spec-impl {feature} [tasks]`
+  - `/prompts:kiro-validate-impl {feature}` (optional: after implementation)
+- Progress check: `/prompts:kiro-spec-status {feature}` (use anytime)
+
+## Development Rules
+
+- 3-phase approval workflow: Requirements → Design → Tasks → Implementation
+- Human review required each phase; use `-y` only for intentional fast-track
+- Keep steering current and verify alignment with `/prompts:kiro-spec-status`
+- Follow the user's instructions precisely, and within that scope act autonomously: gather the necessary context and complete the requested work end-to-end in this run, asking questions only when essential information is missing or the instructions are critically ambiguous.
+- 実装や編集を行った場合は、完了前に必ず `cargo fmt --all` を実行し、フォーマット差分を解消すること。
+- 実装や編集を行った場合は、完了前に必ず `cargo clippy --all-targets --all-features -- -D warnings` を実行し、警告・エラーを解消すること。
+- `docs/` 配下の Markdown を編集した場合は、完了前に必ず `npx markdownlint-cli2 --fix "docs/**/*.md" "!docs/settings/**" "!docs/specs"` を実行し、自動修正を反映すること。
+- その後、必ず `npx markdownlint-cli2 "docs/**/*.md" "!docs/settings/**" "!docs/specs"` を実行し、警告・エラーがないことを確認すること。
+
+## Steering Configuration
+
+- Load entire `docs/steering/` as project memory
+- Default files: `product.md`, `tech.md`, `structure.md`
+- Canonical product source: `docs/steering/product.md` (`docs/product.md` は移行用参照のみ)
+- Canonical architecture sources: `docs/steering/tech.md` + `docs/steering/structure.md` (`docs/architecture.md` は移行用参照のみ)
+- Custom files are supported (managed via `/prompts:kiro-steering-custom`)
 
 ## Rust Coding Rules
 
@@ -70,6 +108,8 @@ Coding Agentは、いかに小さな変更であっても、必ずこの反復�
 - **アプリ境界（main/CLI/HTTP入口など）**でのみ `anyhow::Result` を使用してよい。境界では必ず `.context()` / `.with_context()` で「何をしていて失敗したか」を付与すること。
 - `unwrap` / `expect` は原則禁止（テスト、明示された初期化コードなど例外を除く）。ランタイムで起こりうる失敗は `Result/Option` として扱い `?` で伝搬する。
 - エラーは「使う側が判断できる粒度」で設計する（例: InvalidInput / NotFound / Conflict / External / Internal）。曖昧な文字列エラーや握りつぶしは禁止。
+- `thiserror` を使う公開エラー列挙型で、内包するエラー型が `Clone` を実装済みかつ上位で保持・再利用が必要な場合は、`#[derive(Clone, Debug, thiserror::Error)]` を採用すること。
+- `Option<Error>` の状態保持型では、不要な clone を避けるために `Option<&Error>` を返す参照アクセサ（例: `last_ref()`）を用意し、文字列化や参照参照だけで足りる内部処理はそれを優先して使うこと。既存 API 互換性のために所有権版アクセサ（例: `last()`）は必要に応じて併存させる。
 
 ### Use Strong Types, Not Primitive Obsession
 
