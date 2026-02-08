@@ -145,10 +145,7 @@ impl CoreEcs {
     pub fn new() -> Self {
         let mut schedule = Schedule::default();
         schedule.set_executor_kind(bevy_ecs::schedule::ExecutorKind::SingleThreaded);
-        #[cfg(not(feature = "demo-motion"))]
         schedule.add_systems((apply_input_snapshot, advance_frame).chain());
-        #[cfg(feature = "demo-motion")]
-        schedule.add_systems((apply_input_snapshot, advance_frame, demo_motion).chain());
 
         let mut world = World::new();
         reset_world(&mut world);
@@ -186,9 +183,6 @@ impl EcsCore for CoreEcs {
     }
 
     fn tick(&mut self, input: InputSnapshot) -> Result<RenderFrame, CoreError> {
-        // TODO(client-domain): In tick(), InputSnapshot is intentionally stored but
-        // not yet consumed because advance_frame and demo_motion currently do not
-        // read it. Add input-processing systems that consume InputSnapshot.
         self.world.insert_resource(input);
         self.schedule.run(&mut self.world);
 
@@ -239,12 +233,6 @@ fn apply_input_snapshot(input: Res<InputSnapshot>, mut state: ResMut<GameState>)
 
 fn advance_frame(mut state: ResMut<GameState>) {
     state.frame.0 += 1;
-}
-
-#[cfg(feature = "demo-motion")]
-fn demo_motion(mut state: ResMut<GameState>) {
-    let step = (state.frame.0 % 180) as f32 / 180.0;
-    state.primary_pose.position.x = step * 0.5;
 }
 
 fn sanitize_dt(dt_seconds: f32) -> f32 {

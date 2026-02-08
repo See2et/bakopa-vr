@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::PathBuf;
+
 use godot::prelude::{Basis, Quaternion, Vector3};
 
 use super::ports::{
@@ -352,4 +355,37 @@ fn render_state_projector_returns_error_for_invalid_target_node() {
     let mut target = godot::obj::OnEditor::<godot::obj::Gd<godot::classes::Node3D>>::default();
 
     assert!(projector.project(&frame, &mut target).is_err());
+}
+
+#[test]
+fn godot_scene_wires_sutera_client_bridge_for_frame_and_input_flow() {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../godot/node.tscn");
+    let scene = fs::read_to_string(path).expect("node.tscn must be readable");
+
+    assert!(scene.contains("[node name=\"SuteraClientBridge\" type=\"SuteraClientBridge\""));
+    assert!(scene.contains("target_node = NodePath(\"../NearBox\")"));
+}
+
+#[test]
+fn godot_project_input_map_defines_pose_sync_actions() {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../godot/project.godot");
+    let project = fs::read_to_string(path).expect("project.godot must be readable");
+
+    for action in [
+        "move_left",
+        "move_right",
+        "move_forward",
+        "move_back",
+        "look_left",
+        "look_right",
+        "look_up",
+        "look_down",
+    ] {
+        assert!(
+            project.contains(&format!("{action}={{")),
+            "missing InputMap action: {action}"
+        );
+    }
 }

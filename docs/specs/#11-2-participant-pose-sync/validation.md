@@ -61,3 +61,10 @@ ITERATIONS=5 bash scripts/smoke-pose-sync-regression.sh
 ```
 
 完走時は `smoke regression complete` を表示する。
+
+## Godot シーン配線と InputMap の確認（8.4 / 8.5）
+
+1. `client/godot/node.tscn` を起動し、`SuteraClientBridge` ノードが存在することを確認する。
+2. 実行開始後、`verify_gdextension.gd` が `on_start` と毎フレーム `on_frame` を呼び出すことを確認する。
+3. Desktop 操作で `W/A/S/D` とマウス移動を入力し、`push_input_event` 経由でイベントが Rust 側に到達することを確認する。
+4. `client/godot/project.godot` の `[input]` に `move_*` / `look_*` が定義されていることを確認する。

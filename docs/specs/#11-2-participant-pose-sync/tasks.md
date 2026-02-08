@@ -173,3 +173,38 @@
   - VR モードで連続スティック操作したときに local/remote pose が
     同期経路へ反映されることをテストで検証する。
   - _Requirements: 3.1, 3.4, 4.4_
+
+- [x] 8.4 Godot シーンで `SuteraClientBridge` の起動・更新・入力配線を実装する
+  - `node.tscn` に `SuteraClientBridge` ノードを配置し、対象 `Node3D` を
+    `target_node` に接続する。
+  - GDScript 側で `on_start` / `on_frame` をフレーム駆動し、
+    `_input` または `_unhandled_input` で受けたイベントを `push_input_event`
+    へ渡す。
+  - Desktop/VR 両モードでイベントが Rust 側 `pending_input_events` に到達することを
+    ログまたはテストで検証する。
+  - _Requirements: 4.2, 4.4_
+
+- [x] 8.5 Godot InputMap の操作アクションを定義し E2E で検証する
+  - `project.godot` の `[input]` に `move_left` / `move_right` /
+    `move_forward` / `move_back` / `look_left` / `look_right` /
+    `look_up` / `look_down` を定義する。
+  - Desktop では WASD + マウス、VR ではコントローラー入力の双方で
+    同じ入力意味論へ正規化されることを確認する。
+  - ローディング完了後に操作が反映される再現手順を `validation.md` 相当の
+    検証観点へ反映する。
+  - _Requirements: 3.2, 4.2, 4.4, 5.4_
+
+- [x] 9. 全 feature 構成での移動回帰を解消し品質ゲートを再成立させる
+- [x] 9.1 `cargo test --all-targets --all-features` で失敗している Movement 系テストを修正する
+  - `movement_system_keeps_pose_unchanged_without_input` と
+    `movement_system_updates_position_frame_rate_independently` が
+    全 feature 構成でも成立するよう、入力正規化または移動適用の回帰を除去する。
+  - テスト前提（無入力時に位置不変、`dt` 分割時の等価移動量）を仕様どおりに固定する。
+  - _Requirements: 3.2, 4.2_
+
+- [x] 9.2 bootstrap / pipeline の render frame 期待値回帰を解消する
+  - `client_bootstrap_ticks_render_frame_with_core_and_openxr` と
+    `gdextension_entry_pipeline_runs_ecs_and_buffers_frame` が
+    全 feature 構成で安定して通るよう、初期フレームの pose 生成条件を整合させる。
+  - 入力未発生フレームで意図しない `x` 方向ドリフトが発生しないことを確認する。
+  - _Requirements: 3.2, 4.4_

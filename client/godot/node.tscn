@@ -64,3 +64,6 @@ mesh = SubResource("BoxMesh_2")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -1.2)
 material_override = SubResource("StandardMaterial3D_3")
 mesh = SubResource("BoxMesh_3")
+
+[node name="SuteraClientBridge" type="SuteraClientBridge" parent="."]
+target_node = NodePath("../NearBox")
