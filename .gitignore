@@ -39,3 +39,11 @@ data_*/
 mono_crash.*.json
 
 client/godot/bin/
+
+# TAKT runtime artifacts
+.takt/logs/
+.takt/reports/
+.takt/completed/
+.takt/tasks/
+.takt/persona_sessions.json
+.takt/session-state.json

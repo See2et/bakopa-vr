@@ -2,3 +2,5 @@ logs/
 reports/
 completed/
 tasks/
+persona_sessions.json
+session-state.json
