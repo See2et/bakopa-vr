@@ -1,23 +1,33 @@
-use godot::classes::{InputEvent as GodotInputEvent, Node3D};
+use godot::classes::{InputEvent as GodotInputEvent, InputEventAction, Node3D};
 use godot::prelude::*;
 use tracing::{error, info, warn};
 
 use crate::render::{ProjectionError, RenderStateProjector};
+use client_domain::bridge::RuntimeMode;
 use client_domain::ecs::{
     FrameClock, InputEvent, InputSnapshot, RenderFrame, DEFAULT_INPUT_DT_SECONDS,
 };
 use client_domain::ports::{InputPort, OutputPort};
+use client_domain::sync::runtime_mode_label;
 
 const MIN_FRAME_DT_SECONDS: f32 = 1.0 / 240.0;
 
-pub(crate) fn input_log_contract_fields() -> (
+pub(crate) fn input_log_contract_fields(
+    mode: RuntimeMode,
+) -> (
     &'static str,
     &'static str,
     &'static str,
     &'static str,
     &'static str,
 ) {
-    ("input", "unknown", "local", "pose", "unknown")
+    (
+        "input",
+        "unknown",
+        "local",
+        "pose",
+        runtime_mode_label(mode),
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -69,35 +79,87 @@ pub struct GodotInputPort {
     desktop_state: Option<DesktopInputState>,
     vr_state: Option<VrInputState>,
     vr_input_failure_reason: Option<String>,
+    mode: RuntimeMode,
 }
 
-/// Temporary placeholder mapping.
-///
-/// TODO(godot-adapter): Replace this with real conversion from each incoming
-/// `Gd<GodotInputEvent>` into domain `InputEvent` values:
-/// - map motion/axis values to `InputEvent::Move { axis_x, axis_y }`
-/// - map look deltas to `InputEvent::Look { yaw_delta, pitch_delta }`
-/// - map button/action fields to `InputEvent::Action { name, pressed }`
-///
-/// For now this function intentionally returns placeholder events based only on
-/// `event_count` so the input pipeline can be exercised end-to-end.
-pub(crate) fn map_event_slots_to_input_events(event_count: usize) -> Vec<InputEvent> {
-    (0..event_count)
-        .map(|index| match index % 3 {
-            0 => InputEvent::Move {
-                axis_x: 0.0,
-                axis_y: 0.0,
-            },
-            1 => InputEvent::Look {
-                yaw_delta: 0.0,
-                pitch_delta: 0.0,
-            },
-            _ => InputEvent::Action {
-                name: "godot_input".to_string(),
-                pressed: true,
-            },
-        })
-        .collect()
+fn apply_desktop_action_state(event: &Gd<GodotInputEvent>, state: &mut DesktopInputState) {
+    let move_left = StringName::from("move_left");
+    let move_right = StringName::from("move_right");
+    let move_forward = StringName::from("move_forward");
+    let move_back = StringName::from("move_back");
+    let look_left = StringName::from("look_left");
+    let look_right = StringName::from("look_right");
+    let look_up = StringName::from("look_up");
+    let look_down = StringName::from("look_down");
+
+    if event.is_action_pressed_ex(&move_left).done() {
+        state.move_left = true;
+    }
+    if event.is_action_released_ex(&move_left).done() {
+        state.move_left = false;
+    }
+    if event.is_action_pressed_ex(&move_right).done() {
+        state.move_right = true;
+    }
+    if event.is_action_released_ex(&move_right).done() {
+        state.move_right = false;
+    }
+    if event.is_action_pressed_ex(&move_forward).done() {
+        state.move_forward = true;
+    }
+    if event.is_action_released_ex(&move_forward).done() {
+        state.move_forward = false;
+    }
+    if event.is_action_pressed_ex(&move_back).done() {
+        state.move_back = true;
+    }
+    if event.is_action_released_ex(&move_back).done() {
+        state.move_back = false;
+    }
+    if event.is_action_pressed_ex(&look_left).done() {
+        state.mouse_delta_x -= 1.0;
+    }
+    if event.is_action_pressed_ex(&look_right).done() {
+        state.mouse_delta_x += 1.0;
+    }
+    if event.is_action_pressed_ex(&look_up).done() {
+        state.mouse_delta_y -= 1.0;
+    }
+    if event.is_action_pressed_ex(&look_down).done() {
+        state.mouse_delta_y += 1.0;
+    }
+}
+
+fn extract_action_event(event: &Gd<GodotInputEvent>) -> Option<InputEvent> {
+    let action = event.clone().try_cast::<InputEventAction>().ok()?;
+    Some(InputEvent::Action {
+        name: action.get_action().to_string(),
+        pressed: action.is_pressed(),
+    })
+}
+
+pub(crate) fn desktop_state_from_events(
+    events: &[Gd<GodotInputEvent>],
+    dt_seconds: f32,
+) -> DesktopInputState {
+    let mut state = DesktopInputState {
+        dt_seconds,
+        ..DesktopInputState::default()
+    };
+    for event in events {
+        apply_desktop_action_state(event, &mut state);
+    }
+    state
+}
+
+pub(crate) fn map_event_slots_to_input_events(
+    events: &[Gd<GodotInputEvent>],
+    dt_seconds: f32,
+) -> Vec<InputEvent> {
+    let normalized = normalize_desktop_input(desktop_state_from_events(events, dt_seconds));
+    let mut inputs = desktop_snapshot_to_input_events(normalized);
+    inputs.extend(events.iter().filter_map(extract_action_event));
+    inputs
 }
 
 pub(crate) fn normalize_desktop_input(state: DesktopInputState) -> DesktopInputSnapshot {
@@ -181,45 +243,66 @@ impl GodotInputPort {
     }
 
     pub fn from_events(events: Vec<Gd<GodotInputEvent>>) -> Self {
+        Self::from_events_with_mode(events, RuntimeMode::Desktop)
+    }
+
+    pub fn from_events_with_mode(events: Vec<Gd<GodotInputEvent>>, mode: RuntimeMode) -> Self {
         Self {
             events,
             desktop_state: None,
             vr_state: None,
             vr_input_failure_reason: None,
+            mode,
         }
     }
 
     pub fn from_desktop_state(state: DesktopInputState) -> Self {
+        Self::from_desktop_state_with_mode(state, RuntimeMode::Desktop)
+    }
+
+    pub fn from_desktop_state_with_mode(state: DesktopInputState, mode: RuntimeMode) -> Self {
         Self {
             events: Vec::new(),
             desktop_state: Some(state),
             vr_state: None,
             vr_input_failure_reason: None,
+            mode,
         }
     }
 
     pub fn from_vr_state(state: VrInputState) -> Self {
+        Self::from_vr_state_with_mode(state, RuntimeMode::Vr)
+    }
+
+    pub fn from_vr_state_with_mode(state: VrInputState, mode: RuntimeMode) -> Self {
         Self {
             events: Vec::new(),
             desktop_state: None,
             vr_state: Some(state),
             vr_input_failure_reason: None,
+            mode,
         }
     }
 
     pub fn from_vr_input_failure(reason: impl Into<String>) -> Self {
+        Self::from_vr_input_failure_with_mode(reason, RuntimeMode::Vr)
+    }
+
+    pub fn from_vr_input_failure_with_mode(reason: impl Into<String>, mode: RuntimeMode) -> Self {
         Self {
             events: Vec::new(),
             desktop_state: None,
             vr_state: None,
             vr_input_failure_reason: Some(reason.into()),
+            mode,
         }
     }
 }
 
 impl InputPort for GodotInputPort {
     fn snapshot(&mut self, frame_clock: &mut FrameClock) -> InputSnapshot {
-        let (stage, room_id, participant_id, stream_kind, mode) = input_log_contract_fields();
+        let (stage, room_id, participant_id, stream_kind, mode) =
+            input_log_contract_fields(self.mode);
         let (inputs, dt_seconds) = if let Some(reason) = self.vr_input_failure_reason.take() {
             warn!(
                 target: "godot_adapter",
@@ -243,11 +326,9 @@ impl InputPort for GodotInputPort {
             let inputs = desktop_snapshot_to_input_events(normalized);
             (inputs, dt_seconds)
         } else {
-            // TODO(godot-adapter): Use actual Godot event payload once
-            // map_event_slots_to_input_events supports concrete event parsing.
             let events = std::mem::take(&mut self.events);
             (
-                map_event_slots_to_input_events(events.len()),
+                map_event_slots_to_input_events(&events, DEFAULT_INPUT_DT_SECONDS),
                 DEFAULT_INPUT_DT_SECONDS,
             )
         };

@@ -147,3 +147,20 @@
     `stream_kind` / `mode` の統一付与を完了する。
   - 追加テストで契約逸脱を検知できる状態にする。
   - _Requirements: 5.1, 5.2, 5.4_
+
+- [x] 8. Desktop 実入力と Adapter ログ契約の残課題を解消する
+- [x] 8.1 Godot 入力イベントを WASD + マウスの実データで正規化する
+  - `map_event_slots_to_input_events` のプレースホルダ変換を廃止し、
+    `InputEvent` 実ペイロードから `Move` / `Look` / `Action` を抽出する。
+  - Desktop 実行時は `SuteraClientBridge` から `DesktopInputState` を構築し、
+    `GodotInputPort::from_desktop_state` 経路で `InputSnapshot` へ接続する。
+  - Desktop モードで WASD + マウス操作が local/remote pose へ反映されることを
+    テストで検証する。
+  - _Requirements: 3.2, 4.2, 4.4_
+
+- [x] 8.2 Adapter の `mode` ログを runtime mode と一致させる
+  - 入力/投影ログの `mode = "unknown"` を廃止し、起動時に確定した
+    `RuntimeMode` を `mode` フィールドへ連携する。
+  - `room_id` / `participant_id` / `stream_kind` / `mode` の統一付与が
+    Adapter〜Domain 経路で保持されることをテストで検証する。
+  - _Requirements: 5.2, 5.4_
