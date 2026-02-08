@@ -1,0 +1,8 @@
+{
+  "status": "error",
+  "errorMessage": "Piece aborted by movement transition",
+  "timestamp": "2026-02-08T06:46:33.892Z",
+  "pieceName": "cc-sdd-impl-codex",
+  "taskContent": "feature=#11-2-participant-pose-sync\ntasks=auto\nbatch_size=2",
+  "lastMovement": "plan"
+}
