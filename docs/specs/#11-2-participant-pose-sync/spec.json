@@ -1,0 +1,22 @@
+{
+  "feature_name": "client-pose-sync-vertical-slice",
+  "created_at": "2026-02-08T03:13:26+00:00",
+  "updated_at": "2026-02-08T03:24:49+00:00",
+  "language": "ja",
+  "phase": "design-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": false
+    },
+    "tasks": {
+      "generated": false,
+      "approved": false
+    }
+  },
+  "ready_for_implementation": false
+}
