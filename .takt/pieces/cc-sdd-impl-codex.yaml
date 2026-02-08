@@ -1,5 +1,5 @@
 name: cc-sdd-impl-codex
-description: cc-sdd implementation automation for Codex (plan -> implement batch -> validate -> loop until complete)
+description: cc-sdd implementation automation for Codex (plan -> implement batch -> validate -> commit -> loop until complete)
 max_iterations: 80
 initial_movement: plan
 movements:
@@ -21,17 +21,12 @@ movements:
       feature=<spec-directory-name>
       tasks=auto|1.1,1.2
       batch_size=1..3
-      commit_type=feat|fix|refactor|docs|test|chore|perf|ci|build|revert
-      commit_scope=<scope-name>
-
       必須要件:
       1. feature を抽出し、`docs/specs/<feature>/spec.json` が存在することを確認する
       2. tasks 未指定時は auto として扱う
       3. batch_size 未指定時は 2 として扱う（範囲外は 2 に補正）
       4. 実行開始前に spec.json の approvals.tasks.approved と ready_for_implementation を確認する
-      5. commit_type 未指定時は feat、commit_scope 未指定時は feature 名を使う
-      6. この piece は「1サイクル=1バッチ実装+検証+終了」を必ず守る
-      7. 以降の movement が使えるように、feature / tasks / batch_size / approval 状態と commit_type/scope を簡潔に出力する
+      5. 以降の movement が使えるように、feature / tasks / batch_size / approval 状態を簡潔に出力する
 
       解析対象:
       {task}
@@ -107,7 +102,7 @@ movements:
       4. 未完了タスクの有無を確認する
 
       判定:
-      - 検証が通る -> 未完了タスク有無に関わらず finalize へ進める（1サイクルで終了）
+      - 検証が通る -> 未完了タスクの有無を明示し、commit_batch へ進める
       - 検証不一致がある -> implement_batch へ戻し修正を要求
       - 致命的矛盾または前提不足 -> ABORT
 
@@ -115,11 +110,50 @@ movements:
       {previous_response}
     rules:
       - condition: 検証成功
-        next: finalize
+        next: commit_batch
       - condition: 修正可能な不整合を検出した
         next: implement_batch
       - condition: 致命的矛盾または前提不足を検出した
         next: ABORT
+  - name: commit_batch
+    edit: false
+    provider: codex
+    persona: |
+      あなたは cc-sdd のコミット担当です。
+      1バッチ分の変更を小さくコミットし、未完了があれば次サイクルへ戻してください。
+    pass_previous_response: true
+    allowed_tools:
+      - Read
+      - Glob
+      - Grep
+      - Bash
+    instruction_template: |
+      直前バッチの実装結果をコミットし、次の遷移を判定してください。
+
+      必須実行手順:
+      1. `tasks.md` を確認し、未完了タスクの有無を判断する
+      2. 直前バッチの変更だけを `git add -A` でステージする
+      3. 変更内容から type/scope/summary を自動決定し、`git commit -m "<type>(<scope>): <summary>"` を実行する
+
+      conventional commit message のルール:
+      - 形式: `<type>(<scope>): <summary>`
+      - type は `feat|fix|refactor|docs|test|chore|perf|ci|build|revert` のいずれか
+      - summary は命令形・72文字以内・末尾ピリオドなし
+      - `<scope>` は task の対象領域を示す短い識別子
+      - 今回の 1バッチ分の変更だけを説明する
+
+      判定:
+      - 未完了タスクあり -> plan へ戻す
+      - 未完了タスクなし -> finalize へ進める
+
+      前ステップ出力:
+      {previous_response}
+    rules:
+      - condition: 未完了タスクがある
+        next: plan
+      - condition: 未完了タスクがない
+        next: finalize
+
   - name: finalize
     edit: false
     provider: codex

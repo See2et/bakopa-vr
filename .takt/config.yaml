@@ -6,7 +6,8 @@ model: codex
 branch_name_strategy: romaji
 pipeline:
   default_branch_prefix: "takt/"
-  commit_message_template: "feat: {title}"
+  # NOTE: commit message is generated in the piece; this is a fallback only.
+  commit_message_template: "chore: {title}"
   pr_body_template: |
     ## Summary
     {report}

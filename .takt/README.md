@@ -50,7 +50,8 @@ batch_size=1..3
    - `cargo clippy --all-targets --all-features -- -D warnings`
    - `cargo test --workspace --all-targets`
 4. 仕様整合の検証
-5. 未完了タスクがあれば次バッチへ進行
+5. 1バッチ分のコミット
+6. 未完了タスクがあれば plan に戻って次バッチへ進行
 
 ## 補足
 
