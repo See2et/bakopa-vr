@@ -425,8 +425,24 @@ fn core_ecs_tick_runs_systems_and_advances_frame() {
 
     assert_eq!(first.frame, FrameId(1));
     assert_eq!(second.frame, FrameId(2));
-    assert_eq!(first.primary_pose(), &Pose::identity());
-    assert_eq!(second.primary_pose(), &Pose::identity());
+
+    #[cfg(not(feature = "demo-motion"))]
+    {
+        assert_eq!(first.primary_pose(), &Pose::identity());
+        assert_eq!(second.primary_pose(), &Pose::identity());
+    }
+
+    #[cfg(feature = "demo-motion")]
+    {
+        assert!((0.0..=0.5).contains(&first.primary_pose().position.x));
+        assert!((0.0..=0.5).contains(&second.primary_pose().position.x));
+        assert_eq!(first.primary_pose().position.y, 0.0);
+        assert_eq!(first.primary_pose().position.z, 0.0);
+        assert_eq!(second.primary_pose().position.y, 0.0);
+        assert_eq!(second.primary_pose().position.z, 0.0);
+        assert_eq!(first.primary_pose().orientation, UnitQuat::identity());
+        assert_eq!(second.primary_pose().orientation, UnitQuat::identity());
+    }
 }
 
 #[test]
