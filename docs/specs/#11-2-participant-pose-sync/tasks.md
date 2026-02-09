@@ -208,16 +208,3 @@
     全 feature 構成で安定して通るよう、初期フレームの pose 生成条件を整合させる。
   - 入力未発生フレームで意図しない `x` 方向ドリフトが発生しないことを確認する。
   - _Requirements: 3.2, 4.4_
-
-- [x] 10. Godot Client の起動失敗（SIGSEGV）を原因解明し恒久対処する
-- [x] 10.1 起動失敗を再現可能な形で固定し、失敗段階を特定する
-  - `scripts/check_godot_client_startup.sh` の実行結果を基準に、`--import` と通常起動のどの段階で失敗しているかを切り分ける。
-  - `client_core.gdextension` のロード、`gdext_rust_init` の初期化、OpenXR 初期化分岐のどこで異常終了するかをログで特定する。
-  - 失敗時に原因推定できるログ（stage / mode / library path）を残し、再実行で同じ診断結果が得られる状態にする。
-  - _Requirements: 4.3, 5.1, 5.4_
-
-- [x] 10.2 特定した根本原因を修正し、起動時クラッシュを防止する
-  - 根本原因に応じて GDExtension 初期化順序、null 安全性、モード分岐のいずれかを修正し、異常系でも process abort せず失敗を返すようにする。
-  - Linux の headless 起動（`nix develop`）で `scripts/check_godot_client_startup.sh` が成功し、`client/godot/bin/linux/libclient_core.so` 配置確認を含む品質ゲートが通ることを確認する。
-  - 修正後に `cargo test --workspace --all-targets` と既存の Godot 起動検証を再実行し、回帰がないことを確認する。
-  - _Requirements: 4.3, 4.4, 5.4, 6.3_
