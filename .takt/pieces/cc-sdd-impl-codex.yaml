@@ -71,6 +71,7 @@ movements:
          - `cargo fmt --all`
          - `cargo clippy --all-targets --all-features -- -D warnings`
          - `cargo test --workspace --all-targets`
+         - `if [ -f client/godot/project.godot ]; then bash scripts/check_godot_client_startup.sh; fi`
       8. 実装した task IDs と残件数を要約する
 
       制約:
@@ -185,7 +186,7 @@ movements:
       必須実行手順:
       1. feature を特定し、`tasks.md` の全タスクが完了済み（`- [x]`）であることを確認する
       2. `/prompts:kiro-validate-impl {feature} all-tasks` で実装全体を検証する
-      3. 直近バッチまでの品質ゲート結果（fmt/clippy/test）が成功していることを確認する
+      3. 直近バッチまでの品質ゲート結果（fmt/clippy/test/godot-client-startup）が成功していることを確認する
       4. 修正可能な不整合を検出した場合は、対応用タスクを `docs/specs/<feature>/tasks.md` に `- [ ]` で追加する
       5. 4 で追加した場合は、追加した task IDs を明示して次に implement_batch で実行すべき対象として出力する
       6. 検証結果を要約し、次遷移を判定する
@@ -230,7 +231,7 @@ movements:
       - feature
       - 完了した task IDs
       - 未完了 task IDs（次サイクル対象）
-      - 実行した品質ゲート結果（fmt/clippy/test）
+      - 実行した品質ゲート結果（fmt/clippy/test/godot-client-startup）
       - conventional commit message（必須）
       - 既知の残課題（なければ「なし」）
       - 次の推奨アクション（例: PR レビュー）

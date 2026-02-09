@@ -3,10 +3,11 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { self, nixpkgs, rust-overlay }:
+  outputs = { self, nixpkgs, nixpkgs-unstable, rust-overlay }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -22,7 +23,13 @@
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
-          devShellDefs = import ./nix/dev-shells.nix { inherit pkgs; };
+          pkgsUnstable = import nixpkgs-unstable {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
+          devShellDefs = import ./nix/dev-shells.nix {
+            inherit pkgs pkgsUnstable;
+          };
         in
         {
           default = devShellDefs.default;

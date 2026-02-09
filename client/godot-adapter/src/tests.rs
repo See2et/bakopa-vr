@@ -389,3 +389,26 @@ fn godot_project_input_map_defines_pose_sync_actions() {
         );
     }
 }
+
+#[test]
+fn verify_script_emits_stageful_startup_diagnostics() {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../godot/scripts/verify_gdextension.gd");
+    let script = fs::read_to_string(path).expect("verify_gdextension.gd must be readable");
+
+    for stage in [
+        "\"extension_loaded\"",
+        "\"openxr_init\"",
+        "\"bridge_start\"",
+    ] {
+        assert!(
+            script.contains(stage),
+            "missing startup diagnostic stage marker: {stage}"
+        );
+    }
+
+    assert!(
+        script.contains("stage=%s mode=%s library_path=%s detail=%s"),
+        "missing structured startup diagnostic format"
+    );
+}
