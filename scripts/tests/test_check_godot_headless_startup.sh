@@ -62,4 +62,28 @@ assert_contains "${ARTIFACT_DIR}/godot-import.log" "mode_desktop=yes"
 assert_contains "${ARTIFACT_DIR}/godot-startup.log" "mode_desktop=yes"
 assert_contains "${ARTIFACT_DIR}/godot-startup-stage.log" "stage=log_scan status=ok"
 
+echo "[case3] desktop mode suppresses known OpenXR startup warning noise"
+cat > "${FAKE_GODOT}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+log_file=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --log-file)
+      shift
+      log_file="$1"
+      ;;
+  esac
+  shift || true
+done
+if [ -n "${log_file}" ]; then
+  printf "OpenXR was requested but failed to start\n" > "${log_file}"
+fi
+exit 0
+EOF
+chmod +x "${FAKE_GODOT}"
+
+GODOT_BIN="${FAKE_GODOT}" bash "${SCRIPT_PATH}" "${PROJECT_PATH}" "${ARTIFACT_DIR}" >"${TMP_DIR}/case3.out" 2>"${TMP_DIR}/case3.err"
+assert_contains "${ARTIFACT_DIR}/godot-startup-stage.log" "stage=openxr_warning_filter status=ok"
+
 echo "ok: check_godot_headless_startup"

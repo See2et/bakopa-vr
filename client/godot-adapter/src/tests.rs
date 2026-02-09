@@ -349,12 +349,13 @@ fn input_and_projection_log_contract_fields_are_stable() {
 }
 
 #[test]
-fn render_state_projector_returns_error_for_invalid_target_node() {
+fn render_state_projector_skips_invalid_target_node_without_error() {
     let mut projector = RenderStateProjector::default();
     let frame = RenderFrame::from_primary_pose(FrameId(1), Pose::identity());
-    let mut target = godot::obj::OnEditor::<godot::obj::Gd<godot::classes::Node3D>>::default();
-
-    assert!(projector.project(&frame, &mut target).is_err());
+    assert!(
+        projector.project(&frame, None).is_ok(),
+        "invalid target must not break frame projection flow"
+    );
 }
 
 #[test]
@@ -364,7 +365,23 @@ fn godot_scene_wires_sutera_client_bridge_for_frame_and_input_flow() {
     let scene = fs::read_to_string(path).expect("node.tscn must be readable");
 
     assert!(scene.contains("[node name=\"SuteraClientBridge\" type=\"SuteraClientBridge\""));
-    assert!(scene.contains("target_node = NodePath(\"../NearBox\")"));
+    assert!(scene.contains("target_node_path = NodePath(\"../NearBox\")"));
+}
+
+#[test]
+fn godot_bridge_uses_node_path_contract_for_target_resolution() {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("src/godot.rs");
+    let source = fs::read_to_string(path).expect("godot.rs must be readable");
+
+    assert!(
+        source.contains("target_node_path: NodePath"),
+        "target node contract must be NodePath-based"
+    );
+    assert!(
+        !source.contains("target_node: OnEditor<Gd<Node3D>>"),
+        "OnEditor-based target node field must be removed to avoid ready-time panics"
+    );
 }
 
 #[test]

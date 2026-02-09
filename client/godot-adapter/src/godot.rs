@@ -28,7 +28,7 @@ pub struct SuteraClientBridge {
     pending_input_events: Vec<Gd<godot::classes::InputEvent>>,
     runtime_mode: RuntimeMode,
     #[export]
-    target_node: OnEditor<Gd<Node3D>>,
+    target_node_path: NodePath,
 }
 
 #[godot_api]
@@ -44,7 +44,7 @@ impl INode for SuteraClientBridge {
             projector: RenderStateProjector::default(),
             pending_input_events: Vec::new(),
             runtime_mode: RuntimeMode::Desktop,
-            target_node: OnEditor::default(),
+            target_node_path: NodePath::from("../NearBox"),
         }
     }
 }
@@ -144,12 +144,23 @@ impl SuteraClientBridge {
             None => return Ok(()),
         };
         self.projector.set_runtime_mode(self.runtime_mode);
-        let mut output = GodotOutputPort::new(&mut self.projector, &mut self.target_node);
+        let mut target = self.resolve_target_node();
+        let mut output = GodotOutputPort::new(&mut self.projector, target.as_mut());
         output
             .apply(frame)
             .map_err(|error| BridgeError::ProjectionFailed {
                 reason: error.to_string(),
             })
+    }
+
+    fn resolve_target_node(&self) -> Option<Gd<Node3D>> {
+        let path = self.target_node_path.to_string();
+        let node = self
+            .base()
+            .get_node_or_null(path.as_str())?
+            .try_cast::<Node3D>()
+            .ok()?;
+        Some(node)
     }
 
     #[func]

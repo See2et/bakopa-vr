@@ -143,8 +143,8 @@ movements:
 
       必須実行手順:
       1. `tasks.md` を確認し、未完了タスクの有無を判断する
-      2. 直前バッチの変更だけを `git add -A` でステージする
-      3. 変更内容から type/scope/summary を自動決定し、`git -c commit.gpgsign=false commit -m "<type>(<scope>): <summary>"` を実行する
+      2. 直前バッチの変更内容を要約し、conventional commit message 候補を 1 つ作る
+      3. この movement では `git add/commit/push/checkout/merge` を実行しない（実行基盤が piece 完了後に自動処理）
 
       conventional commit message のルール:
       - 形式: `<type>(<scope>): <summary>`
@@ -223,11 +223,9 @@ movements:
 
       必須実行手順:
       1. 現在ブランチ名を取得し、`takt/pipeline-*` であることを確認する
-      2. `git rev-parse --abbrev-ref @{-1}` で直前ブランチ名を取得する
-      3. 直前ブランチへ checkout する
-      4. `takt/pipeline-*` ブランチを `git merge --no-ff` で直前ブランチへ取り込む
-      5. マージ成功後、取り込み元の `takt/pipeline-*` ブランチを削除する
-      6. 以下フォーマットで最終報告する（失敗時は失敗理由を明示して ABORT 判定）
+      2. この movement では `git checkout/merge/branch -d/push` を実行しない
+         （実行基盤が piece 完了後に commit/push を実施するため）
+      3. 以下フォーマットで最終報告する（失敗時は失敗理由を明示して ABORT 判定）
 
       - feature
       - 完了した task IDs
