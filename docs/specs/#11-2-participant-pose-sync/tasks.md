@@ -208,3 +208,41 @@
     全 feature 構成で安定して通るよう、初期フレームの pose 生成条件を整合させる。
   - 入力未発生フレームで意図しない `x` 方向ドリフトが発生しないことを確認する。
   - _Requirements: 3.2, 4.4_
+
+- [x] 10. Godot Client の起動失敗（SIGSEGV）を原因解明し恒久対処する
+- [x] 10.1 起動失敗を再現可能な形で固定し、失敗段階を特定する
+  - `scripts/check_godot_client_startup.sh` の実行結果を基準に、`--import` と通常起動のどの段階で失敗しているかを切り分ける。
+  - `client_core.gdextension` のロード、`gdext_rust_init` の初期化、OpenXR 初期化分岐のどこで異常終了するかをログで特定する。
+  - 失敗時に原因推定できるログ（stage / mode / library path）を残し、再実行で同じ診断結果が得られる状態にする。
+  - _Requirements: 4.3, 5.1, 5.4_
+
+- [x] 10.2 特定した根本原因を修正し、起動時クラッシュを防止する
+  - 根本原因に応じて GDExtension 初期化順序、null 安全性、モード分岐のいずれかを修正し、異常系でも process abort せず失敗を返すようにする。
+  - Linux の headless 起動（`nix develop`）で `scripts/check_godot_client_startup.sh` が成功し、`client/godot/bin/linux/libclient_core.so` 配置確認を含む品質ゲートが通ることを確認する。
+  - 修正後に `cargo test --workspace --all-targets` と既存の Godot 起動検証を再実行し、回帰がないことを確認する。
+  - _Requirements: 4.3, 4.4, 5.4, 6.3_
+
+- [x] 11. Godot デバッガーで検出された起動時エラー群を解消し、再発を防止する
+- [x] 11.1 `target_node` 変換失敗（NODE_PATH -> OBJECT）を解消する
+  - `SuteraClientBridge::set_target_node()` への入力契約を `NodePath` / `Node3D` のどちらかに統一し、`../NearBox` を確実に解決できる実装へ修正する。
+  - `node.tscn` 側の `target_node` 設定値と Rust 側の exported field 型を一致させ、`cannot convert from NODE_PATH to OBJECT` を再現しないことを確認する。
+  - `nix develop -c bash scripts/check_godot_client_startup.sh` で `godot-rust function call failed: SuteraClientBridge::set_target_node()` が出ないことを確認する。
+  - _Requirements: 4.2, 4.4, 5.4_
+
+- [x] 11.2 OnEditor 初期化不足による panic を解消する
+  - `OnEditor<Gd<Node3D>>` の初期化要件を満たす順序へ見直し、`__before_ready` で panic しないようにする。
+  - `SuteraClientBridge::ready()` 到達前に必須フィールド未初期化を検知した場合は panic ではなく診断可能なエラー返却へ変更する。
+  - `OnEditor fields must be properly initialized before ready` と `function panicked` がログに出なくなることを確認する。
+  - _Requirements: 4.3, 5.1, 5.4_
+
+- [x] 11.3 `render projection failed: target node is invalid` を解消する
+  - `project_latest_frame()` 実行時に `target_node` の有効性を保証するガードを追加し、無効ノードへの投影を防止する。
+  - 投影前の node 参照解決失敗時は失敗理由を保持しつつ、フレーム処理全体が破綻しない回復パスを実装する。
+  - 連続フレーム実行で `render projection failed: target node is invalid` が発生しないことを検証する。
+  - _Requirements: 4.4, 5.1, 5.4_
+
+- [x] 11.4 OpenXR 非利用時の起動警告を制御し、desktop 検証ノイズを抑制する
+  - desktop 検証モードでは OpenXR 初期化を明示的に抑制し、`OpenXR was requested but failed to start` の警告を発生させない構成を整える。
+  - VR モード時のみ OpenXR 初期化を有効化する分岐を明文化し、desktop/VR で期待どおりにログが分離されることを確認する。
+  - `scripts/check_godot_headless_startup.sh` の runtime probe で desktop 実行時の不要警告が gate ノイズにならないことを確認する。
+  - _Requirements: 4.1, 4.3, 5.4_

@@ -98,12 +98,12 @@ impl RenderStateProjector {
     pub fn project(
         &mut self,
         frame: &RenderFrame,
-        target: &mut OnEditor<Gd<Node3D>>,
+        target: Option<&mut Gd<Node3D>>,
     ) -> Result<(), ProjectionError> {
         let (stage, room_id, participant_id, stream_kind, mode) =
             projection_log_contract_fields(self.runtime_mode);
         self.refresh_remote_projection_cache(frame);
-        if target.is_invalid() {
+        let Some(node) = target else {
             debug!(
                 target: "godot_adapter",
                 stage,
@@ -116,9 +116,8 @@ impl RenderStateProjector {
                 target_invalid = true,
                 "projection skipped because target node is invalid"
             );
-            return Err(ProjectionError::InvalidTargetNode);
-        }
-        let node = &mut **target;
+            return Ok(());
+        };
         project_render_frame_to_target(frame, node);
         debug!(
             target: "godot_adapter",
@@ -149,8 +148,7 @@ pub(crate) mod tests_support {
 
     pub(crate) fn remote_cache_after_project(frame: &RenderFrame) -> Vec<(String, Transform3D)> {
         let mut projector = RenderStateProjector::default();
-        let mut target = OnEditor::<Gd<Node3D>>::default();
-        let _ = projector.project(frame, &mut target);
+        let _ = projector.project(frame, None);
         projector
             .remote_projection_cache
             .iter()

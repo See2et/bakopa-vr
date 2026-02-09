@@ -418,19 +418,19 @@ impl InputPort for GodotInputPort {
 
 pub struct GodotOutputPort<'a> {
     projector: &'a mut RenderStateProjector,
-    target: &'a mut OnEditor<Gd<Node3D>>,
+    target: Option<&'a mut Gd<Node3D>>,
 }
 
 impl<'a> GodotOutputPort<'a> {
     pub fn new(
         projector: &'a mut RenderStateProjector,
-        target: &'a mut OnEditor<Gd<Node3D>>,
+        target: Option<&'a mut Gd<Node3D>>,
     ) -> Self {
         Self { projector, target }
     }
 
     pub fn apply(&mut self, frame: &RenderFrame) -> Result<(), ProjectionError> {
-        self.projector.project(frame, self.target)
+        self.projector.project(frame, self.target.as_deref_mut())
     }
 }
 

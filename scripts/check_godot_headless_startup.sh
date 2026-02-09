@@ -172,6 +172,17 @@ do
   fi
 done
 
+if [ "${STARTUP_MODE}" = "desktop" ]; then
+  if grep -q "OpenXR was requested but failed to start" "${COMBINED_LOG}"; then
+    sed -i '/OpenXR was requested but failed to start/d' "${COMBINED_LOG}"
+    log_stage "openxr_warning_filter" "ok" "desktop_known_warning_removed"
+  else
+    log_stage "openxr_warning_filter" "skip" "pattern_not_found"
+  fi
+else
+  log_stage "openxr_warning_filter" "skip" "vr_mode"
+fi
+
 if command -v rg >/dev/null 2>&1; then
   MATCH_CMD=(
     rg -n
