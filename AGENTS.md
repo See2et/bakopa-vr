@@ -51,6 +51,10 @@ Project memory keeps persistent guidance (steering, specs notes, component docs)
 - Human review required each phase; use `-y` only for intentional fast-track
 - Keep steering current and verify alignment with `/prompts:kiro-spec-status`
 - Follow the user's instructions precisely, and within that scope act autonomously: gather the necessary context and complete the requested work end-to-end in this run, asking questions only when essential information is missing or the instructions are critically ambiguous.
+- WSL で `3221225725 (0xC00000FD)` クラッシュが起きる環境を前提に、エージェントは通常運用で `nix develop` / `nix shell` の対話起動を実行しない。必要な場合はユーザーの明示指示がある時だけ実行する。
+- `nix` コマンド検証は、ログインシェル初期化を避けるために `bash --noprofile --norc -lc '...'` を既定で使う。`$SHELL -lic` のようなログインシェル経由実行は避ける。
+- `nix develop` が必要な場合は、まず `bash --noprofile --norc -lc 'nix develop .# -c true'` のような非対話・ワンショット形で疎通確認し、長時間ハングを避けるため必要に応じて `timeout` を付ける。
+- 実行計画で代替可能な場合（静的調査、`flake.nix`/`flake.lock` の読解、既存ログ確認）は `nix develop` 実行より代替手段を優先する。
 - 実装や編集を行った場合は、完了前に必ず `cargo fmt --all` を実行し、フォーマット差分を解消すること。
 - 実装や編集を行った場合は、完了前に必ず `cargo clippy --all-targets --all-features -- -D warnings` を実行し、警告・エラーを解消すること。
 - `docs/` 配下の Markdown を編集した場合は、完了前に必ず `npx markdownlint-cli2 --fix "docs/**/*.md" "!docs/settings/**" "!docs/specs"` を実行し、自動修正を反映すること。
