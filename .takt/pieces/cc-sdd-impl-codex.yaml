@@ -226,7 +226,8 @@ movements:
       2. `git rev-parse --abbrev-ref @{-1}` で直前ブランチ名を取得する
       3. 直前ブランチへ checkout する
       4. `takt/pipeline-*` ブランチを `git merge --no-ff` で直前ブランチへ取り込む
-      5. マージ成功後に以下フォーマットで最終報告する（失敗時は失敗理由を明示して ABORT 判定）
+      5. マージ成功後、取り込み元の `takt/pipeline-*` ブランチを削除する
+      6. 以下フォーマットで最終報告する（失敗時は失敗理由を明示して ABORT 判定）
 
       - feature
       - 完了した task IDs
