@@ -1,0 +1,336 @@
+Initialize godot-rust (API v4.5.stable.official, runtime v4.5.1.stable.nixpkgs, safeguards strict)
+
+================================================================
+handle_crash: Program crashed with signal 11
+Engine version: Godot Engine v4.5.1.stable.nixpkgs (f62fdbde15035c5576dad93e586201f4d41ef0cb)
+Dumping the backtrace. Please include this when reporting the bug on: https://github.com/godotengine/godot/issues
+[1] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(+0x42790) [0x7ffff2842790] (??:0)
+[2] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot(+0x4ed6583) [0x55555a42a583] (??:?)
+[3] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot(+0x85b69e) [0x555555daf69e] (??:?)
+[4] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot(main+0x6fa) [0x555555c3f5fa] (??:?)
+[5] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(+0x2b285) [0x7ffff282b285] (??:0)
+[6] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(__libc_start_main+0x88) [0x7ffff282b338] (??:0)
+[7] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot(+0x72e9d5) [0x555555c829d5] (??:?)
+-- END OF C++ BACKTRACE --
+================================================================
+
+Initialize godot-rust (API v4.5.stable.official, runtime v4.5.1.stable.nixpkgs, safeguards strict)
+
+================================================================
+handle_crash: Program crashed with signal 11
+Engine version: Godot Engine v4.5.1.stable.nixpkgs (f62fdbde15035c5576dad93e586201f4d41ef0cb)
+Dumping the backtrace. Please include this when reporting the bug on: https://github.com/godotengine/godot/issues
+[1] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(+0x42790) [0x7ffff2842790] (??:0)
+[2] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot(+0x4ed6583) [0x55555a42a583] (??:?)
+[3] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot(+0x85b69e) [0x555555daf69e] (??:?)
+[4] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot(main+0x6fa) [0x555555c3f5fa] (??:?)
+[5] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(+0x2b285) [0x7ffff282b285] (??:0)
+[6] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(__libc_start_main+0x88) [0x7ffff282b338] (??:0)
+[7] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot(+0x72e9d5) [0x555555c829d5] (??:?)
+-- END OF C++ BACKTRACE --
+================================================================
+
+Initialize godot-rust (API v4.5.stable.official, runtime v4.5.1.stable.nixpkgs, safeguards strict)
+Godot Engine v4.5.1.stable.nixpkgs.f62fdbde1 - https://godotengine.org
+Error [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : RuntimeManifestFile::FindManifestFiles - failed to determine active runtime file path for this environment
+Error [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : RuntimeInterface::LoadRuntimes - unknown error
+Error [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : RuntimeInterface::LoadRuntimes - failed to load a runtime
+Error [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Failed to find default runtime with RuntimeInterface::LoadRuntime()
+Error [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Failed querying extension properties
+ERROR: OpenXR: Failed to enumerate number of extension properties
+   at: load_supported_extensions (modules/openxr/openxr_api.cpp:414)
+WARNING: OpenXR was requested but failed to start.
+Please check if your HMD is connected.
+Godot will start in normal mode.
+
+     at: initialize_openxr_module (modules/openxr/register_types.cpp:203)
+OpenXR was requested but failed to start.
+Please check if your HMD is connected.
+Godot will start in normal mode.
+
+
+ERROR: godot-rust function call failed: SuteraClientBridge::set_target_node()
+    Reason: parameter #0 (core::option::Option<godot_core::obj::gd::Gd<godot_core::gen::classes::node_3d::re_export::Node3D>>) conversion
+  Source: cannot convert from NODE_PATH to OBJECT: ^"../NearBox"
+   at: godot_core::private::handle_fallible_call (/home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:524)
+WARNING: godot-rust: OnEditor field target_node hasn't been initialized.
+     at: <client_core::godot::SuteraClientBridge as godot_core::obj::traits::UserClass>::__before_ready::__are_oneditor_fields_initalized (client/godot-adapter/src/godot.rs:20)
+ERROR: [panic client/godot-adapter/src/godot.rs:20]
+  OnEditor fields must be properly initialized before ready.
+  Context: SuteraClientBridge::ready
+   at: godot_core::private::set_gdext_hook::{{closure}} (/home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:343)
+
+[panic backtrace]
+   0: godot_core::private::set_gdext_hook::{{closure}}
+             at /home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:320:44
+   1: <alloc::boxed::Box<F,A> as core::ops::function::Fn<Args>>::call
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/alloc/src/boxed.rs:1985:9
+   2: std::panicking::rust_panic_with_hook
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/std/src/panicking.rs:841:13
+   3: std::panicking::begin_panic_handler::{{closure}}
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/std/src/panicking.rs:699:13
+   4: std::sys::backtrace::__rust_end_short_backtrace
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/std/src/sys/backtrace.rs:174:18
+   5: __rustc::rust_begin_unwind
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/std/src/panicking.rs:697:5
+   6: core::panicking::panic_fmt
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/core/src/panicking.rs:75:14
+   7: <client_core::godot::SuteraClientBridge as godot_core::obj::traits::UserClass>::__before_ready
+             at /home/nixos/repos/github.com/See2et/bakopa-vr/client/godot-adapter/src/godot.rs:20:10
+   8: <client_core::godot::SuteraClientBridge as godot_core::obj::traits::cap::ImplementsGodotVirtual>::__virtual_call::virtual_fn::{{closure}}::{{closure}}
+             at /home/nixos/repos/github.com/See2et/bakopa-vr/client/godot-adapter/src/godot.rs:34:1
+   9: core::ops::function::FnOnce::call_once
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/core/src/ops/function.rs:253:5
+  10: godot_core::meta::signature::Signature<Params,Ret>::in_ptrcall
+             at /home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/meta/signature.rs:119:40
+  11: <client_core::godot::SuteraClientBridge as godot_core::obj::traits::cap::ImplementsGodotVirtual>::__virtual_call::virtual_fn::{{closure}}
+             at /home/nixos/repos/github.com/See2et/bakopa-vr/client/godot-adapter/src/godot.rs:34:1
+  12: std::panicking::catch_unwind::do_call
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/std/src/panicking.rs:589:40
+  13: __rust_try
+  14: std::panicking::catch_unwind
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/std/src/panicking.rs:552:19
+  15: std::panic::catch_unwind
+             at /rustc/1159e78c4747b02ef996e55082b704c09b970588/library/std/src/panic.rs:359:14
+  16: godot_core::private::handle_panic
+             at /home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:462:18
+  17: godot_core::private::handle_fallible_call
+             at /home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:507:56
+  18: godot_core::private::handle_fallible_ptrcall
+             at /home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:494:5
+  19: <client_core::godot::SuteraClientBridge as godot_core::obj::traits::cap::ImplementsGodotVirtual>::__virtual_call::virtual_fn
+             at /home/nixos/repos/github.com/See2et/bakopa-vr/client/godot-adapter/src/godot.rs:34:1
+  20: _ZN6Object21_notification_forwardEi
+  21: _ZN4Node16_propagate_readyEv
+  22: _ZN4Node16_propagate_readyEv
+  23: _ZN4Node16_propagate_readyEv
+  24: _ZN4Node9_set_treeEP9SceneTree
+  25: main
+  26: __libc_start_call_main
+  27: __libc_start_main_alias_2
+  28: _start
+
+
+ERROR: godot-rust function call failed: SuteraClientBridge::ready()
+    Reason: function panicked: OnEditor fields must be properly initialized before ready.
+   at: godot_core::private::handle_fallible_call (/home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:524)
+stage=extension_check mode=desktop library_path=/home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension detail=begin
+GDExtension check
+path(res): res://client_core.gdextension
+path(abs): /home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension
+exists(res): true exists(abs): true
+loaded(res): true loaded(abs): false
+loaded_extensions: ["res://client_core.gdextension"]
+OK: GDExtension is loaded
+stage=extension_loaded mode=desktop library_path=/home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension detail=ok
+Desktop mode active: skipped OpenXR initialization
+stage=openxr_skip mode=desktop library_path=/home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension detail=desktop_mode
+Viewport use_xr set: false
+stage=bridge_start mode=desktop library_path=/home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension detail=started=true
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+
+Godot Engine v4.5.1.stable.nixpkgs.f62fdbde1 - https://godotengine.org
+ERROR: OpenXR: Failed to enumerate number of extension properties
+   at: load_supported_extensions (modules/openxr/openxr_api.cpp:414)
+WARNING: OpenXR was requested but failed to start.
+Please check if your HMD is connected.
+Godot will start in normal mode.
+
+   at: initialize_openxr_module (modules/openxr/register_types.cpp:203)
+OpenXR was requested but failed to start.
+Please check if your HMD is connected.
+Godot will start in normal mode.
+
+
+ERROR: godot-rust function call failed: SuteraClientBridge::set_target_node()
+    Reason: parameter #0 (core::option::Option<godot_core::obj::gd::Gd<godot_core::gen::classes::node_3d::re_export::Node3D>>) conversion
+  Source: cannot convert from NODE_PATH to OBJECT: ^"../NearBox"
+   at: godot_core::private::handle_fallible_call (/home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:524)
+WARNING: godot-rust: OnEditor field target_node hasn't been initialized.
+   at: <client_core::godot::SuteraClientBridge as godot_core::obj::traits::UserClass>::__before_ready::__are_oneditor_fields_initalized (client/godot-adapter/src/godot.rs:20)
+ERROR: [panic client/godot-adapter/src/godot.rs:20]
+  OnEditor fields must be properly initialized before ready.
+  Context: SuteraClientBridge::ready
+   at: godot_core::private::set_gdext_hook::{{closure}} (/home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:343)
+ERROR: godot-rust function call failed: SuteraClientBridge::ready()
+    Reason: function panicked: OnEditor fields must be properly initialized before ready.
+   at: godot_core::private::handle_fallible_call (/home/nixos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/godot-core-0.4.5/src/private.rs:524)
+stage=extension_check mode=desktop library_path=/home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension detail=begin
+GDExtension check
+path(res): res://client_core.gdextension
+path(abs): /home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension
+exists(res): true exists(abs): true
+loaded(res): true loaded(abs): false
+loaded_extensions: ["res://client_core.gdextension"]
+OK: GDExtension is loaded
+stage=extension_loaded mode=desktop library_path=/home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension detail=ok
+Desktop mode active: skipped OpenXR initialization
+stage=openxr_skip mode=desktop library_path=/home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension detail=desktop_mode
+Viewport use_xr set: false
+stage=bridge_start mode=desktop library_path=/home/nixos/repos/github.com/See2et/bakopa-vr/client/godot/client_core.gdextension detail=started=true
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+ERROR: render projection failed: target node is invalid
+   at: client_core::godot::SuteraClientBridge::on_frame (client/godot-adapter/src/godot.rs:115)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://scripts/verify_gdextension.gd:47)
+
+stage=resolve_godot_bin status=ok mode=desktop library_path=client/godot/bin/linux/libclient_core.so detail=/nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot
+stage=import status=error mode=desktop library_path=client/godot/bin/linux/libclient_core.so detail=exit_code=134
+stage=startup status=error mode=desktop library_path=client/godot/bin/linux/libclient_core.so detail=exit_code=134
+stage=runtime_probe status=ok mode=desktop library_path=client/godot/bin/linux/libclient_core.so detail=exit_code=0
+stage=user_log status=ok mode=desktop library_path=client/godot/bin/linux/libclient_core.so detail=/home/nixos/.local/share/godot/app_userdata/sutera-vr/logs/godot.log
+

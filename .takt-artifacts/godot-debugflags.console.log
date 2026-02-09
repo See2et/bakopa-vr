@@ -1,0 +1,16 @@
+WorkerThreadPool: 16 threads, 4 max low-priority.
+Initialize godot-rust (API v4.5.stable.official, runtime v4.5.1.stable.nixpkgs, safeguards strict)
+
+================================================================
+handle_crash: Program crashed with signal 11
+Engine version: Godot Engine v4.5.1.stable.nixpkgs (f62fdbde15035c5576dad93e586201f4d41ef0cb)
+Dumping the backtrace. Please include this when reporting the bug on: https://github.com/godotengine/godot/issues
+[1] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(+0x42790) [0x7ffff2842790] (??:0)
+[2] godot4(+0x4ed6583) [0x55555a42a583] (??:?)
+[3] godot4(+0x85b69e) [0x555555daf69e] (??:?)
+[4] godot4(main+0x6fa) [0x555555c3f5fa] (??:?)
+[5] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(+0x2b285) [0x7ffff282b285] (??:0)
+[6] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(__libc_start_main+0x88) [0x7ffff282b338] (??:0)
+[7] godot4(+0x72e9d5) [0x555555c829d5] (??:?)
+-- END OF C++ BACKTRACE --
+================================================================

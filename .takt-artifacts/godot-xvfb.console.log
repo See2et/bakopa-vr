@@ -1,0 +1,16 @@
+Initialize godot-rust (API v4.5.stable.official, runtime v4.5.1.stable.nixpkgs, safeguards strict)
+
+================================================================
+handle_crash: Program crashed with signal 11
+Engine version: Godot Engine v4.5.1.stable.nixpkgs (f62fdbde15035c5576dad93e586201f4d41ef0cb)
+Dumping the backtrace. Please include this when reporting the bug on: https://github.com/godotengine/godot/issues
+[1] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(+0x42790) [0x7ab5b3e42790] (??:0)
+[2] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot4(+0x4ed6583) [0x5c1243f47583] (??:?)
+[3] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot4(+0x85b69e) [0x5c123f8cc69e] (??:?)
+[4] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot4(main+0x6fa) [0x5c123f75c5fa] (??:?)
+[5] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(+0x2b285) [0x7ab5b3e2b285] (??:0)
+[6] /nix/store/wb6rhpznjfczwlwx23zmdrrw74bayxw4-glibc-2.42-47/lib/libc.so.6(__libc_start_main+0x88) [0x7ab5b3e2b338] (??:0)
+[7] /nix/store/cga30n7xh5hcq69a6fr1s1wpvvsk89ii-godot-4.5.1-stable/bin/godot4(+0x72e9d5) [0x5c123f79f9d5] (??:?)
+-- END OF C++ BACKTRACE --
+================================================================
+/nix/store/y59jmpn7p7qjzcp9635lldjfdc40hply-xvfb-run-1+g87f6705/bin/.xvfb-run-wrapped: line 181: 48501 Aborted                 DISPLAY=:$SERVERNUM XAUTHORITY=$AUTHFILE "$@"
